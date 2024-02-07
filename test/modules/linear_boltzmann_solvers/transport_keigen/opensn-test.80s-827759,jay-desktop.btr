@@ -1,0 +1,14 @@
+
+opensn-test:827759 terminated with signal 11 at PC=7f86db2a7488 SP=7fff4e9e8280.  Backtrace:
+/home/jason/Documents/Work/OpenSn/dependencies/lib/libpetsc.so.3.17(MatDestroy+0x28)[0x7f86db2a7488]
+/home/jason/Documents/Work/OpenSn/opensn-jay/build/libopensn.so(_ZN6opensn3lbs15WGSLinearSolverD1Ev+0x20)[0x7f86da74f190]
+/home/jason/Documents/Work/OpenSn/opensn-jay/build/libopensn.so(_ZN6opensn3lbs10AGSContextD1Ev+0x105)[0x7f86da746f45]
+/home/jason/Documents/Work/OpenSn/opensn-jay/build/libopensn.so(_ZN6opensn12LinearSolverD1Ev+0x135)[0x7f86da54b5b5]
+/home/jason/Documents/Work/OpenSn/opensn-jay/build/libopensn.so(_ZNSt16_Sp_counted_baseILN9__gnu_cxx12_Lock_policyE2EE10_M_releaseEv+0x97)[0x7f86da51e2a7]
+/home/jason/Documents/Work/OpenSn/opensn-jay/build/libopensn.so(_ZN6opensn3lbs9LBSSolverD1Ev+0x142)[0x7f86da773992]
+/home/jason/Documents/Work/OpenSn/opensn-jay/build/libopensn.so(_ZN6opensn8FinalizeEv+0x945)[0x7f86da707e15]
+/home/jason/Documents/Work/OpenSn/opensn-jay/build/lua/libopensnlua.so(_ZN9opensnlua6LuaApp3RunEiPPc+0x7a)[0x7f86dc2b7dda]
+/home/jason/Documents/Work/OpenSn/opensn-jay/build/test/opensn-test(+0x1de77)[0x55c797edee77]
+/lib/x86_64-linux-gnu/libc.so.6(+0x29d90)[0x7f86d7429d90]
+/lib/x86_64-linux-gnu/libc.so.6(__libc_start_main+0x80)[0x7f86d7429e40]
+/home/jason/Documents/Work/OpenSn/opensn-jay/build/test/opensn-test(+0x1df15)[0x55c797edef15]

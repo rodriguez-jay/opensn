@@ -442,6 +442,7 @@ PETSC_DIR={install_dir}/src/{pkg}-{ver}"""
 def InstallVTK(pkg: str, ver: str, gold_file: str):
     package_log_filename = f"{install_dir}/logs/{pkg}_log.txt"
     pkg_install_dir = f"{install_dir}"
+    #print(pkg_install_dir)
 
     shutil.copy(f"{install_dir}/downloads/{pkg}-{ver}.tar.gz",
                 f"{install_dir}/src/{pkg}-{ver}.tar.gz")
