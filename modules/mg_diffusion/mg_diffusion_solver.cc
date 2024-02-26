@@ -1,16 +1,15 @@
 #include "modules/mg_diffusion/mg_diffusion_solver.h"
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_continuous.h"
 #include "framework/physics/physics_material/physics_material.h"
 #include "framework/physics/physics_material/multi_group_xs/multi_group_xs.h"
 #include "framework/physics/physics_material/material_property_isotropic_mg_src.h"
-#include "framework/physics/field_function/field_function_grid_based.h"
+#include "framework/field_functions/field_function_grid_based.h"
 #include <algorithm>
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
 #include "framework/utils/timer.h"
-#include "framework/math/spatial_discretization/finite_element/quadrature_point_data.h"
+#include "framework/math/spatial_discretization/finite_element/finite_element_data.h"
 #include "modules/mg_diffusion/mg_diffusion_bndry.h"
 #include "modules/mg_diffusion/tools.h"
 #include <iomanip>
@@ -63,7 +62,7 @@ Solver::Initialize()
             << ": Initializing CFEM Multigroup Diffusion solver ";
 
   // Get grid
-  grid_ptr_ = GetCurrentHandler().GetGrid();
+  grid_ptr_ = GetCurrentMesh();
   const auto& grid = *grid_ptr_;
   if (grid_ptr_ == nullptr)
     throw std::logic_error(std::string(__PRETTY_FUNCTION__) + " No grid defined.");
@@ -76,14 +75,16 @@ Solver::Initialize()
   for (auto& cell : grid.local_cells)
   {
     unique_material_ids.insert(cell.material_id_);
-    if (cell.material_id_ < 0) ++invalid_mat_cell_count;
+    if (cell.material_id_ < 0)
+      ++invalid_mat_cell_count;
   }
   const auto& ghost_cell_ids = grid.cells.GetGhostGlobalIDs();
   for (uint64_t cell_id : ghost_cell_ids)
   {
     const auto& cell = grid.cells[cell_id];
     unique_material_ids.insert(cell.material_id_);
-    if (cell.material_id_ < 0) ++invalid_mat_cell_count;
+    if (cell.material_id_ < 0)
+      ++invalid_mat_cell_count;
   }
 
   if (invalid_mat_cell_count > 0)
@@ -161,7 +162,8 @@ Solver::Initialize()
     //                                                        ghost_dof_indices);
   }
 
-  if (do_two_grid_) mg_diffusion::Solver::Compute_TwoGrid_VolumeFractions();
+  if (do_two_grid_)
+    mg_diffusion::Solver::Compute_TwoGrid_VolumeFractions();
 
   // Create Mats and ExtVecs
   mg_diffusion::Solver::Assemble_A_bext();
@@ -174,7 +176,8 @@ Solver::Initialize()
     for (uint g = 0; g < mg_diffusion::Solver::num_groups_; ++g)
     {
       std::string solver_name;
-      if (not TextName().empty()) solver_name = TextName() + "-";
+      if (not TextName().empty())
+        solver_name = TextName() + "-";
 
       char buff[100];
       int dummy = snprintf(buff, 4, "%03d", g);
@@ -209,11 +212,12 @@ Solver::Initialize_Materials(std::set<int>& material_ids)
     // Check valid ids
     if (mat_id < 0)
     {
-      throw std::logic_error("MG-diff-InitMaterials: Cells encountered with no assigned material.");
+      throw std::logic_error(
+        "MG-diff-InitializeMaterials: Cells encountered with no assigned material.");
     }
     if (static_cast<size_t>(mat_id) >= num_physics_mats)
     {
-      throw std::logic_error("MG-diff-InitMaterials: Cells encountered with "
+      throw std::logic_error("MG-diff-InitializeMaterials: Cells encountered with "
                              "material id that matches no material in physics material library.");
     }
 
@@ -227,7 +231,8 @@ Solver::Initialize_Materials(std::set<int>& material_ids)
         auto transp_xs = std::static_pointer_cast<MultiGroupXS>(property);
         matid_to_xs_map[mat_id] = transp_xs;
         found_transport_xs = true;
-        if (first_material_read) num_groups_ = transp_xs->NumGroups();
+        if (first_material_read)
+          num_groups_ = transp_xs->NumGroups();
 
       } // transport xs
       if (property->Type() == MatProperty::ISOTROPIC_MG_SOURCE)
@@ -236,20 +241,24 @@ Solver::Initialize_Materials(std::set<int>& material_ids)
 
         if (mg_source->source_value_g_.size() < num_groups_)
         {
-          log.LogAllWarning() << "MG-Diff-InitMaterials: Isotropic Multigroup source specified "
-                                 "in "
-                              << "material \"" << current_material->name_ << "\" has fewer "
-                              << "energy groups than called for in the simulation. "
-                              << "Source will be ignored.";
+          log.LogAllWarning()
+            << "MG-Diff-InitializeMaterials: Isotropic Multigroup source specified "
+               "in "
+            << "material \"" << current_material->name_ << "\" has fewer "
+            << "energy groups than called for in the simulation. "
+            << "Source will be ignored.";
         }
-        else { matid_to_src_map[mat_id] = mg_source; }
+        else
+        {
+          matid_to_src_map[mat_id] = mg_source;
+        }
       } // P0 source
     }   // for property
 
     // Check valid property
-    if (!found_transport_xs)
+    if (not found_transport_xs)
     {
-      log.LogAllError() << "MG-Diff-InitMaterials: Found no transport cross-section property "
+      log.LogAllError() << "MG-Diff-InitializeMaterials: Found no transport cross-section property "
                            "for "
                         << "material \"" << current_material->name_ << "\".";
       Exit(EXIT_FAILURE);
@@ -257,8 +266,9 @@ Solver::Initialize_Materials(std::set<int>& material_ids)
     // Check number of groups legal
     if (matid_to_xs_map[mat_id]->NumGroups() != num_groups_)
     {
-      log.LogAllError() << "MG-Diff-InitMaterials: Found material \"" << current_material->name_
-                        << "\" has " << matid_to_xs_map[mat_id]->NumGroups() << " groups and "
+      log.LogAllError() << "MG-Diff-InitializeMaterials: Found material \""
+                        << current_material->name_ << "\" has "
+                        << matid_to_xs_map[mat_id]->NumGroups() << " groups and "
                         << "the simulation has " << num_groups_ << " groups. The material "
                         << "must have the same number of groups.";
       Exit(EXIT_FAILURE);
@@ -267,8 +277,8 @@ Solver::Initialize_Materials(std::set<int>& material_ids)
     // Check number of moments
     if (matid_to_xs_map[mat_id]->ScatteringOrder() > 1)
     {
-      log.Log0Warning() << "MG-Diff-InitMaterials: Found material \"" << current_material->name_
-                        << "\" has a scattering order of "
+      log.Log0Warning() << "MG-Diff-InitializeMaterials: Found material \""
+                        << current_material->name_ << "\" has a scattering order of "
                         << matid_to_xs_map[mat_id]->ScatteringOrder() << " and"
                         << " the simulation has a scattering order of One (MG-Diff)"
                         << " The higher moments will therefore not be used.";
@@ -282,7 +292,7 @@ Solver::Initialize_Materials(std::set<int>& material_ids)
 
   log.Log() << "Materials Initialized:\n" << materials_list.str() << "\n";
 
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Compute last fast group
   // initialize last fast group
@@ -302,7 +312,7 @@ Solver::Initialize_Materials(std::set<int>& material_ids)
       {
         for (const auto& [row_g, gp, sigma_sm] : S.Row(g))
         {
-          if ((std::fabs(sigma_sm) > 1e-10) && (gp > row_g))
+          if ((std::fabs(sigma_sm) > 1e-10) and (gp > row_g))
             lfg = std::min(lfg, static_cast<unsigned int>(row_g));
         }
       }
@@ -313,7 +323,7 @@ Solver::Initialize_Materials(std::set<int>& material_ids)
 
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Compute two-grid params
   do_two_grid_ = basic_options_("do_two_grid").BoolValue();
-  if ((lfg == num_groups_) && do_two_grid_)
+  if ((lfg == num_groups_) and do_two_grid_)
   {
     log.Log0Error() << "Two-grid is not possible with no upscattering.";
     do_two_grid_ = false;
@@ -419,7 +429,7 @@ Solver::Compute_TwoGrid_VolumeFractions()
   for (const auto& cell : grid.local_cells)
   {
     const auto& cell_mapping = sdm.GetCellMapping(cell);
-    const auto qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
     const size_t num_nodes = cell_mapping.NumNodes();
 
     VF_[counter].resize(num_nodes, 0.0);
@@ -427,8 +437,8 @@ Solver::Compute_TwoGrid_VolumeFractions()
     for (size_t i = 0; i < num_nodes; ++i)
     {
       double vol_frac_shape_i = 0.0;
-      for (size_t qp : qp_data.QuadraturePointIndices())
-        vol_frac_shape_i += qp_data.ShapeValue(i, qp) * qp_data.JxW(qp);
+      for (size_t qp : fe_vol_data.QuadraturePointIndices())
+        vol_frac_shape_i += fe_vol_data.ShapeValue(i, qp) * fe_vol_data.JxW(qp);
       vol_frac_shape_i /= cell_mapping.CellVolume();
       VF_[counter][i] = vol_frac_shape_i;
     } // for i
@@ -518,7 +528,7 @@ Solver::Assemble_A_bext()
   for (const auto& cell : grid.local_cells)
   {
     const auto& cell_mapping = sdm.GetCellMapping(cell);
-    const auto qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
     const size_t num_nodes = cell_mapping.NumNodes();
 
     const auto& xs = matid_to_xs_map.at(cell.material_id_);
@@ -550,11 +560,13 @@ Solver::Assemble_A_bext()
       {
         double entry_mij = 0.0;
         double entry_kij = 0.0;
-        for (size_t qp : qp_data.QuadraturePointIndices())
+        for (size_t qp : fe_vol_data.QuadraturePointIndices())
         {
-          entry_mij += qp_data.ShapeValue(i, qp) * qp_data.ShapeValue(j, qp) * qp_data.JxW(qp);
+          entry_mij +=
+            fe_vol_data.ShapeValue(i, qp) * fe_vol_data.ShapeValue(j, qp) * fe_vol_data.JxW(qp);
 
-          entry_kij += qp_data.ShapeGrad(i, qp).Dot(qp_data.ShapeGrad(j, qp)) * qp_data.JxW(qp);
+          entry_kij +=
+            fe_vol_data.ShapeGrad(i, qp).Dot(fe_vol_data.ShapeGrad(j, qp)) * fe_vol_data.JxW(qp);
         } // for qp
         for (uint g = 0; g < num_groups_; ++g)
           Acell[g][i][j] = entry_mij * sigma_r[g] + entry_kij * D[g];
@@ -563,8 +575,8 @@ Solver::Assemble_A_bext()
           Acell[num_groups_][i][j] = entry_mij * collapsed_sig_a + entry_kij * collapsed_D;
       } // for j
       double entry_rhsi = 0.0;
-      for (size_t qp : qp_data.QuadraturePointIndices())
-        entry_rhsi += qp_data.ShapeValue(i, qp) * qp_data.JxW(qp);
+      for (size_t qp : fe_vol_data.QuadraturePointIndices())
+        entry_rhsi += fe_vol_data.ShapeValue(i, qp) * fe_vol_data.JxW(qp);
       for (uint g = 0; g < num_groups_; ++g)
         rhs_cell[g][i] = entry_rhsi * (qext->source_value_g_[g]);
     } // for i
@@ -575,7 +587,8 @@ Solver::Assemble_A_bext()
     {
       const auto& face = cell.faces_[f];
       // not a boundary face
-      if (face.has_neighbor_) continue;
+      if (face.has_neighbor_)
+        continue;
 
       auto& bndry = boundaries_[face.neighbor_id_];
 
@@ -583,7 +596,7 @@ Solver::Assemble_A_bext()
       //   for two-grid, it is homogenous Robin
       if (bndry.type_ == BoundaryType::Robin)
       {
-        const auto qp_face_data = cell_mapping.MakeSurfaceQuadraturePointData(f);
+        const auto fe_srf_data = cell_mapping.MakeSurfaceFiniteElementData(f);
         const size_t num_face_nodes = face.vertex_ids_.size();
 
         auto& aval = bndry.mg_values_[0];
@@ -615,8 +628,8 @@ Solver::Assemble_A_bext()
               const uint i = cell_mapping.MapFaceNode(f, fi);
 
               double entry_rhsi = 0.0;
-              for (size_t qp : qp_face_data.QuadraturePointIndices())
-                entry_rhsi += qp_face_data.ShapeValue(i, qp) * qp_face_data.JxW(qp);
+              for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                entry_rhsi += fe_srf_data.ShapeValue(i, qp) * fe_srf_data.JxW(qp);
               if (g < num_groups_) // check due to two-grid
                 rhs_cell[g][i] += fval[g] / bval[g] * entry_rhsi;
 
@@ -624,9 +637,9 @@ Solver::Assemble_A_bext()
               {
                 const uint j = cell_mapping.MapFaceNode(f, fj);
                 double entry_aij = 0.0;
-                for (size_t qp : qp_face_data.QuadraturePointIndices())
-                  entry_aij += qp_face_data.ShapeValue(i, qp) * qp_face_data.ShapeValue(j, qp) *
-                               qp_face_data.JxW(qp);
+                for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                  entry_aij += fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeValue(j, qp) *
+                               fe_srf_data.JxW(qp);
                 Acell[g][i][j] += aval[g] / bval[g] * entry_aij;
               } // for fj
             }   // for fi
@@ -666,12 +679,12 @@ Solver::Assemble_A_bext()
   }
 
   //  PetscViewer viewer;
-  //  PetscViewerASCIIOpen(PETSC_COMM_WORLD,"A2_before_bc.m",&viewer);
+  //  PetscViewerASCIIOpen(opensn::mpi_comm,"A2_before_bc.m",&viewer);
   //  PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_MATLAB);
   //  MatView(A[0],viewer);
   //  PetscViewerPopFormat(viewer);
   //  PetscViewerDestroy(&viewer);
-  //  PetscViewerASCIIOpen(PETSC_COMM_WORLD,"bext2_before_bc.m",&viewer);
+  //  PetscViewerASCIIOpen(opensn::mpi_comm,"bext2_before_bc.m",&viewer);
   //  PetscViewerPushFormat(viewer, PETSC_VIEWER_ASCII_MATLAB);
   //  VecView(bext[0],viewer);
   //  PetscViewerPopFormat(viewer);
@@ -758,7 +771,7 @@ Solver::Execute()
                 << std::setprecision(7) << thermal_error_all << std::endl;
 
     ++thermal_iteration;
-  } while ((thermal_error_all > thermal_tol) && (thermal_iteration < max_thermal_iters));
+  } while ((thermal_error_all > thermal_tol) and (thermal_iteration < max_thermal_iters));
 
   if (iverbose > 0)
   {
@@ -775,7 +788,8 @@ Solver::Execute()
 void
 Solver::Assemble_RHS(const unsigned int g, const int64_t verbose)
 {
-  if (verbose > 2) log.Log() << "\nAssemblying RHS for group " + std::to_string(g);
+  if (verbose > 2)
+    log.Log() << "\nAssemblying RHS for group " + std::to_string(g);
 
   // copy the external source vector for group g into b
   VecSet(b_, 0.0);
@@ -786,7 +800,7 @@ Solver::Assemble_RHS(const unsigned int g, const int64_t verbose)
   for (const auto& cell : mg_diffusion::Solver::grid_ptr_->local_cells)
   {
     const auto& cell_mapping = sdm.GetCellMapping(cell);
-    const auto qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
     const size_t num_nodes = cell_mapping.NumNodes();
 
     const auto& xs = matid_to_xs_map.at(cell.material_id_);
@@ -810,9 +824,9 @@ Solver::Assemble_RHS(const unsigned int g, const int64_t verbose)
 
             // get flux at node j
             const double flxj_gp = xlocal[jmap];
-            for (size_t qp : qp_data.QuadraturePointIndices())
-              inscatter_g += sigma_sm * flxj_gp * qp_data.ShapeValue(i, qp) *
-                             qp_data.ShapeValue(j, qp) * qp_data.JxW(qp);
+            for (size_t qp : fe_vol_data.QuadraturePointIndices())
+              inscatter_g += sigma_sm * flxj_gp * fe_vol_data.ShapeValue(i, qp) *
+                             fe_vol_data.ShapeValue(j, qp) * fe_vol_data.JxW(qp);
           } // for j
           // add inscattering value to vector
           VecSetValue(b_, imap, inscatter_g, ADD_VALUES);
@@ -829,7 +843,8 @@ Solver::Assemble_RHS(const unsigned int g, const int64_t verbose)
 void
 Solver::SolveOneGroupProblem(const unsigned int g, const int64_t verbose)
 {
-  if (verbose > 1) log.Log() << "Solving group: " << g;
+  if (verbose > 1)
+    log.Log() << "Solving group: " << g;
 
   KSPSetOperators(petsc_solver_.ksp, A_[g], A_[g]);
   KSPSolve(petsc_solver_.ksp, b_, x_[g]);
@@ -837,13 +852,15 @@ Solver::SolveOneGroupProblem(const unsigned int g, const int64_t verbose)
   // this is required to compute the inscattering RHS correctly in parallel
   CommunicateGhostEntries(x_[g]);
 
-  if (verbose > 1) log.Log() << "Done solving group " << g;
+  if (verbose > 1)
+    log.Log() << "Done solving group " << g;
 }
 
 void
 Solver::Assemble_RHS_TwoGrid(const int64_t verbose)
 {
-  if (verbose > 2) log.Log() << "\nAssemblying RHS for two-grid ";
+  if (verbose > 2)
+    log.Log() << "\nAssemblying RHS for two-grid ";
 
   VecSet(b_, 0.0);
 
@@ -852,7 +869,7 @@ Solver::Assemble_RHS_TwoGrid(const int64_t verbose)
   for (const auto& cell : grid_ptr_->local_cells)
   {
     const auto& cell_mapping = sdm.GetCellMapping(cell);
-    const auto qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
     const size_t num_nodes = cell_mapping.NumNodes();
 
     const auto& S = matid_to_xs_map.at(cell.material_id_)->TransferMatrix(0);
@@ -879,9 +896,9 @@ Solver::Assemble_RHS_TwoGrid(const int64_t verbose)
 
               // get flux at node j
               const double delta_flxj_gp = xlocal[jmap] - xlocal_old[jmap];
-              for (size_t qp : qp_data.QuadraturePointIndices())
-                inscatter_g += sigma_sm * delta_flxj_gp * qp_data.ShapeValue(i, qp) *
-                               qp_data.ShapeValue(j, qp) * qp_data.JxW(qp);
+              for (size_t qp : fe_vol_data.QuadraturePointIndices())
+                inscatter_g += sigma_sm * delta_flxj_gp * fe_vol_data.ShapeValue(i, qp) *
+                               fe_vol_data.ShapeValue(j, qp) * fe_vol_data.JxW(qp);
             } // for j
             // add inscattering value to vector
             VecSetValue(b_, imap, inscatter_g, ADD_VALUES);
@@ -902,7 +919,8 @@ Solver::Assemble_RHS_TwoGrid(const int64_t verbose)
 void
 Solver::Update_Flux_With_TwoGrid(const int64_t verbose)
 {
-  if (verbose > 2) log.Log() << "\nUpdating Thermal fluxes from two-grid";
+  if (verbose > 2)
+    log.Log() << "\nUpdating Thermal fluxes from two-grid";
 
   const auto& grid = *grid_ptr_;
   const auto& sdm = *sdm_ptr_;

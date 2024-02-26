@@ -1,7 +1,6 @@
 #include "framework/lua.h"
 
 #include "framework/mesh/surface_mesh/surface_mesh.h"
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 
 #include "framework/runtime.h"
 
@@ -11,19 +10,19 @@
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(chiSurfaceMeshCreate);
+RegisterLuaFunctionAsIs(SurfaceMeshCreate);
 
 int
-chiSurfaceMeshCreate(lua_State* L)
+SurfaceMeshCreate(lua_State* L)
 {
   auto new_mesh = new SurfaceMesh;
 
-  opensn::surface_mesh_stack.emplace_back(new_mesh);
+  opensn::object_stack.emplace_back(new_mesh);
 
-  size_t index = opensn::surface_mesh_stack.size() - 1;
-  lua_pushnumber(L, static_cast<lua_Number>(index));
+  size_t index = opensn::object_stack.size() - 1;
+  lua_pushinteger(L, static_cast<lua_Integer>(index));
 
-  opensn::log.LogAllVerbose2() << "chiSurfaceMeshCreate: "
+  opensn::log.LogAllVerbose2() << "SurfaceMeshCreate: "
                                   "Empty SurfaceMesh object, "
                                << index << ", created" << std::endl;
 

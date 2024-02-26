@@ -1,14 +1,9 @@
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
-
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_continuous.h"
 #include "framework/math/petsc_utils/petsc_utils.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
-
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-
 #include "lua/framework/console/console.h"
 
 using namespace opensn;
@@ -18,17 +13,17 @@ namespace unit_sim_tests
 
 /**This is a simple test of the Finite Volume spatial discretization applied
  * to Laplace's problem. */
-ParameterBlock chiSimTest03_PWLC(const InputParameters& params);
+ParameterBlock SimTest03_PWLC(const InputParameters& params);
 
-RegisterWrapperFunction(chi_unit_sim_tests, chiSimTest03_PWLC, nullptr, chiSimTest03_PWLC);
+RegisterWrapperFunctionNamespace(unit_sim_tests, SimTest03_PWLC, nullptr, SimTest03_PWLC);
 
 ParameterBlock
-chiSimTest03_PWLC(const InputParameters&)
+SimTest03_PWLC(const InputParameters&)
 {
   opensn::log.Log() << "Coding Tutorial 3";
 
   // Get grid
-  auto grid_ptr = GetCurrentHandler().GetGrid();
+  auto grid_ptr = GetCurrentMesh();
   const auto& grid = *grid_ptr;
 
   opensn::log.Log() << "Global num cells: " << grid.GetGlobalNumberOfCells();
@@ -66,7 +61,7 @@ chiSimTest03_PWLC(const InputParameters&)
   for (const auto& cell : grid.local_cells)
   {
     const auto& cell_mapping = sdm.GetCellMapping(cell);
-    const auto qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
 
     const size_t num_nodes = cell_mapping.NumNodes();
     MatDbl Acell(num_nodes, VecDbl(num_nodes, 0.0));
@@ -77,14 +72,15 @@ chiSimTest03_PWLC(const InputParameters&)
       for (size_t j = 0; j < num_nodes; ++j)
       {
         double entry_aij = 0.0;
-        for (size_t qp : qp_data.QuadraturePointIndices())
+        for (size_t qp : fe_vol_data.QuadraturePointIndices())
         {
-          entry_aij += qp_data.ShapeGrad(i, qp).Dot(qp_data.ShapeGrad(j, qp)) * qp_data.JxW(qp);
+          entry_aij +=
+            fe_vol_data.ShapeGrad(i, qp).Dot(fe_vol_data.ShapeGrad(j, qp)) * fe_vol_data.JxW(qp);
         } // for qp
         Acell[i][j] = entry_aij;
       } // for j
-      for (size_t qp : qp_data.QuadraturePointIndices())
-        cell_rhs[i] += 1.0 * qp_data.ShapeValue(i, qp) * qp_data.JxW(qp);
+      for (size_t qp : fe_vol_data.QuadraturePointIndices())
+        cell_rhs[i] += 1.0 * fe_vol_data.ShapeValue(i, qp) * fe_vol_data.JxW(qp);
     } // for i
 
     // Flag nodes for being on dirichlet boundary
@@ -93,7 +89,8 @@ chiSimTest03_PWLC(const InputParameters&)
     for (size_t f = 0; f < num_faces; ++f)
     {
       const auto& face = cell.faces_[f];
-      if (face.has_neighbor_) continue;
+      if (face.has_neighbor_)
+        continue;
 
       const size_t num_face_nodes = face.vertex_ids_.size();
       for (size_t fi = 0; fi < num_face_nodes; ++fi)
@@ -120,7 +117,8 @@ chiSimTest03_PWLC(const InputParameters&)
       {
         for (size_t j = 0; j < num_nodes; ++j)
         {
-          if (not node_boundary_flag[j]) MatSetValue(A, imap[i], imap[j], Acell[i][j], ADD_VALUES);
+          if (not node_boundary_flag[j])
+            MatSetValue(A, imap[i], imap[j], Acell[i][j], ADD_VALUES);
         } // for j
         VecSetValue(b, imap[i], cell_rhs[i], ADD_VALUES);
       }

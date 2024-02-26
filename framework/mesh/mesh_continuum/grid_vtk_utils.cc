@@ -296,14 +296,16 @@ ConsolidateGridBlocks(std::vector<vtkUGridPtrAndName>& ugrid_blocks,
     const bool has_pnts_gids = ugrid->GetPointData()->GetGlobalIds();
     const bool has_block_ids = ugrid->GetCellData()->GetArray(block_id_array_name.c_str());
 
-    if ((not has_cell_gids) or (not has_pnts_gids)) has_global_ids = false;
+    if ((not has_cell_gids) or (not has_pnts_gids))
+      has_global_ids = false;
 
     if (not has_block_ids)
       throw std::logic_error(fname + ": Grid block " + ugrid_name.second + " does not have \"" +
                              block_id_array_name + "\" array.");
   } // for grid_name pairs
 
-  if (has_global_ids) log.Log() << fname << ": blocks have global-id arrays";
+  if (has_global_ids)
+    log.Log() << fname << ": blocks have global-id arrays";
 
   // Consolidate the blocks
   auto append = vtkSmartPointer<vtkAppendFilter>::New();
@@ -378,12 +380,14 @@ GetBlocksOfDesiredDimension(std::vector<vtkUGridPtrAndName>& ugrid_blocks, int d
   std::vector<vtkUGridPtrAndName> desired_blocks;
   for (auto& ugrid : ugrid_blocks)
   {
-    if (ugrid.first->GetNumberOfCells() == 0) continue;
+    if (ugrid.first->GetNumberOfCells() == 0)
+      continue;
 
     std::vector<vtkUGridPtrAndName> single_grid = {ugrid};
     int block_dimension = FindHighestDimension(single_grid);
 
-    if (block_dimension == desired_dimension) desired_blocks.push_back(ugrid);
+    if (block_dimension == desired_dimension)
+      desired_blocks.push_back(ugrid);
   }
 
   return desired_blocks;
@@ -399,7 +403,8 @@ BuildBlockCellExtents(std::vector<vtkUGridPtrAndName>& ugrid_blocks, const int d
   {
     uint64_t num_cells = ugrid.first->GetNumberOfCells();
 
-    if (num_cells == 0) continue;
+    if (num_cells == 0)
+      continue;
 
     if (ugrid.first->GetCell(0)->GetCellDimension() == desired_dimension)
     {
@@ -418,7 +423,8 @@ SetBlockIDArrays(std::vector<vtkUGridPtrAndName>& ugrid_blocks)
   {
     const vtkIdType num_cells = ugrid.first->GetNumberOfCells();
 
-    if (num_cells == 0) continue;
+    if (num_cells == 0)
+      continue;
 
     vtkNew<vtkIntArray> block_id_list;
     block_id_list->SetName("BlockID");
@@ -427,7 +433,8 @@ SetBlockIDArrays(std::vector<vtkUGridPtrAndName>& ugrid_blocks)
       block_id_list->InsertNextValue(block_id);
 
     auto arr = ugrid.first->GetCellData()->GetArray("BlockID");
-    if (not arr) ugrid.first->GetCellData()->RemoveArray("BlockID");
+    if (not arr)
+      ugrid.first->GetCellData()->RemoveArray("BlockID");
 
     ugrid.first->GetCellData()->AddArray(block_id_list);
     ++block_id;
@@ -456,7 +463,7 @@ BuildCellMaterialIDsFromField(vtkUGridPtr& ugrid,
     auto cell_data = ugrid->GetCellData();
     const auto vtk_abstract_array_ptr = cell_data->GetAbstractArray(field_name.c_str());
 
-    if (!vtk_abstract_array_ptr)
+    if (not vtk_abstract_array_ptr)
     {
       log.Log0Warning() << "The VTU file : \"" << file_name << "\" "
                         << "does not contain a vtkCellData field of name : \"" << field_name
@@ -465,7 +472,7 @@ BuildCellMaterialIDsFromField(vtkUGridPtr& ugrid,
     }
 
     cell_id_array_ptr = vtkArrayDownCast<vtkDataArray>(vtk_abstract_array_ptr);
-    if (!cell_id_array_ptr)
+    if (not cell_id_array_ptr)
     {
       log.Log0Warning() << "The VTU file : \"" << file_name << "\" "
                         << "with vtkCellData field of name : \"" << field_name << "\" "
@@ -539,7 +546,8 @@ PrepareVtkUnstructuredGrid(const MeshContinuum& grid, bool discontinuous)
   int64_t node_count = 0;
   for (const auto& cell : grid.local_cells)
   {
-    if (discontinuous) UploadCellGeometryDiscontinuous(grid, cell, node_count, points, ugrid);
+    if (discontinuous)
+      UploadCellGeometryDiscontinuous(grid, cell, node_count, points, ugrid);
     else
     {
       for (uint64_t vid : cell.vertex_ids_)
@@ -569,10 +577,10 @@ WritePVTUFiles(vtkNew<vtkUnstructuredGrid>& ugrid, const std::string& file_base_
   // Construct file name
   std::string base_filename = std::string(file_base_name);
   std::string location_filename = base_filename + std::string("_") +
-                                  std::to_string(opensn::mpi.location_id) + std::string(".vtu");
+                                  std::to_string(opensn::mpi_comm.rank()) + std::string(".vtu");
 
   // Write master file
-  if (opensn::mpi.location_id == 0)
+  if (opensn::mpi_comm.rank() == 0)
   {
     std::string pvtu_file_name = base_filename + std::string(".pvtu");
 
@@ -580,14 +588,14 @@ WritePVTUFiles(vtkNew<vtkUnstructuredGrid>& ugrid, const std::string& file_base_
 
     pgrid_writer->EncodeAppendedDataOff();
     pgrid_writer->SetFileName(pvtu_file_name.c_str());
-    pgrid_writer->SetNumberOfPieces(opensn::mpi.process_count);
-    pgrid_writer->SetStartPiece(opensn::mpi.location_id);
-    pgrid_writer->SetEndPiece(opensn::mpi.process_count - 1);
+    pgrid_writer->SetNumberOfPieces(opensn::mpi_comm.size());
+    pgrid_writer->SetStartPiece(opensn::mpi_comm.rank());
+    pgrid_writer->SetEndPiece(opensn::mpi_comm.size() - 1);
     pgrid_writer->SetInputData(ugrid);
 
     pgrid_writer->Write();
   }
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 
   // Serial output each piece
   auto grid_writer = vtkSmartPointer<vtkXMLUnstructuredGridWriter>::New();

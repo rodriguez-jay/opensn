@@ -1,16 +1,11 @@
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/mesh/raytrace/raytracer.h"
-
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_discontinuous.h"
 #include "framework/math/random_number_generation/random_number_generator.h"
 #include "framework/math/quadratures/legendre_poly/legendrepoly.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
-
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-
 #include "lua/framework/console/console.h"
 
 using namespace opensn;
@@ -18,18 +13,18 @@ using namespace opensn;
 namespace unit_sim_tests
 {
 
-ParameterBlock chiSimTest93_RayTracing(const InputParameters& params);
+ParameterBlock SimTest93_RayTracing(const InputParameters& params);
 
-RegisterWrapperFunction(chi_unit_tests, chiSimTest93_RayTracing, nullptr, chiSimTest93_RayTracing);
+RegisterWrapperFunctionNamespace(unit_tests, SimTest93_RayTracing, nullptr, SimTest93_RayTracing);
 
 ParameterBlock
-chiSimTest93_RayTracing(const InputParameters&)
+SimTest93_RayTracing(const InputParameters&)
 {
-  const std::string fname = "chiSimTest93_RayTracing";
-  opensn::log.Log() << "chiSimTest93_RayTracing";
+  const std::string fname = "SimTest93_RayTracing";
+  opensn::log.Log() << "SimTest93_RayTracing";
 
   // Get grid
-  auto grid_ptr = GetCurrentHandler().GetGrid();
+  auto grid_ptr = GetCurrentMesh();
   const auto& grid = *grid_ptr;
 
   opensn::log.Log() << "Global num cells: " << grid.GetGlobalNumberOfCells();
@@ -106,7 +101,8 @@ chiSimTest93_RayTracing(const InputParameters&)
       source_cell_ptr = &cell;
       break;
     }
-  if (source_cell_ptr == nullptr) throw std::logic_error(fname + ": Source cell not found.");
+  if (source_cell_ptr == nullptr)
+    throw std::logic_error(fname + ": Source cell not found.");
 
   const uint64_t source_cell_id = source_cell_ptr->global_id_;
 
@@ -226,7 +222,8 @@ chiSimTest93_RayTracing(const InputParameters&)
   const size_t num_particles = 100'000;
   for (size_t n = 0; n < num_particles; ++n)
   {
-    if (n % size_t(num_particles / 10.0) == 0) std::cout << "#particles = " << n << "\n";
+    if (n % size_t(num_particles / 10.0) == 0)
+      std::cout << "#particles = " << n << "\n";
     // Create the particle
     const auto omega = SampleRandomDirection();
     Particle particle{source_pos, omega, 0, 1.0, source_cell_id, true};
@@ -256,7 +253,8 @@ chiSimTest93_RayTracing(const InputParameters&)
         const auto& f = destination_info.destination_face_index;
         const auto& current_cell_face = cell.faces_[f];
 
-        if (current_cell_face.has_neighbor_) particle.cell_id = current_cell_face.neighbor_id_;
+        if (current_cell_face.has_neighbor_)
+          particle.cell_id = current_cell_face.neighbor_id_;
         else
           particle.alive = false; // Death at the boundary
       }
@@ -281,14 +279,15 @@ chiSimTest93_RayTracing(const InputParameters&)
   {
     // Compute mass matrix and its inverse
     const auto& cell_mapping = sdm.GetCellMapping(cell);
-    const auto& qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto& fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
     const size_t num_nodes = cell_mapping.NumNodes();
 
     MatDbl M(num_nodes, VecDbl(num_nodes, 0.0));
-    for (auto qp : qp_data.QuadraturePointIndices())
+    for (auto qp : fe_vol_data.QuadraturePointIndices())
       for (size_t i = 0; i < num_nodes; ++i)
         for (size_t j = 0; j < num_nodes; ++j)
-          M[i][j] += qp_data.ShapeValue(i, qp) * qp_data.ShapeValue(j, qp) * qp_data.JxW(qp);
+          M[i][j] +=
+            fe_vol_data.ShapeValue(i, qp) * fe_vol_data.ShapeValue(j, qp) * fe_vol_data.JxW(qp);
 
     auto M_inv = Inverse(M);
 

@@ -7,9 +7,7 @@
 
 #include "lua/framework/console/console.h"
 
-#include "framework/mpi/mpi.h"
-
-#include "framework/mpi/mpi_utils_map_all2all.h"
+#include "framework/mpi/mpi_utils.h"
 
 #include <map>
 
@@ -18,12 +16,12 @@ using namespace opensn;
 namespace unit_tests
 {
 
-ParameterBlock chi_data_types_Test00(const InputParameters& params);
+ParameterBlock data_types_Test00(const InputParameters& params);
 
-RegisterWrapperFunction(chi_unit_tests, chi_data_types_Test00, nullptr, chi_data_types_Test00);
+RegisterWrapperFunctionNamespace(unit_tests, data_types_Test00, nullptr, data_types_Test00);
 
 ParameterBlock
-chi_data_types_Test00(const InputParameters&)
+data_types_Test00(const InputParameters&)
 {
   bool passed = true;
 
@@ -74,7 +72,7 @@ chi_data_types_Test00(const InputParameters&)
   // serialization
   opensn::log.Log() << "Testing ByteArray "
                        "Serialization/DeSerialization\n";
-  if (opensn::mpi.process_count == 2)
+  if (opensn::mpi_comm.size() == 2)
   {
 
     std::map<int /*pid*/, ByteArray> send_data;
@@ -151,7 +149,7 @@ chi_data_types_Test00(const InputParameters&)
       }
     }
 
-    if (opensn::mpi.location_id == 0)
+    if (opensn::mpi_comm.rank() == 0)
     {
       send_data[1].Append(poster_child_cell.Serialize());
       send_data[1].Append(poster_child_cell.Serialize().Data());
@@ -162,8 +160,7 @@ chi_data_types_Test00(const InputParameters&)
     for (const auto& pid_byte_array : send_data)
       send_data_bytes[pid_byte_array.first] = pid_byte_array.second.Data();
 
-    std::map<int /*pid*/, std::vector<std::byte>> recv_data_bytes =
-      MapAllToAll(send_data_bytes, MPI_BYTE);
+    std::map<int /*pid*/, std::vector<std::byte>> recv_data_bytes = MapAllToAll(send_data_bytes);
 
     for (const auto& pid_vec_bytes : recv_data_bytes)
     {
@@ -259,7 +256,7 @@ chi_data_types_Test00(const InputParameters&)
     }
   } // if #procs=2
   else
-    throw std::invalid_argument("chi_unit_tests::Test_chi_data_types requires"
+    throw std::invalid_argument("unit_tests::Test_data_types requires"
                                 " at least 2 MPI processes.");
 
   if (not passed)

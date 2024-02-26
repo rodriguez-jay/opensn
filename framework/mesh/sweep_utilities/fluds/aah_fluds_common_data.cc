@@ -74,7 +74,7 @@ AAH_FLUDSCommonData::InitializeAlphaElements(const SPDS& spds,
   } // for csoi
 
   log.Log(Logger::LOG_LVL::LOG_0VERBOSE_2) << "Done with Slot Dynamics.";
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 
   // Populate boundary dependencies
   for (auto bndry : location_boundary_dependency_set)
@@ -105,7 +105,7 @@ AAH_FLUDSCommonData::InitializeAlphaElements(const SPDS& spds,
   delayed_local_psi_Gn_block_strideG = delayed_local_psi_Gn_block_stride * /*G=*/1;
 
   log.Log(Logger::LOG_LVL::LOG_0VERBOSE_2) << "Done with Local Incidence mapping.";
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 
   // Clean up
   so_cell_outb_face_slot_indices.shrink_to_fit();
@@ -163,21 +163,22 @@ AAH_FLUDSCommonData::SlotDynamics(const Cell& cell,
           int c = cell.local_id_;
           int d = face.GetNeighborLocalID(grid);
 
-          if ((a == c) && (b == d))
+          if ((a == c) and (b == d))
           {
             is_cyclic = true;
             inco_face_face_category.back() *= -1;
             inco_face_face_category.back() -= 1;
           }
 
-          if ((a == d) && (b == c))
+          if ((a == d) and (b == c))
           {
             is_cyclic = true;
             inco_face_face_category.back() *= -1;
             inco_face_face_category.back() -= 1;
           }
         }
-        if (is_cyclic) continue;
+        if (is_cyclic)
+          continue;
 
         // Find associated face for dof mapping and lock box
         auto ass_face = (short)face.GetNeighborAssociatedFace(grid);
@@ -186,7 +187,7 @@ AAH_FLUDSCommonData::SlotDynamics(const Cell& cell,
         bool found = false;
         for (auto& lock_box_slot : lock_box)
         {
-          if ((lock_box_slot.first == face.neighbor_id_) && (lock_box_slot.second == ass_face))
+          if ((lock_box_slot.first == face.neighbor_id_) and (lock_box_slot.second == ass_face))
           {
             lock_box_slot.first = -1;
             lock_box_slot.second = -1;
@@ -194,7 +195,7 @@ AAH_FLUDSCommonData::SlotDynamics(const Cell& cell,
             break;
           }
         }
-        if (!found)
+        if (not found)
         {
           log.LogAllError() << "Lock-box location not found in call to "
                             << "InitializeAlphaElements. Local Cell " << cell.local_id_ << " face "
@@ -210,7 +211,8 @@ AAH_FLUDSCommonData::SlotDynamics(const Cell& cell,
       {
         const Vector3& face_norm = face.normal_;
 
-        if (face_norm.Dot(ihat) > 0.999) location_boundary_dependency_set.insert(0);
+        if (face_norm.Dot(ihat) > 0.999)
+          location_boundary_dependency_set.insert(0);
         else if (face_norm.Dot(ihat) < -0.999)
           location_boundary_dependency_set.insert(1);
         else if (face_norm.Dot(jhat) > 0.999)
@@ -263,14 +265,14 @@ AAH_FLUDSCommonData::SlotDynamics(const Cell& cell,
           int c = cell.local_id_;
           int d = face.GetNeighborLocalID(grid);
 
-          if ((a == c) && (b == d))
+          if ((a == c) and (b == d))
           {
             temp_lock_box = &delayed_lock_box;
             outb_face_face_category.back() *= -1;
             outb_face_face_category.back() -= 1;
           }
 
-          if ((a == d) && (b == c))
+          if ((a == d) and (b == c))
           {
             temp_lock_box = &delayed_lock_box;
             outb_face_face_category.back() *= -1;
@@ -282,7 +284,8 @@ AAH_FLUDSCommonData::SlotDynamics(const Cell& cell,
       LockBox& lock_box = *temp_lock_box;
 
       // Check if this face is the max size
-      if (num_face_dofs > largest_face) largest_face = static_cast<int>(num_face_dofs);
+      if (num_face_dofs > largest_face)
+        largest_face = static_cast<int>(num_face_dofs);
 
       // Find a open slot
       bool slot_found = false;
@@ -299,7 +302,7 @@ AAH_FLUDSCommonData::SlotDynamics(const Cell& cell,
       }
 
       // If an open slot was not found push a new one
-      if (!slot_found)
+      if (not slot_found)
       {
         outb_face_slot_indices.push_back(lock_box.size());
         lock_box.push_back(std::pair<int, short>(cell_g_index, f));
@@ -356,7 +359,7 @@ AAH_FLUDSCommonData::AddFaceViewToDepLocI(int deplocI,
   }
 
   // If the cell is not there yet
-  if (!cell_already_there)
+  if (not cell_already_there)
   {
     CompactCellView new_cell_view;
     new_cell_view.first = cell_g_index;
@@ -404,7 +407,10 @@ AAH_FLUDSCommonData::LocalIncidentMapping(const Cell& cell,
         int out_f = -1;
         for (size_t af = 0; af < adj_cell.faces_.size(); ++af)
         {
-          if (face_oris[af] == FaceOrientation::OUTGOING) { ++out_f; }
+          if (face_oris[af] == FaceOrientation::OUTGOING)
+          {
+            ++out_f;
+          }
 
           if (af == ass_face)
           {
@@ -445,8 +451,8 @@ AAH_FLUDSCommonData::InitializeBetaElements(const SPDS& spds, int tag_index /*=0
   // Send delayed successor information
   const auto& location_successors = spds.GetLocationSuccessors();
   const auto& delayed_location_successors = spds.GetDelayedLocationSuccessors();
-  std::vector<MPI_Request> send_requests;
-  send_requests.resize(location_successors.size(), MPI_Request());
+  std::vector<mpi::Request> send_requests;
+  send_requests.resize(location_successors.size());
   std::vector<std::vector<int>> multi_face_indices(location_successors.size(), std::vector<int>());
   for (int deplocI = 0; deplocI < location_successors.size(); deplocI++)
   {
@@ -454,19 +460,14 @@ AAH_FLUDSCommonData::InitializeBetaElements(const SPDS& spds, int tag_index /*=0
 
     std::vector<int>::const_iterator delayed_successor =
       std::find(delayed_location_successors.begin(), delayed_location_successors.end(), locJ);
-    if ((delayed_successor == delayed_location_successors.end())) continue;
+    if ((delayed_successor == delayed_location_successors.end()))
+      continue;
 
     std::vector<CompactCellView> cell_views = deplocI_cell_views[deplocI];
 
     SerializeCellInfo(cell_views, multi_face_indices[deplocI], deplocI_face_dof_count[deplocI]);
 
-    MPI_Isend(multi_face_indices[deplocI].data(),
-              static_cast<int>(multi_face_indices[deplocI].size()),
-              MPI_INT,
-              locJ,
-              101 + tag_index,
-              mpi.comm,
-              &send_requests[deplocI]);
+    send_requests[deplocI] = mpi_comm.isend(locJ, 101 + tag_index, multi_face_indices[deplocI]);
 
     // TODO: Watch eager limits on sent data
 
@@ -483,22 +484,8 @@ AAH_FLUDSCommonData::InitializeBetaElements(const SPDS& spds, int tag_index /*=0
   {
     int locJ = delayed_location_dependencies[prelocI];
 
-    MPI_Status probe_status;
-    MPI_Probe(locJ, 101 + tag_index, mpi.comm, &probe_status);
-
-    int amount_to_receive = 0;
-    MPI_Get_count(&probe_status, MPI_INT, &amount_to_receive);
-
     std::vector<int> face_indices;
-    face_indices.resize(amount_to_receive, 0);
-
-    MPI_Recv(face_indices.data(),
-             amount_to_receive,
-             MPI_INT,
-             locJ,
-             101 + tag_index,
-             mpi.comm,
-             MPI_STATUS_IGNORE);
+    mpi_comm.recv(locJ, 101 + tag_index, face_indices);
 
     DeSerializeCellInfo(
       delayed_prelocI_cell_views[prelocI], &face_indices, delayed_prelocI_face_dof_count[prelocI]);
@@ -518,22 +505,8 @@ AAH_FLUDSCommonData::InitializeBetaElements(const SPDS& spds, int tag_index /*=0
   {
     int locJ = location_dependencies[prelocI];
 
-    MPI_Status probe_status;
-    MPI_Probe(locJ, 101 + tag_index, mpi.comm, &probe_status);
-
-    int amount_to_receive = 0;
-    MPI_Get_count(&probe_status, MPI_INT, &amount_to_receive);
-
     std::vector<int> face_indices;
-    face_indices.resize(amount_to_receive, 0);
-
-    MPI_Recv(face_indices.data(),
-             amount_to_receive,
-             MPI_INT,
-             locJ,
-             101 + tag_index,
-             mpi.comm,
-             MPI_STATUS_IGNORE);
+    mpi_comm.recv(locJ, 101 + tag_index, face_indices);
 
     DeSerializeCellInfo(
       prelocI_cell_views[prelocI], &face_indices, prelocI_face_dof_count[prelocI]);
@@ -546,19 +519,14 @@ AAH_FLUDSCommonData::InitializeBetaElements(const SPDS& spds, int tag_index /*=0
 
     auto delayed_successor =
       std::find(delayed_location_successors.begin(), delayed_location_successors.end(), locJ);
-    if ((delayed_successor != delayed_location_successors.end())) continue;
+    if ((delayed_successor != delayed_location_successors.end()))
+      continue;
 
     std::vector<CompactCellView> cell_views = deplocI_cell_views[deplocI];
 
     SerializeCellInfo(cell_views, multi_face_indices[deplocI], deplocI_face_dof_count[deplocI]);
 
-    MPI_Isend(multi_face_indices[deplocI].data(),
-              static_cast<int>(multi_face_indices[deplocI].size()),
-              MPI_INT,
-              locJ,
-              101 + tag_index,
-              mpi.comm,
-              &send_requests[deplocI]);
+    send_requests[deplocI] = mpi_comm.isend(locJ, 101 + tag_index, multi_face_indices[deplocI]);
 
     // TODO: Watch eager limits on sent data
 
@@ -568,7 +536,7 @@ AAH_FLUDSCommonData::InitializeBetaElements(const SPDS& spds, int tag_index /*=0
 
   // Verify sends completed
   for (int deplocI = 0; deplocI < location_successors.size(); deplocI++)
-    MPI_Wait(&send_requests[deplocI], MPI_STATUS_IGNORE);
+    mpi::wait(send_requests[deplocI]);
   multi_face_indices.clear();
   multi_face_indices.shrink_to_fit();
 
@@ -755,7 +723,8 @@ AAH_FLUDSCommonData::NonLocalIncidentMapping(const Cell& cell, const SPDS& spds)
 
             std::set<int> afvids(adj_face.second.begin(), adj_face.second.end());
 
-            if (cfvids != afvids) face_matches = false;
+            if (cfvids != afvids)
+              face_matches = false;
 
             if (face_matches)
             {
@@ -786,7 +755,7 @@ AAH_FLUDSCommonData::NonLocalIncidentMapping(const Cell& cell, const SPDS& spds)
               }
             }
 
-            if (!match_found)
+            if (not match_found)
             {
               log.LogAll() << "Associated vertex not found in call to "
                               "InitializeBetaElements";
@@ -845,7 +814,7 @@ AAH_FLUDSCommonData::NonLocalIncidentMapping(const Cell& cell, const SPDS& spds)
                 }
               }
 
-              if (!match_found)
+              if (not match_found)
               {
                 face_matches = false;
                 break;
@@ -881,7 +850,7 @@ AAH_FLUDSCommonData::NonLocalIncidentMapping(const Cell& cell, const SPDS& spds)
               }
             }
 
-            if (!match_found)
+            if (not match_found)
             {
               log.LogAll() << "Associated vertex not found in call to "
                               "InitializeBetaElements";

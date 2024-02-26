@@ -1,7 +1,6 @@
 #include "modules/linear_boltzmann_solvers/a_lbs_solver/lbs_solver.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-#include "framework/mpi/mpi.h"
 #include "framework/memory_usage.h"
 #include "framework/object_factory.h"
 #include "modules/linear_boltzmann_solvers/a_lbs_solver/iterative_methods/wgs_context.h"
@@ -10,7 +9,6 @@
 #include "modules/linear_boltzmann_solvers/a_lbs_solver/acceleration/diffusion_mip_solver.h"
 #include "modules/linear_boltzmann_solvers/a_lbs_solver/groupset/lbs_groupset.h"
 #include "modules/linear_boltzmann_solvers/a_lbs_solver/point_source/point_source.h"
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/mesh/sweep_utilities/sweep_boundary/boundary_reflecting.h"
 #include "framework/mesh/sweep_utilities/sweep_boundary/boundary_vacuum.h"
@@ -19,7 +17,8 @@
 #include "framework/math/time_integrations/time_integration.h"
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_discontinuous.h"
 #include "framework/physics/physics_material/physics_material.h"
-#include "framework/physics/field_function/field_function_grid_based.h"
+#include "framework/physics/physics_material/multi_group_xs/adjoint_mgxs.h"
+#include "framework/field_functions/field_function_grid_based.h"
 #include <algorithm>
 #include <iomanip>
 #include <sys/stat.h>
@@ -40,9 +39,9 @@ std::map<uint64_t, std::string> LBSSolver::supported_boundary_ids = {
 
 // OpenSnRegisterObject(lbs, LBSSolver); Should not be constructible
 
-OpenSnRegisterSyntaxBlock(lbs, OptionsBlock, LBSSolver::OptionsBlock);
+OpenSnRegisterSyntaxBlockInNamespace(lbs, OptionsBlock, LBSSolver::OptionsBlock);
 
-OpenSnRegisterSyntaxBlock(lbs, BoundaryOptionsBlock, LBSSolver::BoundaryOptionsBlock);
+OpenSnRegisterSyntaxBlockInNamespace(lbs, BoundaryOptionsBlock, LBSSolver::BoundaryOptionsBlock);
 
 LBSSolver::LBSSolver(const std::string& text_name) : Solver(text_name)
 {
@@ -53,22 +52,18 @@ LBSSolver::GetInputParameters()
 {
   InputParameters params = Solver::GetInputParameters();
 
-  // clang-format off
   params.ChangeExistingParamToOptional("name", "LBSDatablock");
 
-  params.AddRequiredParameter<size_t>(
-    "num_groups", "The total number of groups within the solver");
+  params.AddRequiredParameter<size_t>("num_groups", "The total number of groups within the solver");
 
-  params.AddRequiredParameterArray(
-    "groupsets",
-    "An array of blocks each specifying the input parameters for a "
-    "<TT>lbs::LBSGroupset</TT>.");
+  params.AddRequiredParameterArray("groupsets",
+                                   "An array of blocks each specifying the input parameters for a "
+                                   "<TT>lbs::LBSGroupset</TT>.");
   params.LinkParameterToBlock("groupsets", "lbs::LBSGroupset");
 
-  params.AddOptionalParameterBlock("options", ParameterBlock(),
-    "Block of options. See <TT>lbs::OptionsBlock</TT>.");
+  params.AddOptionalParameterBlock(
+    "options", ParameterBlock(), "Block of options. See <TT>lbs::OptionsBlock</TT>.");
   params.LinkParameterToBlock("options", "lbs::OptionsBlock");
-  // clang-format on
 
   return params;
 }
@@ -162,7 +157,8 @@ LBSSolver::MaxPrecursorsPerMaterial() const
 void
 LBSSolver::AddGroup(int id)
 {
-  if (id < 0) groups_.emplace_back(static_cast<int>(groups_.size()));
+  if (id < 0)
+    groups_.emplace_back(static_cast<int>(groups_.size()));
   else
     groups_.emplace_back(id);
 }
@@ -439,99 +435,118 @@ LBSSolver::OptionsBlock()
   params.SetGeneralDescription("Set options from a large list of parameters");
   params.SetDocGroup("LBSUtilities");
 
-  // clang-format off
-  params.AddOptionalParameter("spatial_discretization", "pwld",
-  "What spatial discretization to use. Currently only `\"pwld\"` "
-  "is supported");
-  params.AddOptionalParameter("scattering_order", 1,
-  "Defines the level of harmonic expansion for the scattering source.");
-  params.AddOptionalParameter("sweep_eager_limit", 32'000,
-  "The eager limit to be used in message size during sweep initialization.\n"
-  " This expects to be followed by a size in bytes (Max 64,0000)See note below."
-  "\\n\\n"
-  " ###Note on the Eager limit\n"
-  "The eager limit is the message size limit before which non-blocking MPI send"
-  "calls will execute without waiting for a matching receive call. The limit is"
-  "platform dependent but in general 64 kb. Some systems have 32 kb as a limit"
-  "and therefore we use that as a default limit in OpenSn. There is a fine"
-  "interplay between message size and the shear amount of messages that will be"
-  "sent. In general smaller messages tend to be more efficient, however, when"
-  "there are too many small messages being sent around the communication system"
-  "on the given platform will start to suffer. One can gain a small amount of"
-  "parallel efficiency by lowering this limit, however, there is a point where"
-  "the parallel efficiency will actually get worse so use with caution.");
-  params.AddOptionalParameter("read_restart_data", false,
-  "Flag indicating whether restart data is to be read.");
-  params.AddOptionalParameter("read_restart_folder_name", "YRestart",
-  "Folder name to use when reading restart data.");
-  params.AddOptionalParameter("read_restart_file_base", "restart",
-  "File base name to use when reading restart data.");
-  params.AddOptionalParameter("write_restart_data", false,
-  "Flag indicating whether restart data is to be written.");
-  params.AddOptionalParameter("write_restart_folder_name", "YRestart",
-  "Folder name to use when writing restart data.");
-  params.AddOptionalParameter("write_restart_file_base", "restart",
-  "File base name to use when writing restart data.");
-  params.AddOptionalParameter("write_restart_interval", 30.0,
-  "Interval at which restart data is to be written. Currently not implemented.");
-  params.AddOptionalParameter("use_precursors", false,
-  "Flag for using delayed neutron precursors.");
-  params.AddOptionalParameter("use_source_moments", false,
-  "Flag for ignoring fixed sources and selectively using source moments "
-  "obtained elsewhere.");
-  params.AddOptionalParameter("save_angular_flux", false,
-  "Flag indicating whether angular fluxes are to be stored or not.");
-  params.AddOptionalParameter("verbose_inner_iterations", true,
-  "Flag to control verbosity of inner iterations.");
-  params.AddOptionalParameter("verbose_outer_iterations", true,
-  "Flag to control verbosity of across-groupset iterations.");
-  params.AddOptionalParameter("verbose_ags_iterations", false,
-  "Flag to control verbosity of across-groupset iterations.");
-  params.AddOptionalParameter("power_field_function_on", false,
-  "Flag to control the creation of the power generation field function. If set "
-  "to `true` then a field function will be created with the general name "
-  "`<solver_name>_power_generation`.");
-  params.AddOptionalParameter("power_default_kappa", 3.20435e-11,
-  "Default `kappa` value (Energy released per fission) to use for power "
-  "generation when cross sections do not have `kappa` values. Default: "
-  "3.20435e-11 Joule (corresponding to 200 MeV per fission).");
-  params.AddOptionalParameter("power_normalization", -1.0,
-  "Power normalization factor to use. Supply a negative or zero number to turn "
-  "this off.");
-  params.AddOptionalParameter("field_function_prefix_option", "prefix",
-  "Prefix option on field function names. Default: `\"prefix\"`. Can be "
-  "`\"prefix\"` or "
-  "`\"solver_name\"`. "
-  "By default this option is `\"prefix\"` which means it uses the designated "
-  "\"prefix\" (another option), however, that is defaulted to nothing. "
-  "Therefore, default behavior is to export flux moment fields functions as "
-  "`phi_gXXX_mYYY` where `XXX` is the zero padded 3 digit group number and "
-  "similarly for `YYY`.");
-  params.AddOptionalParameter("field_function_prefix", "",
-  "Prefix to use on all field functions. Default: `\"\"`. "
-  "By default this option is empty but if specified then flux moments will "
-  "exported as `prefix_phi_gXXX_mYYY` where `XXX` is the zero padded 3 digit "
-  "group number and similarly for `YYY`. The underscore after \"prefix\" is "
-  "added automatically.");
-  params.AddOptionalParameterArray("boundary_conditions", {},
-  "An array contain tables for each boundary specification.");
+  params.AddOptionalParameter("spatial_discretization",
+                              "pwld",
+                              "What spatial discretization to use. Currently only `\"pwld\"` "
+                              "is supported");
+  params.AddOptionalParameter(
+    "scattering_order", 1, "Defines the level of harmonic expansion for the scattering source.");
+  params.AddOptionalParameter(
+    "sweep_eager_limit",
+    32'000,
+    "The eager limit to be used in message size during sweep initialization.\n"
+    " This expects to be followed by a size in bytes (Max 64,0000)See note below."
+    "\\n\\n"
+    " ###Note on the Eager limit\n"
+    "The eager limit is the message size limit before which non-blocking MPI send"
+    "calls will execute without waiting for a matching receive call. The limit is"
+    "platform dependent but in general 64 kb. Some systems have 32 kb as a limit"
+    "and therefore we use that as a default limit in OpenSn. There is a fine"
+    "interplay between message size and the shear amount of messages that will be"
+    "sent. In general smaller messages tend to be more efficient, however, when"
+    "there are too many small messages being sent around the communication system"
+    "on the given platform will start to suffer. One can gain a small amount of"
+    "parallel efficiency by lowering this limit, however, there is a point where"
+    "the parallel efficiency will actually get worse so use with caution.");
+  params.AddOptionalParameter(
+    "read_restart_data", false, "Flag indicating whether restart data is to be read.");
+  params.AddOptionalParameter(
+    "read_restart_folder_name", "YRestart", "Folder name to use when reading restart data.");
+  params.AddOptionalParameter(
+    "read_restart_file_base", "restart", "File base name to use when reading restart data.");
+  params.AddOptionalParameter(
+    "write_restart_data", false, "Flag indicating whether restart data is to be written.");
+  params.AddOptionalParameter(
+    "write_restart_folder_name", "YRestart", "Folder name to use when writing restart data.");
+  params.AddOptionalParameter(
+    "write_restart_file_base", "restart", "File base name to use when writing restart data.");
+  params.AddOptionalParameter(
+    "write_restart_interval",
+    30.0,
+    "Interval at which restart data is to be written. Currently not implemented.");
+  params.AddOptionalParameter(
+    "use_precursors", false, "Flag for using delayed neutron precursors.");
+  params.AddOptionalParameter(
+    "use_source_moments",
+    false,
+    "Flag for ignoring fixed sources and selectively using source moments "
+    "obtained elsewhere.");
+  params.AddOptionalParameter(
+    "save_angular_flux", false, "Flag indicating whether angular fluxes are to be stored or not.");
+  params.AddOptionalParameter(
+    "adjoint", false, "Flag for toggling whether the solver is in adjoint mode.");
+  params.AddOptionalParameter(
+    "verbose_inner_iterations", true, "Flag to control verbosity of inner iterations.");
+  params.AddOptionalParameter(
+    "verbose_outer_iterations", true, "Flag to control verbosity of across-groupset iterations.");
+  params.AddOptionalParameter(
+    "verbose_ags_iterations", false, "Flag to control verbosity of across-groupset iterations.");
+  params.AddOptionalParameter(
+    "power_field_function_on",
+    false,
+    "Flag to control the creation of the power generation field function. If set "
+    "to `true` then a field function will be created with the general name "
+    "`<solver_name>_power_generation`.");
+  params.AddOptionalParameter(
+    "power_default_kappa",
+    3.20435e-11,
+    "Default `kappa` value (Energy released per fission) to use for power "
+    "generation when cross sections do not have `kappa` values. Default: "
+    "3.20435e-11 Joule (corresponding to 200 MeV per fission).");
+  params.AddOptionalParameter(
+    "power_normalization",
+    -1.0,
+    "Power normalization factor to use. Supply a negative or zero number to turn "
+    "this off.");
+  params.AddOptionalParameter(
+    "field_function_prefix_option",
+    "prefix",
+    "Prefix option on field function names. Default: `\"prefix\"`. Can be "
+    "`\"prefix\"` or "
+    "`\"solver_name\"`. "
+    "By default this option is `\"prefix\"` which means it uses the designated "
+    "\"prefix\" (another option), however, that is defaulted to nothing. "
+    "Therefore, default behavior is to export flux moment fields functions as "
+    "`phi_gXXX_mYYY` where `XXX` is the zero padded 3 digit group number and "
+    "similarly for `YYY`.");
+  params.AddOptionalParameter(
+    "field_function_prefix",
+    "",
+    "Prefix to use on all field functions. Default: `\"\"`. "
+    "By default this option is empty but if specified then flux moments will "
+    "exported as `prefix_phi_gXXX_mYYY` where `XXX` is the zero padded 3 digit "
+    "group number and similarly for `YYY`. The underscore after \"prefix\" is "
+    "added automatically.");
+  params.AddOptionalParameterArray(
+    "boundary_conditions", {}, "An array contain tables for each boundary specification.");
   params.LinkParameterToBlock("boundary_conditions", "lbs::BoundaryOptionsBlock");
-  params.AddOptionalParameter("clear_boundary_conditions", false,
-  "A flag to clear all existing boundary conditions. If no additional boundary conditions "
-  "are supplied, this results in all boundaries being vacuum.");
-  params.AddOptionalParameterArray("point_sources", {},
-  "An array containing handles to point sources.");
-  params.AddOptionalParameter("clear_point_sources", false,
-  "A flag to clear all point sources from the solver.");
-  params.AddOptionalParameterArray("distributed_sources", {},
-  "An array containing handles to distributed sources.");
-  params.AddOptionalParameter("clear_distributed_sources", false,
-  "A flag to clear existing distributed sources.");
+  params.AddOptionalParameter(
+    "clear_boundary_conditions",
+    false,
+    "A flag to clear all existing boundary conditions. If no additional boundary conditions "
+    "are supplied, this results in all boundaries being vacuum.");
+  params.AddOptionalParameterArray(
+    "point_sources", {}, "An array containing handles to point sources.");
+  params.AddOptionalParameter(
+    "clear_point_sources", false, "A flag to clear all point sources from the solver.");
+  params.AddOptionalParameterArray(
+    "distributed_sources", {}, "An array containing handles to distributed sources.");
+  params.AddOptionalParameter(
+    "clear_distributed_sources", false, "A flag to clear existing distributed sources.");
 
   params.ConstrainParameterRange("spatial_discretization", AllowableRangeList::New({"pwld"}));
-  params.ConstrainParameterRange("field_function_prefix_option", AllowableRangeList::New({
-  "prefix", "solver_name"}));
-  // clang-format on
+  params.ConstrainParameterRange("field_function_prefix_option",
+                                 AllowableRangeList::New({"prefix", "solver_name"}));
 
   return params;
 }
@@ -541,28 +556,31 @@ LBSSolver::BoundaryOptionsBlock()
 {
   InputParameters params;
 
-  // clang-format off
   params.SetGeneralDescription("Set options for boundary conditions. See \\ref LBSBCs");
   params.SetDocGroup("LBSUtilities");
 
   params.AddRequiredParameter<std::string>("name",
-  "Boundary name that identifies the specific boundary");
+                                           "Boundary name that identifies the specific boundary");
   params.AddRequiredParameter<std::string>("type", "Boundary type specification.");
 
-  params.AddOptionalParameterArray<double>("group_strength", {},
-  "Required only if `type` is `\"incident_isotropic\"`. "
-  "An array of isotropic strength per group");
+  params.AddOptionalParameterArray<double>("group_strength",
+                                           {},
+                                           "Required only if `type` is `\"incident_isotropic\"`. "
+                                           "An array of isotropic strength per group");
 
-  params.AddOptionalParameter("function_name", "",
-  "Text name of the lua function to be called for this boundary condition."
-  "For more on this boundary condition type.");
+  params.AddOptionalParameter(
+    "function_name",
+    "",
+    "Text name of the lua function to be called for this boundary condition."
+    "For more on this boundary condition type.");
 
-  params.ConstrainParameterRange("name", AllowableRangeList::New({
-  "xmin", "xmax", "ymin", "ymax", "zmin", "zmax"}));
+  params.ConstrainParameterRange(
+    "name", AllowableRangeList::New({"xmin", "xmax", "ymin", "ymax", "zmin", "zmax"}));
 
-  params.ConstrainParameterRange("type", AllowableRangeList::New({
-  "vacuum", "incident_isotropic", "reflecting", "incident_anisotropic_heterogeneous"}));
-  // clang-format on
+  params.ConstrainParameterRange(
+    "type",
+    AllowableRangeList::New(
+      {"vacuum", "incident_isotropic", "reflecting", "incident_anisotropic_heterogeneous"}));
 
   return params;
 }
@@ -574,11 +592,46 @@ LBSSolver::SetOptions(const InputParameters& params)
 
   // Handle order sensitive options
   if (user_params.Has("clear_boundary_conditions"))
-    if (user_params.GetParamValue<bool>("clear_boundary_conditions")) boundary_preferences_.clear();
+    if (user_params.GetParamValue<bool>("clear_boundary_conditions"))
+      boundary_preferences_.clear();
   if (user_params.Has("clear_point_sources"))
-    if (user_params.GetParamValue<bool>("clear_point_sources")) point_sources_.clear();
+    if (user_params.GetParamValue<bool>("clear_point_sources"))
+      point_sources_.clear();
   if (user_params.Has("clear_distributed_sources"))
-    if (user_params.GetParamValue<bool>("clear_distributed_sources")) distributed_sources_.clear();
+    if (user_params.GetParamValue<bool>("clear_distributed_sources"))
+      distributed_sources_.clear();
+  if (user_params.Has("adjoint"))
+  {
+    const bool adjoint = user_params.GetParamValue<bool>("adjoint");
+    if (adjoint != options_.adjoint)
+    {
+      options_.adjoint = adjoint;
+
+      // If a discretization exists, the solver has already been initialized.
+      // Reinitialize the materials to obtain the appropriate xs and clear the
+      // sources to prepare for defining the adjoint problem
+      if (discretization_)
+      {
+        // The materials are reinitialized here to ensure that the proper cross sections
+        // are available to the solver. Because an adjoint solve requires volumetric or
+        // point sources, the material-based sources are not set within the initialize routine.
+        InitializeMaterials();
+
+        // Forward and adjoint sources are fundamentally different, so any existing sources
+        // should be cleared and reset through options upon changing modes.
+        point_sources_.clear();
+        distributed_sources_.clear();
+        boundary_preferences_.clear();
+
+        // Set all solutions to zero.
+        phi_old_local_.assign(phi_old_local_.size(), 0.0);
+        phi_new_local_.assign(phi_new_local_.size(), 0.0);
+        for (auto& psi : psi_new_local_)
+          psi.assign(psi.size(), 0.0);
+        precursor_new_local_.assign(precursor_new_local_.size(), 0.0);
+      }
+    }
+  }
 
   // Handle order insensitive options
   for (size_t p = 0; p < user_params.NumParameters(); ++p)
@@ -674,7 +727,8 @@ LBSSolver::SetOptions(const InputParameters& params)
           GetStackItem<PointSource>(object_stack, sub_param.GetValue<size_t>(), __FUNCTION__));
 
         // If the discretization is defined, initialization is possible
-        if (discretization_) point_sources_.back().Initialize(*this);
+        if (discretization_)
+          point_sources_.back().Initialize(*this);
       }
     }
 
@@ -687,7 +741,8 @@ LBSSolver::SetOptions(const InputParameters& params)
           object_stack, sub_param.GetValue<size_t>(), __FUNCTION__));
 
         // If the discretization is defined, initialization is possible
-        if (discretization_) distributed_sources_.back().Initialize(*this);
+        if (discretization_)
+          distributed_sources_.back().Initialize(*this);
       }
     }
   } // for p
@@ -747,9 +802,9 @@ LBSSolver::Initialize()
   PerformInputChecks(); // a assigns num_groups and grid
   PrintSimHeader();     // b
 
-  MPI_Barrier(mpi.comm);
+  mpi_comm.barrier();
 
-  InitMaterials();                   // c
+  InitializeMaterials();             // c
   InitializeSpatialDiscretization(); // d
   InitializeGroupsets();             // e
   ComputeNumberOfMoments();          // f
@@ -800,7 +855,7 @@ LBSSolver::PerformInputChecks()
     Exit(EXIT_FAILURE);
   }
 
-  grid_ptr_ = GetCurrentHandler().GetGrid();
+  grid_ptr_ = GetCurrentMesh();
 
   if (grid_ptr_ == nullptr)
   {
@@ -811,7 +866,8 @@ LBSSolver::PerformInputChecks()
 
   // Determine geometry type
   const auto grid_attribs = grid_ptr_->Attributes();
-  if (grid_attribs & DIMENSION_1) options_.geometry_type = GeometryType::ONED_SLAB;
+  if (grid_attribs & DIMENSION_1)
+    options_.geometry_type = GeometryType::ONED_SLAB;
   else if (grid_attribs & DIMENSION_2)
     options_.geometry_type = GeometryType::TWOD_CARTESIAN;
   else if (grid_attribs & DIMENSION_3)
@@ -823,7 +879,7 @@ LBSSolver::PerformInputChecks()
 void
 LBSSolver::PrintSimHeader()
 {
-  if (opensn::mpi.location_id == 0)
+  if (opensn::mpi_comm.rank() == 0)
   {
     std::stringstream outstr;
     outstr << "\nInitializing LBS SteadyStateSolver with name: " << TextName() << "\n\n"
@@ -857,31 +913,34 @@ LBSSolver::PrintSimHeader()
 }
 
 void
-LBSSolver::InitMaterials()
+LBSSolver::InitializeMaterials()
 {
-  const std::string fname = "lbs::SteadyStateSolver::InitMaterials";
   log.Log0Verbose1() << "Initializing Materials";
 
   // Create set of material ids locally relevant
-  std::set<int> unique_material_ids;
+  const size_t num_physics_mats = material_stack.size();
+
   int invalid_mat_cell_count = 0;
+  std::set<int> unique_material_ids;
   for (auto& cell : grid_ptr_->local_cells)
   {
     unique_material_ids.insert(cell.material_id_);
-    if (cell.material_id_ < 0) ++invalid_mat_cell_count;
+    if (cell.material_id_ < 0)
+      ++invalid_mat_cell_count;
   }
   const auto& ghost_cell_ids = grid_ptr_->cells.GetGhostGlobalIDs();
   for (uint64_t cell_id : ghost_cell_ids)
   {
     const auto& cell = grid_ptr_->cells[cell_id];
     unique_material_ids.insert(cell.material_id_);
-    if (cell.material_id_ < 0) ++invalid_mat_cell_count;
+    if (cell.material_id_ < 0)
+      ++invalid_mat_cell_count;
   }
 
-  if (invalid_mat_cell_count > 0)
-  {
-    log.LogAllWarning() << "Number of invalid material cells: " << invalid_mat_cell_count;
-  }
+  log.Log() << "Invalid cell materials " << invalid_mat_cell_count;
+  ChiLogicalErrorIf(invalid_mat_cell_count > 0,
+                    std::to_string(invalid_mat_cell_count) +
+                      " cells encountered with an invalid material id.");
 
   // Get ready for processing
   std::stringstream materials_list;
@@ -889,75 +948,65 @@ LBSSolver::InitMaterials()
   matid_to_src_map_.clear();
 
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Process materials found
-  const size_t num_physics_mats = material_stack.size();
 
   for (const int& mat_id : unique_material_ids)
   {
     materials_list << "Material id " << mat_id;
 
-    // Check valid ids
-    if (mat_id < 0)
-      throw std::logic_error(fname + ": Cells encountered with no assigned "
-                                     "material.");
-    if (static_cast<size_t>(mat_id) >= num_physics_mats)
-      throw std::logic_error(fname + ": Cells encountered with material id that"
-                                     " matches no material in physics material "
-                                     "library.");
-
-    auto current_material = GetStackItemPtr(material_stack, mat_id, fname);
+    const auto& current_material = GetStackItemPtr(material_stack, mat_id, __FUNCTION__);
 
     // Extract properties
-    using MatProperty = PropertyType;
     bool found_transport_xs = false;
     for (const auto& property : current_material->properties_)
     {
-      if (property->Type() == MatProperty::TRANSPORT_XSECTIONS)
+      if (property->Type() == PropertyType::TRANSPORT_XSECTIONS)
       {
-        auto transp_xs = std::static_pointer_cast<MultiGroupXS>(property);
-        matid_to_xs_map_[mat_id] = transp_xs;
+        // If forward mode, use the existing xs on stack.
+        // If adjoint mode, create adjoint xs.
+        auto xs = std::static_pointer_cast<MultiGroupXS>(property);
+        matid_to_xs_map_[mat_id] = not options_.adjoint ? xs : std::make_shared<AdjointMGXS>(*xs);
         found_transport_xs = true;
       } // transport xs
-      if (property->Type() == MatProperty::ISOTROPIC_MG_SOURCE)
-      {
-        auto mg_source = std::static_pointer_cast<IsotropicMultiGrpSource>(property);
 
-        if (mg_source->source_value_g_.size() < groups_.size())
+      if (property->Type() == PropertyType::ISOTROPIC_MG_SOURCE)
+      {
+        const auto& src = std::static_pointer_cast<IsotropicMultiGrpSource>(property);
+
+        // Check for a valid source
+        if (src->source_value_g_.size() < groups_.size())
         {
-          log.LogAllWarning() << fname + ": Isotropic Multigroup source specified in "
+          log.LogAllWarning() << __FUNCTION__ << ": IsotropicMultiGrpSource specified in "
                               << "material \"" << current_material->name_ << "\" has fewer "
                               << "energy groups than called for in the simulation. "
                               << "Source will be ignored.";
         }
-        else { matid_to_src_map_[mat_id] = mg_source; }
+
+        // Set the source if in forward mode
+        // Material sources are currently unused in adjoint mode
+        if (not options_.adjoint)
+          matid_to_src_map_[mat_id] = src;
       } // P0 source
     }   // for property
 
     // Check valid property
-    if (!found_transport_xs)
-    {
-      log.LogAllError() << fname + ": Found no transport cross-section property for "
-                        << "material \"" << current_material->name_ << "\".";
-      Exit(EXIT_FAILURE);
-    }
+    ChiLogicalErrorIf(not found_transport_xs,
+                      "Material \"" + current_material->name_ + "\" does not contain " +
+                        "transport cross sections.");
+
     // Check number of groups legal
-    if (matid_to_xs_map_[mat_id]->NumGroups() < groups_.size())
-    {
-      log.LogAllError() << fname + ": Found material \"" << current_material->name_ << "\" has "
-                        << matid_to_xs_map_[mat_id]->NumGroups() << " groups and"
-                        << " the simulation has " << groups_.size() << " groups."
-                        << " The material must have a greater or equal amount of groups.";
-      Exit(EXIT_FAILURE);
-    }
+    ChiLogicalErrorIf(matid_to_xs_map_[mat_id]->NumGroups() < groups_.size(),
+                      "Material \"" + current_material->name_ + "\" has fewer groups (" +
+                        std::to_string(matid_to_xs_map_[mat_id]->NumGroups()) + ") than " +
+                        "the simulation (" + std::to_string(groups_.size()) + "). " +
+                        "A material must have at least as many groups as the simulation.");
 
     // Check number of moments
     if (matid_to_xs_map_[mat_id]->ScatteringOrder() < options_.scattering_order)
     {
-      log.Log0Warning() << fname + ": Found material \"" << current_material->name_
-                        << "\" has a scattering order of "
-                        << matid_to_xs_map_[mat_id]->ScatteringOrder()
-                        << " and the simulation has a scattering order of "
-                        << options_.scattering_order
-                        << ". The higher moments will therefore not be used.";
+      log.Log0Warning() << __FUNCTION__ << ": Material \"" << current_material->name_
+                        << "\" has a lower scattering order ("
+                        << matid_to_xs_map_[mat_id]->ScatteringOrder() << ") "
+                        << "than the simulation (" << options_.scattering_order << ").";
     }
 
     materials_list << " number of moments " << matid_to_xs_map_[mat_id]->ScatteringOrder() + 1
@@ -978,19 +1027,19 @@ LBSSolver::InitMaterials()
   }
 
   // if no precursors, turn off precursors
-  if (num_precursors_ == 0) options_.use_precursors = false;
+  if (num_precursors_ == 0)
+    options_.use_precursors = false;
 
   // check compatibility when precursors are on
   if (options_.use_precursors)
   {
-    for (const auto& mat_id_xs : matid_to_xs_map_)
+    for (const auto& [mat_id, xs] : matid_to_xs_map_)
     {
-      const auto& xs = mat_id_xs.second;
-      if (xs->IsFissionable() && num_precursors_ == 0)
-        throw std::logic_error("Incompatible cross section data encountered."
-                               "When delayed neutron data is present for one "
-                               "fissionable material, it must be present for "
-                               "all fissionable materials.");
+      ChiLogicalErrorIf(xs->IsFissionable() and num_precursors_ == 0,
+                        "Incompatible cross section data encountered for material ID " +
+                          std::to_string(mat_id) + ". When delayed neutron data is present " +
+                          "for one fissionable matrial, it must be present for all fissionable "
+                          "materials.");
     }
   }
 
@@ -1006,7 +1055,7 @@ LBSSolver::InitMaterials()
 
   log.Log0Verbose1() << "Materials Initialized:\n" << materials_list.str() << "\n";
 
-  MPI_Barrier(mpi.comm);
+  mpi_comm.barrier();
 }
 
 void
@@ -1052,7 +1101,7 @@ LBSSolver::ComputeUnitIntegrals()
     const auto& cell_mapping = sdm.GetCellMapping(cell);
     const size_t cell_num_faces = cell.faces_.size();
     const size_t cell_num_nodes = cell_mapping.NumNodes();
-    const auto vol_qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
 
     MatDbl IntV_gradshapeI_gradshapeJ(cell_num_nodes, VecDbl(cell_num_nodes));
     MatVec3 IntV_shapeI_gradshapeJ(cell_num_nodes, VecVec3(cell_num_nodes));
@@ -1068,34 +1117,34 @@ LBSSolver::ComputeUnitIntegrals()
     {
       for (unsigned int j = 0; j < cell_num_nodes; ++j)
       {
-        for (const auto& qp : vol_qp_data.QuadraturePointIndices())
+        for (const auto& qp : fe_vol_data.QuadraturePointIndices())
         {
           IntV_gradshapeI_gradshapeJ[i][j] +=
-            swf(vol_qp_data.QPointXYZ(qp)) *
-            vol_qp_data.ShapeGrad(i, qp).Dot(vol_qp_data.ShapeGrad(j, qp)) *
-            vol_qp_data.JxW(qp); // K-matrix
+            swf(fe_vol_data.QPointXYZ(qp)) *
+            fe_vol_data.ShapeGrad(i, qp).Dot(fe_vol_data.ShapeGrad(j, qp)) *
+            fe_vol_data.JxW(qp); // K-matrix
 
           IntV_shapeI_gradshapeJ[i][j] +=
-            swf(vol_qp_data.QPointXYZ(qp)) * vol_qp_data.ShapeValue(i, qp) *
-            vol_qp_data.ShapeGrad(j, qp) * vol_qp_data.JxW(qp); // G-matrix
+            swf(fe_vol_data.QPointXYZ(qp)) * fe_vol_data.ShapeValue(i, qp) *
+            fe_vol_data.ShapeGrad(j, qp) * fe_vol_data.JxW(qp); // G-matrix
 
           IntV_shapeI_shapeJ[i][j] +=
-            swf(vol_qp_data.QPointXYZ(qp)) * vol_qp_data.ShapeValue(i, qp) *
-            vol_qp_data.ShapeValue(j, qp) * vol_qp_data.JxW(qp); // M-matrix
+            swf(fe_vol_data.QPointXYZ(qp)) * fe_vol_data.ShapeValue(i, qp) *
+            fe_vol_data.ShapeValue(j, qp) * fe_vol_data.JxW(qp); // M-matrix
         }                                                        // for qp
       }                                                          // for j
 
-      for (const auto& qp : vol_qp_data.QuadraturePointIndices())
+      for (const auto& qp : fe_vol_data.QuadraturePointIndices())
       {
         IntV_shapeI[i] +=
-          swf(vol_qp_data.QPointXYZ(qp)) * vol_qp_data.ShapeValue(i, qp) * vol_qp_data.JxW(qp);
+          swf(fe_vol_data.QPointXYZ(qp)) * fe_vol_data.ShapeValue(i, qp) * fe_vol_data.JxW(qp);
       } // for qp
     }   // for i
 
     //  surface integrals
     for (size_t f = 0; f < cell_num_faces; ++f)
     {
-      const auto faces_qp_data = cell_mapping.MakeSurfaceQuadraturePointData(f);
+      const auto fe_srf_data = cell_mapping.MakeSurfaceFiniteElementData(f);
       IntS_shapeI_shapeJ[f].resize(cell_num_nodes, VecDbl(cell_num_nodes));
       IntS_shapeI[f].resize(cell_num_nodes);
       IntS_shapeI_gradshapeJ[f].resize(cell_num_nodes, VecVec3(cell_num_nodes));
@@ -1104,21 +1153,21 @@ LBSSolver::ComputeUnitIntegrals()
       {
         for (unsigned int j = 0; j < cell_num_nodes; ++j)
         {
-          for (const auto& qp : faces_qp_data.QuadraturePointIndices())
+          for (const auto& qp : fe_srf_data.QuadraturePointIndices())
           {
-            IntS_shapeI_shapeJ[f][i][j] += swf(faces_qp_data.QPointXYZ(qp)) *
-                                           faces_qp_data.ShapeValue(i, qp) *
-                                           faces_qp_data.ShapeValue(j, qp) * faces_qp_data.JxW(qp);
-            IntS_shapeI_gradshapeJ[f][i][j] +=
-              swf(faces_qp_data.QPointXYZ(qp)) * faces_qp_data.ShapeValue(i, qp) *
-              faces_qp_data.ShapeGrad(j, qp) * faces_qp_data.JxW(qp);
+            IntS_shapeI_shapeJ[f][i][j] += swf(fe_srf_data.QPointXYZ(qp)) *
+                                           fe_srf_data.ShapeValue(i, qp) *
+                                           fe_srf_data.ShapeValue(j, qp) * fe_srf_data.JxW(qp);
+            IntS_shapeI_gradshapeJ[f][i][j] += swf(fe_srf_data.QPointXYZ(qp)) *
+                                               fe_srf_data.ShapeValue(i, qp) *
+                                               fe_srf_data.ShapeGrad(j, qp) * fe_srf_data.JxW(qp);
           } // for qp
         }   // for j
 
-        for (const auto& qp : faces_qp_data.QuadraturePointIndices())
+        for (const auto& qp : fe_srf_data.QuadraturePointIndices())
         {
-          IntS_shapeI[f][i] += swf(faces_qp_data.QPointXYZ(qp)) * faces_qp_data.ShapeValue(i, qp) *
-                               faces_qp_data.JxW(qp);
+          IntS_shapeI[f][i] +=
+            swf(fe_srf_data.QPointXYZ(qp)) * fe_srf_data.ShapeValue(i, qp) * fe_srf_data.JxW(qp);
         } // for qp
       }   // for i
     }     // for f
@@ -1149,9 +1198,9 @@ LBSSolver::ComputeUnitIntegrals()
                                           unit_ghost_cell_matrices_.size()};
   std::array<size_t, 2> num_globl_ucms = {0, 0};
 
-  MPI_Allreduce(num_local_ucms.data(), num_globl_ucms.data(), 2, MPIU_SIZE_T, MPI_SUM, mpi.comm);
+  mpi_comm.all_reduce(num_local_ucms.data(), 2, num_globl_ucms.data(), mpi::op::sum<size_t>());
 
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
   log.Log() << "Ghost cell unit cell-matrix ratio: "
             << (double)num_globl_ucms[1] * 100 / (double)num_globl_ucms[0] << "%";
   log.Log() << "Cell matrices computed.                   Process memory = " << std::setprecision(3)
@@ -1250,7 +1299,7 @@ LBSSolver::InitializeParrays()
   // Read Restart data
   if (options_.read_restart_data)
     ReadRestartData(options_.read_restart_folder_name, options_.read_restart_file_base);
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 
   // Initialize transport views
   // Transport views act as a data structure to store information
@@ -1287,7 +1336,7 @@ LBSSolver::InitializeParrays()
 
     const size_t num_faces = cell.faces_.size();
     std::vector<bool> face_local_flags(num_faces, true);
-    std::vector<int> face_locality(num_faces, opensn::mpi.location_id);
+    std::vector<int> face_locality(num_faces, opensn::mpi_comm.rank());
     std::vector<const Cell*> neighbor_cell_ptrs(num_faces, nullptr);
     bool cell_on_boundary = false;
     int f = 0;
@@ -1298,7 +1347,8 @@ LBSSolver::InitializeParrays()
         Vector3& n = face.normal_;
 
         int boundary_id = -1;
-        if (n.Dot(ihat) > 0.999) boundary_id = 0;
+        if (n.Dot(ihat) > 0.999)
+          boundary_id = 0;
         else if (n.Dot(ihat) < -0.999)
           boundary_id = 1;
         else if (n.Dot(jhat) > 0.999)
@@ -1310,7 +1360,8 @@ LBSSolver::InitializeParrays()
         else if (n.Dot(khat) < -0.999)
           boundary_id = 5;
 
-        if (boundary_id >= 0) face.neighbor_id_ = boundary_id;
+        if (boundary_id >= 0)
+          face.neighbor_id_ = boundary_id;
         cell_on_boundary = true;
 
         face_local_flags[f] = false;
@@ -1319,7 +1370,7 @@ LBSSolver::InitializeParrays()
       else
       {
         const int neighbor_partition = face.GetNeighborPartitionID(*grid_ptr_);
-        face_local_flags[f] = (neighbor_partition == opensn::mpi.location_id);
+        face_local_flags[f] = (neighbor_partition == opensn::mpi_comm.rank());
         face_locality[f] = neighbor_partition;
         neighbor_cell_ptrs[f] = &grid_ptr_->cells[face.neighbor_id_];
       }
@@ -1327,7 +1378,8 @@ LBSSolver::InitializeParrays()
       ++f;
     } // for f
 
-    if (num_nodes > max_cell_dof_count_) max_cell_dof_count_ = num_nodes;
+    if (num_nodes > max_cell_dof_count_)
+      max_cell_dof_count_ = num_nodes;
 
     cell_transport_views_.emplace_back(cell_phi_address,
                                        num_nodes,
@@ -1379,7 +1431,7 @@ LBSSolver::InitializeParrays()
   // Initialize Field Functions
   InitializeFieldFunctions();
 
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
   log.Log() << "Done with parallel arrays.                Process memory = " << std::setprecision(3)
             << GetMemoryUsageInMB() << " MB" << std::endl;
 }
@@ -1387,7 +1439,8 @@ LBSSolver::InitializeParrays()
 void
 LBSSolver::InitializeFieldFunctions()
 {
-  if (not field_functions_.empty()) return;
+  if (not field_functions_.empty())
+    return;
 
   // Initialize Field Functions
   //                                              for flux moments
@@ -1401,9 +1454,11 @@ LBSSolver::InitializeFieldFunctions()
       if (options_.field_function_prefix_option == "prefix")
       {
         prefix = options_.field_function_prefix;
-        if (not prefix.empty()) prefix += "_";
+        if (not prefix.empty())
+          prefix += "_";
       }
-      if (options_.field_function_prefix_option == "solver_name") prefix = TextName() + "_";
+      if (options_.field_function_prefix_option == "solver_name")
+        prefix = TextName() + "_";
 
       char buff[100];
       snprintf(
@@ -1427,9 +1482,11 @@ LBSSolver::InitializeFieldFunctions()
     if (options_.field_function_prefix_option == "prefix")
     {
       prefix = options_.field_function_prefix;
-      if (not prefix.empty()) prefix += "_";
+      if (not prefix.empty())
+        prefix += "_";
     }
-    if (options_.field_function_prefix_option == "solver_name") prefix = TextName() + "_";
+    if (options_.field_function_prefix_option == "solver_name")
+      prefix = TextName() + "_";
 
     auto power_ff = std::make_shared<FieldFunctionGridBased>(
       prefix + "power_generation", discretization_, Unknown(UnknownType::SCALAR));
@@ -1451,34 +1508,13 @@ LBSSolver::InitializeBoundaries()
     std::set<uint64_t> local_unique_bids_set;
     for (const auto& cell : grid_ptr_->local_cells)
       for (const auto& face : cell.faces_)
-        if (not face.has_neighbor_) local_unique_bids_set.insert(face.neighbor_id_);
+        if (not face.has_neighbor_)
+          local_unique_bids_set.insert(face.neighbor_id_);
 
     std::vector<uint64_t> local_unique_bids(local_unique_bids_set.begin(),
                                             local_unique_bids_set.end());
-    const int local_num_unique_bids = static_cast<int>(local_unique_bids.size());
-    std::vector<int> recvcounts(opensn::mpi.process_count, 0);
-
-    MPI_Allgather(&local_num_unique_bids, 1, MPI_INT, recvcounts.data(), 1, MPI_INT, mpi.comm);
-
-    std::vector<int> recvdispls(opensn::mpi.process_count, 0);
-
-    int running_displacement = 0;
-    for (int locI = 0; locI < opensn::mpi.process_count; ++locI)
-    {
-      recvdispls[locI] = running_displacement;
-      running_displacement += recvcounts[locI];
-    }
-
-    std::vector<uint64_t> recvbuf(running_displacement, 0);
-
-    MPI_Allgatherv(local_unique_bids.data(),
-                   local_num_unique_bids,
-                   MPI_UINT64_T,
-                   recvbuf.data(),
-                   recvcounts.data(),
-                   recvdispls.data(),
-                   MPI_UINT64_T,
-                   mpi.comm);
+    std::vector<uint64_t> recvbuf;
+    mpi_comm.all_gather(local_unique_bids, recvbuf);
 
     globl_unique_bids_set = local_unique_bids_set; // give it a head start
 
@@ -1526,7 +1562,8 @@ LBSSolver::InitializeBoundaries()
           for (const auto& face : cell.faces_)
             if (not face.has_neighbor_ and face.neighbor_id_ == bid)
             {
-              if (not n_ptr) n_ptr = std::make_unique<Vec3>(face.normal_);
+              if (not n_ptr)
+                n_ptr = std::make_unique<Vec3>(face.normal_);
               if (std::fabs(face.normal_.Dot(*n_ptr) - 1.0) > EPSILON)
                 throw std::logic_error(fname +
                                        ": Not all face normals are, within tolerance, locally the "
@@ -1537,15 +1574,15 @@ LBSSolver::InitializeBoundaries()
         const int local_has_bid = n_ptr != nullptr ? 1 : 0;
         const Vec3 local_normal = local_has_bid ? *n_ptr : Vec3(0.0, 0.0, 0.0);
 
-        std::vector<int> locJ_has_bid(opensn::mpi.process_count, 1);
-        std::vector<double> locJ_n_val(opensn::mpi.process_count * 3, 0.0);
+        std::vector<int> locJ_has_bid(opensn::mpi_comm.size(), 1);
+        std::vector<double> locJ_n_val(opensn::mpi_comm.size() * 3, 0.0);
 
-        MPI_Allgather(&local_has_bid, 1, MPI_INT, locJ_has_bid.data(), 1, MPI_INT, mpi.comm);
-
-        MPI_Allgather(&local_normal, 3, MPI_DOUBLE, locJ_n_val.data(), 3, MPI_DOUBLE, mpi.comm);
+        mpi_comm.all_gather(local_has_bid, locJ_has_bid);
+        std::vector<double> lnv = {local_normal.x, local_normal.y, local_normal.z};
+        mpi_comm.all_gather(lnv.data(), 3, locJ_n_val.data(), 3);
 
         Vec3 global_normal;
-        for (int j = 0; j < opensn::mpi.process_count; ++j)
+        for (int j = 0; j < opensn::mpi_comm.size(); ++j)
         {
           if (locJ_has_bid[j])
           {
@@ -1643,7 +1680,8 @@ lbs::LBSSolver::InitWGDSA(LBSGroupset& groupset, bool vaccum_bcs_are_dirichlet)
 void
 lbs::LBSSolver::CleanUpWGDSA(LBSGroupset& groupset)
 {
-  if (groupset.apply_wgdsa_) groupset.wgdsa_solver_ = nullptr;
+  if (groupset.apply_wgdsa_)
+    groupset.wgdsa_solver_ = nullptr;
 }
 
 std::vector<double>
@@ -1846,7 +1884,8 @@ lbs::LBSSolver::InitTGDSA(LBSGroupset& groupset)
 void
 lbs::LBSSolver::CleanUpTGDSA(LBSGroupset& groupset)
 {
-  if (groupset.apply_tgdsa_) groupset.tgdsa_solver_ = nullptr;
+  if (groupset.apply_tgdsa_)
+    groupset.tgdsa_solver_ = nullptr;
 }
 
 void
@@ -1881,7 +1920,8 @@ LBSSolver::AssembleTGDSADeltaPhiVector(const LBSGroupset& groupset,
       {
         double R_g = 0.0;
         for (const auto& [row_g, gprime, sigma_sm] : S.Row(gsi + g))
-          if (gprime >= gsi and gprime != (gsi + g)) R_g += sigma_sm * phi_in_mapped[gprime];
+          if (gprime >= gsi and gprime != (gsi + g))
+            R_g += sigma_sm * phi_in_mapped[gprime];
 
         delta_phi_mapped += R_g;
       } // for g
@@ -1930,7 +1970,7 @@ LBSSolver::WriteRestartData(const std::string& folder_name, const std::string& f
   Stat st;
 
   // Make sure folder exists
-  if (opensn::mpi.location_id == 0)
+  if (opensn::mpi_comm.rank() == 0)
   {
     if (stat(folder_name.c_str(), &st) != 0) // if not exist, make it
       if ((mkdir(folder_name.c_str(), S_IRWXU | S_IRWXG | S_IRWXO) != 0) and (errno != EEXIST))
@@ -1940,7 +1980,7 @@ LBSSolver::WriteRestartData(const std::string& folder_name, const std::string& f
       }
   }
 
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 
   // Create files
   // This step might fail for specific locations and
@@ -1949,7 +1989,7 @@ LBSSolver::WriteRestartData(const std::string& folder_name, const std::string& f
   // the process as whole succeeded.
   bool location_succeeded = true;
   char location_cstr[20];
-  snprintf(location_cstr, 20, "%d.r", opensn::mpi.location_id);
+  snprintf(location_cstr, 20, "%d.r", opensn::mpi_comm.rank());
 
   std::string file_name = folder_name + std::string("/") + file_base + std::string(location_cstr);
 
@@ -1973,9 +2013,9 @@ LBSSolver::WriteRestartData(const std::string& folder_name, const std::string& f
   }
 
   // Wait for all processes then check success status
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
   bool global_succeeded = true;
-  MPI_Allreduce(&location_succeeded, &global_succeeded, 1, MPI_CXX_BOOL, MPI_LAND, mpi.comm);
+  mpi_comm.all_reduce(location_succeeded, global_succeeded, mpi::op::logical_and<bool>());
 
   // Write status message
   if (global_succeeded)
@@ -1989,7 +2029,7 @@ LBSSolver::WriteRestartData(const std::string& folder_name, const std::string& f
 void
 LBSSolver::ReadRestartData(const std::string& folder_name, const std::string& file_base)
 {
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 
   // Open files
   // This step might fail for specific locations and
@@ -1998,7 +2038,7 @@ LBSSolver::ReadRestartData(const std::string& folder_name, const std::string& fi
   // the process as whole succeeded.
   bool location_succeeded = true;
   char location_cstr[20];
-  snprintf(location_cstr, 20, "%d.r", opensn::mpi.location_id);
+  snprintf(location_cstr, 20, "%d.r", opensn::mpi_comm.rank());
 
   std::string file_name = folder_name + std::string("/") + file_base + std::string(location_cstr);
 
@@ -2044,12 +2084,13 @@ LBSSolver::ReadRestartData(const std::string& folder_name, const std::string& fi
   }
 
   // Wait for all processes then check success status
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
   bool global_succeeded = true;
-  MPI_Allreduce(&location_succeeded, &global_succeeded, 1, MPI_CXX_BOOL, MPI_LAND, mpi.comm);
+  mpi_comm.all_reduce(location_succeeded, global_succeeded, mpi::op::logical_and<bool>());
 
   // Write status message
-  if (global_succeeded) log.Log() << "Successfully read restart data";
+  if (global_succeeded)
+    log.Log() << "Successfully read restart data";
   else
     log.Log0Error() << "Failed to read restart data: "
                     << folder_name + std::string("/") + file_base + std::string("X.r");
@@ -2060,7 +2101,7 @@ LBSSolver::WriteAngularFluxes(const std::vector<std::vector<double>>& src,
                               const std::string& file_base) const
 {
   // Open the file
-  std::string file_name = file_base + std::to_string(opensn::mpi.location_id) + ".data";
+  std::string file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".data";
   std::ofstream file(file_name,
                      std::ofstream::binary |  // binary file
                        std::ofstream::out |   // no accidental reading
@@ -2142,7 +2183,7 @@ LBSSolver::ReadAngularFluxes(const std::string& file_base,
                              std::vector<std::vector<double>>& dest) const
 {
   // Open file
-  const auto file_name = file_base + std::to_string(opensn::mpi.location_id) + ".data";
+  const auto file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".data";
   std::ifstream file(file_name,
                      std::ofstream::binary | // binary file
                        std::ofstream::in);   // no accidental writing
@@ -2166,12 +2207,10 @@ LBSSolver::ReadAngularFluxes(const std::string& file_base,
   const uint64_t num_local_nodes = discretization_->GetNumLocalDOFs(NODES_ONLY);
   const uint64_t num_groupsets = groupsets_.size();
 
-  // clang-format off
   ChiLogicalErrorIf(file_num_local_nodes != num_local_nodes,
-                  "Incompatible number of local nodes found in file " + file_name + ".");
+                    "Incompatible number of local nodes found in file " + file_name + ".");
   ChiLogicalErrorIf(file_num_groupsets != num_groupsets,
-                  "Incompatible number of groupsets found in file " + file_name + ".");
-  // clang-format on
+                    "Incompatible number of groupsets found in file " + file_name + ".");
 
   // Go through groupsets for reading
   dest.clear();
@@ -2194,17 +2233,15 @@ LBSSolver::ReadAngularFluxes(const std::string& file_base,
     const uint64_t num_gs_angles = quadrature->omegas_.size();
     const uint64_t num_gs_groups = groupset.groups_.size();
 
-    // clang-format off
     ChiLogicalErrorIf(file_groupset_id != dest.size(),
-                      "Incompatible groupset id found in file " + file_name + ". "
-                      "Groupsets must be specified in sequential order.");
+                      "Incompatible groupset id found in file " + file_name +
+                        ". Groupsets must be specified in sequential order.");
     ChiLogicalErrorIf(file_num_gs_angles != num_gs_angles,
                       "Incompatible number of groupset angles found in file " + file_name +
-                      " for groupset " + std::to_string(file_groupset_id) + ".");
+                        " for groupset " + std::to_string(file_groupset_id) + ".");
     ChiLogicalErrorIf(file_num_gs_groups != num_gs_groups,
                       "Incompatible number of groupset groups found in file " + file_name +
-                      " for groupset " + std::to_string(file_groupset_id) + ".");
-    // clang-format on
+                        " for groupset " + std::to_string(file_groupset_id) + ".");
 
     // Size the groupset angular flux vector
     const auto num_local_gs_dofs = discretization_->GetNumLocalDOFs(uk_man);
@@ -2240,7 +2277,7 @@ LBSSolver::WriteGroupsetAngularFluxes(const LBSGroupset& groupset,
                                       const std::string& file_base) const
 {
   // Open file
-  const auto file_name = file_base + std::to_string(opensn::mpi.location_id) + ".data";
+  const auto file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".data";
   std::ofstream file(file_name,
                      std::ofstream::binary |  // binary file
                        std::ofstream::out |   // no accidental reading
@@ -2283,11 +2320,9 @@ LBSSolver::WriteGroupsetAngularFluxes(const LBSGroupset& groupset,
   const uint64_t num_gs_groups = groupset.groups_.size();
   const auto num_local_gs_dofs = discretization_->GetNumLocalDOFs(uk_man);
 
-  // clang-format off
   ChiLogicalErrorIf(src.size() != num_local_gs_dofs,
                     "Incompatible angular flux vector provided for groupset " +
-                    std::to_string(groupset.id_) + ".");
-  // clang-format on
+                      std::to_string(groupset.id_) + ".");
 
   file.write((char*)&num_local_nodes, sizeof(uint64_t));
   file.write((char*)&num_gs_angles, sizeof(uint64_t));
@@ -2317,7 +2352,7 @@ LBSSolver::ReadGroupsetAngularFluxes(const std::string& file_base,
                                      std::vector<double>& dest) const
 {
   // Open file
-  const auto file_name = file_base + std::to_string(opensn::mpi.location_id) + ".data";
+  const auto file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".data";
   std::ifstream file(file_name,
                      std::ofstream::binary | // binary file
                        std::ofstream::in);   // no accidental writing
@@ -2348,16 +2383,14 @@ LBSSolver::ReadGroupsetAngularFluxes(const std::string& file_base,
   const uint64_t num_gs_groups = groupset.groups_.size();
   const auto num_local_gs_dofs = discretization_->GetNumLocalDOFs(uk_man);
 
-  // clang-format off
   ChiLogicalErrorIf(file_num_local_nodes != num_local_nodes,
                     "Incompatible number of local nodes found in file " + file_name + ".");
   ChiLogicalErrorIf(file_num_gs_angles != num_gs_angles,
                     "Incompatible number of groupset angles found in file " + file_name +
-                    " for groupset " + std::to_string(groupset.id_) + ".");
+                      " for groupset " + std::to_string(groupset.id_) + ".");
   ChiLogicalErrorIf(file_num_gs_groups != num_gs_groups,
                     "Incompatible number of groupset groups found in file " + file_name +
-                    " for groupset " + std::to_string(groupset.id_) + ".");
-  // clang-format on
+                      " for groupset " + std::to_string(groupset.id_) + ".");
 
   // Read the angular flux data
   dest.assign(num_local_gs_dofs, 0.0);
@@ -2404,7 +2437,7 @@ void
 LBSSolver::WriteFluxMoments(const std::vector<double>& src, const std::string& file_base) const
 {
   // Open file
-  std::string file_name = file_base + std::to_string(opensn::mpi.location_id) + ".data";
+  std::string file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".data";
   std::ofstream file(file_name,
                      std::ofstream::binary |  // binary file
                        std::ofstream::out |   // no accidental reading
@@ -2507,7 +2540,7 @@ LBSSolver::ReadFluxMoments(const std::string& file_base,
 {
   // Open file
   const auto file_name =
-    file_base + (single_file ? "" : std::to_string(opensn::mpi.location_id)) + ".data";
+    file_base + (single_file ? "" : std::to_string(opensn::mpi_comm.rank())) + ".data";
   std::ifstream file(file_name,
                      std::ofstream::binary | // binary file
                        std::ofstream::in);   // no accidental writing
@@ -2539,7 +2572,6 @@ LBSSolver::ReadFluxMoments(const std::string& file_base,
   const uint64_t num_local_nodes = discretization_->GetNumLocalDOFs(NODES_ONLY);
   const auto num_local_dofs = discretization_->GetNumLocalDOFs(uk_man);
 
-  // clang-format off
   ChiLogicalErrorIf(file_num_local_cells != num_local_cells,
                     "Incompatible number of cells found in " + file_name + ".");
   ChiLogicalErrorIf(file_num_local_nodes != num_local_nodes,
@@ -2548,7 +2580,6 @@ LBSSolver::ReadFluxMoments(const std::string& file_base,
                     "Incompatible number of moments found in file " + file_name + ".");
   ChiLogicalErrorIf(file_num_groups != num_groups_,
                     "Incompatible number of groups found in file " + file_name + ".");
-  // clang-format on
 
   // Read cell nodal locations
   std::map<uint64_t, std::map<uint64_t, uint64_t>> file_cell_nodal_mapping;
@@ -2574,18 +2605,17 @@ LBSSolver::ReadFluxMoments(const std::string& file_base,
       file_nodes.emplace_back(x, y, z);
     } // for file node i
 
-    if (not grid_ptr_->IsCellLocal(file_cell_global_id)) continue;
+    if (not grid_ptr_->IsCellLocal(file_cell_global_id))
+      continue;
 
     const auto& cell = grid_ptr_->cells[file_cell_global_id];
 
     // Check for cell compatibility
     const auto nodes = discretization_->GetCellNodeLocations(cell);
 
-    // clang-format off
     ChiLogicalErrorIf(nodes.size() != file_num_cell_nodes,
                       "Incompatible number of cell nodes encountered on cell " +
-                      std::to_string(file_cell_global_id) + ".");
-    // clang-format on
+                        std::to_string(file_cell_global_id) + ".");
 
     // Map the system nodes to file nodes
     bool mapping_successful = true; // true until disproven
@@ -2600,11 +2630,9 @@ LBSSolver::ReadFluxMoments(const std::string& file_base,
           mapping_found = true;
         }
 
-      // clang-format off
       ChiLogicalErrorIf(not mapping_found,
                         "Incompatible node locations for cell " +
-                        std::to_string(file_cell_global_id) + ".");
-      // clang-format on
+                          std::to_string(file_cell_global_id) + ".");
     } // for n
   }   // for c (cell in file)
 
@@ -2712,7 +2740,8 @@ LBSSolver::UpdateFieldFunctions()
 
       const auto& xs = matid_to_xs_map_.at(cell.material_id_);
 
-      if (not xs->IsFissionable()) continue;
+      if (not xs->IsFissionable())
+        continue;
 
       for (size_t i = 0; i < num_nodes; ++i)
       {
@@ -2737,7 +2766,7 @@ LBSSolver::UpdateFieldFunctions()
     if (options_.power_normalization > 0.0)
     {
       double globl_total_power;
-      MPI_Allreduce(&local_total_power, &globl_total_power, 1, MPI_DOUBLE, MPI_SUM, mpi.comm);
+      mpi_comm.all_reduce(local_total_power, globl_total_power, mpi::op::sum<double>());
 
       Scale(data_vector_local, options_.power_normalization / globl_total_power);
     }
@@ -2785,7 +2814,8 @@ LBSSolver::SetPhiFromFieldFunctions(PhiSTLOption which_phi,
           const int64_t imapA = sdm.MapDOFLocal(cell, i);
           const int64_t imapB = sdm.MapDOFLocal(cell, i, phi_uk_man, m, g);
 
-          if (which_phi == PhiSTLOption::PHI_OLD) phi_old_local_[imapB] = ff_data[imapA];
+          if (which_phi == PhiSTLOption::PHI_OLD)
+            phi_old_local_[imapB] = ff_data[imapA];
           else if (which_phi == PhiSTLOption::PHI_NEW)
             phi_new_local_[imapB] = ff_data[imapA];
         } // for node
@@ -2812,7 +2842,8 @@ LBSSolver::ComputeFissionProduction(const std::vector<double>& phi)
     const auto& F = xs.ProductionMatrix();
     const auto& nu_delayed_sigma_f = xs.NuDelayedSigmaF();
 
-    if (not xs.IsFissionable()) continue;
+    if (not xs.IsFissionable())
+      continue;
 
     // Loop over nodes
     const int num_nodes = transport_view.NumNodes();
@@ -2837,7 +2868,7 @@ LBSSolver::ComputeFissionProduction(const std::vector<double>& phi)
 
   // Allreduce global production
   double global_production = 0.0;
-  MPI_Allreduce(&local_production, &global_production, 1, MPI_DOUBLE, MPI_SUM, mpi.comm);
+  mpi_comm.all_reduce(local_production, global_production, mpi::op::sum<double>());
 
   return global_production;
 }
@@ -2860,7 +2891,8 @@ LBSSolver::ComputeFissionRate(const std::vector<double>& phi)
     const auto& sigma_f = xs.SigmaFission();
 
     // skip non-fissionable material
-    if (not xs.IsFissionable()) continue;
+    if (not xs.IsFissionable())
+      continue;
 
     // Loop over nodes
     const int num_nodes = transport_view.NumNodes();
@@ -2877,7 +2909,7 @@ LBSSolver::ComputeFissionRate(const std::vector<double>& phi)
 
   // Allreduce global production
   double global_fission_rate = 0.0;
-  MPI_Allreduce(&local_fission_rate, &global_fission_rate, 1, MPI_DOUBLE, MPI_SUM, mpi.comm);
+  mpi_comm.all_reduce(local_fission_rate, global_fission_rate, mpi::op::sum<double>());
 
   return global_fission_rate;
 }
@@ -2970,7 +3002,9 @@ LBSSolver::ScalePhiVector(PhiSTLOption which_phi, double value)
 }
 
 void
-LBSSolver::SetGSPETScVecFromPrimarySTLvector(LBSGroupset& groupset, Vec x, PhiSTLOption which_phi)
+LBSSolver::SetGSPETScVecFromPrimarySTLvector(const LBSGroupset& groupset,
+                                             Vec x,
+                                             PhiSTLOption which_phi)
 {
   const std::vector<double>* y_ptr;
   switch (which_phi)
@@ -3015,8 +3049,8 @@ LBSSolver::SetGSPETScVecFromPrimarySTLvector(LBSGroupset& groupset, Vec x, PhiST
 }
 
 void
-LBSSolver::SetPrimarySTLvectorFromGSPETScVec(LBSGroupset& groupset,
-                                             Vec x_src,
+LBSSolver::SetPrimarySTLvectorFromGSPETScVec(const LBSGroupset& groupset,
+                                             Vec x,
                                              PhiSTLOption which_phi)
 {
   std::vector<double>* y_ptr;
@@ -3033,7 +3067,7 @@ LBSSolver::SetPrimarySTLvectorFromGSPETScVec(LBSGroupset& groupset,
   }
 
   const double* x_ref;
-  VecGetArrayRead(x_src, &x_ref);
+  VecGetArrayRead(x, &x_ref);
 
   int gsi = groupset.groups_.front().id_;
   int gsf = groupset.groups_.back().id_;
@@ -3058,12 +3092,12 @@ LBSSolver::SetPrimarySTLvectorFromGSPETScVec(LBSGroupset& groupset,
     }     // for dof
   }       // for cell
 
-  VecRestoreArrayRead(x_src, &x_ref);
+  VecRestoreArrayRead(x, &x_ref);
 }
 
 void
-LBSSolver::GSScopedCopyPrimarySTLvectors(LBSGroupset& groupset,
-                                         const std::vector<double>& x_src,
+LBSSolver::GSScopedCopyPrimarySTLvectors(const LBSGroupset& groupset,
+                                         const std::vector<double>& x,
                                          std::vector<double>& y)
 {
   int gsi = groupset.groups_.front().id_;
@@ -3080,7 +3114,7 @@ LBSSolver::GSScopedCopyPrimarySTLvectors(LBSGroupset& groupset,
         size_t mapping = transport_view.MapDOF(i, m, gsi);
         for (int g = 0; g < gss; g++)
         {
-          y[mapping + g] = x_src[mapping + g];
+          y[mapping + g] = x[mapping + g];
         } // for g
       }   // for moment
     }     // for dof
@@ -3088,7 +3122,7 @@ LBSSolver::GSScopedCopyPrimarySTLvectors(LBSGroupset& groupset,
 }
 
 void
-LBSSolver::GSScopedCopyPrimarySTLvectors(LBSGroupset& groupset,
+LBSSolver::GSScopedCopyPrimarySTLvectors(const LBSGroupset& groupset,
                                          PhiSTLOption from_which_phi,
                                          PhiSTLOption to_which_phi)
 {
@@ -3177,11 +3211,11 @@ LBSSolver::SetGroupScopedPETScVecFromPrimarySTLvector(int first_group_id,
 void
 LBSSolver::SetPrimarySTLvectorFromGroupScopedPETScVec(int first_group_id,
                                                       int last_group_id,
-                                                      Vec x_src,
+                                                      Vec x,
                                                       std::vector<double>& y)
 {
   const double* x_ref;
-  VecGetArrayRead(x_src, &x_ref);
+  VecGetArrayRead(x, &x_ref);
 
   int gsi = first_group_id;
   int gsf = last_group_id;
@@ -3206,11 +3240,11 @@ LBSSolver::SetPrimarySTLvectorFromGroupScopedPETScVec(int first_group_id,
     }     // for dof
   }       // for cell
 
-  VecRestoreArrayRead(x_src, &x_ref);
+  VecRestoreArrayRead(x, &x_ref);
 }
 
 void
-LBSSolver::SetMultiGSPETScVecFromPrimarySTLvector(const std::vector<int>& gs_ids,
+LBSSolver::SetMultiGSPETScVecFromPrimarySTLvector(const std::vector<int>& groupset_ids,
                                                   Vec x,
                                                   PhiSTLOption which_phi)
 {
@@ -3231,7 +3265,7 @@ LBSSolver::SetMultiGSPETScVecFromPrimarySTLvector(const std::vector<int>& gs_ids
   VecGetArray(x, &x_ref);
 
   int64_t index = -1;
-  for (int gs_id : gs_ids)
+  for (int gs_id : groupset_ids)
   {
     const auto& groupset = groupsets_.at(gs_id);
 
@@ -3262,8 +3296,8 @@ LBSSolver::SetMultiGSPETScVecFromPrimarySTLvector(const std::vector<int>& gs_ids
 }
 
 void
-LBSSolver::SetPrimarySTLvectorFromMultiGSPETScVecFrom(const std::vector<int>& gs_ids,
-                                                      Vec x_src,
+LBSSolver::SetPrimarySTLvectorFromMultiGSPETScVecFrom(const std::vector<int>& groupset_ids,
+                                                      Vec x,
                                                       PhiSTLOption which_phi)
 {
   std::vector<double>* y_ptr;
@@ -3280,10 +3314,10 @@ LBSSolver::SetPrimarySTLvectorFromMultiGSPETScVecFrom(const std::vector<int>& gs
   }
 
   const double* x_ref;
-  VecGetArrayRead(x_src, &x_ref);
+  VecGetArrayRead(x, &x_ref);
 
   int64_t index = -1;
-  for (int gs_id : gs_ids)
+  for (int gs_id : groupset_ids)
   {
     const auto& groupset = groupsets_.at(gs_id);
 
@@ -3310,7 +3344,7 @@ LBSSolver::SetPrimarySTLvectorFromMultiGSPETScVecFrom(const std::vector<int>& gs
     }       // for cell
   }         // for groupset id
 
-  VecRestoreArrayRead(x_src, &x_ref);
+  VecRestoreArrayRead(x, &x_ref);
 }
 
 } // namespace lbs

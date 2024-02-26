@@ -1,15 +1,9 @@
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
-
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_discontinuous.h"
-#include "framework/math/spatial_discretization/finite_element/lagrange/lagrange_discontinuous.h"
 #include "framework/math/petsc_utils/petsc_utils.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
-
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-
 #include "lua/framework/console/console.h"
 
 using namespace opensn;
@@ -17,16 +11,16 @@ using namespace opensn;
 namespace unit_tests
 {
 
-InputParameters chi_math_SDM_Test02Syntax();
-ParameterBlock chi_math_SDM_Test02_DisContinuous(const InputParameters& input_parameters);
+InputParameters math_SDM_Test02Syntax();
+ParameterBlock math_SDM_Test02_DisContinuous(const InputParameters& input_parameters);
 
-RegisterWrapperFunction(chi_unit_tests,
-                        chi_math_SDM_Test02_DisContinuous,
-                        chi_math_SDM_Test02Syntax,
-                        chi_math_SDM_Test02_DisContinuous);
+RegisterWrapperFunctionNamespace(unit_tests,
+                                 math_SDM_Test02_DisContinuous,
+                                 math_SDM_Test02Syntax,
+                                 math_SDM_Test02_DisContinuous);
 
 InputParameters
-chi_math_SDM_Test02Syntax()
+math_SDM_Test02Syntax()
 {
   InputParameters params;
 
@@ -48,17 +42,17 @@ int MapFaceNodeDisc(const CellMapping& cur_cell_mapping,
 double HPerpendicular(const CellMapping& cell_mapping, unsigned int f);
 
 ParameterBlock
-chi_math_SDM_Test02_DisContinuous(const InputParameters& input_parameters)
+math_SDM_Test02_DisContinuous(const InputParameters& input_parameters)
 {
   const ParameterBlock& params = input_parameters.GetParam("arg0");
 
   const double penalty_factor =
     params.Has("penalty_factor") ? params.GetParamValue<double>("penalty_factor") : 4.0;
 
-  const bool export_vtk = params.Has("export_vtk") && params.GetParamValue<bool>("export_vtk");
+  const bool export_vtk = params.Has("export_vtk") and params.GetParamValue<bool>("export_vtk");
 
   // Get grid
-  auto grid_ptr = GetCurrentHandler().GetGrid();
+  auto grid_ptr = GetCurrentMesh();
   const auto& grid = *grid_ptr;
 
   opensn::log.Log() << "Global num cells: " << grid.GetGlobalNumberOfCells();
@@ -70,8 +64,8 @@ chi_math_SDM_Test02_DisContinuous(const InputParameters& input_parameters)
 
   {
     using namespace opensn;
-    if (sdm_type == "PWLD") { sdm_ptr = PieceWiseLinearDiscontinuous::New(grid); }
-    else if (sdm_type == "LagrangeD") { sdm_ptr = LagrangeDiscontinuous::New(grid); }
+    if (sdm_type == "PWLD")
+      sdm_ptr = PieceWiseLinearDiscontinuous::New(grid);
     else
       ChiInvalidArgument("Unsupported sdm_type \"" + sdm_type + "\"");
   }
@@ -107,7 +101,7 @@ chi_math_SDM_Test02_DisContinuous(const InputParameters& input_parameters)
   for (const auto& cell : grid.local_cells)
   {
     const auto& cell_mapping = sdm.GetCellMapping(cell);
-    const auto qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto qp_data = cell_mapping.MakeVolumetricFiniteElementData();
     const size_t num_nodes = cell_mapping.NumNodes();
 
     const auto& cc_nodes = cell_mapping.GetNodeLocations();
@@ -126,10 +120,12 @@ chi_math_SDM_Test02_DisContinuous(const InputParameters& input_parameters)
       const auto& JxW = qp_data.JxW_Values();
       for (size_t i = 0; i < num_nodes; ++i)
       {
-        if (bndry_nodes.find(i) != bndry_nodes.end()) continue;
+        if (bndry_nodes.find(i) != bndry_nodes.end())
+          continue;
         for (size_t j = 0; j < num_nodes; ++j)
         {
-          if (bndry_nodes.find(j) != bndry_nodes.end()) continue;
+          if (bndry_nodes.find(j) != bndry_nodes.end())
+            continue;
           double entry_aij = 0.0;
           for (size_t qp : qp_data.QuadraturePointIndices())
             entry_aij += shape_grad[i][qp].Dot(shape_grad[j][qp]) * JxW[qp];
@@ -147,7 +143,7 @@ chi_math_SDM_Test02_DisContinuous(const InputParameters& input_parameters)
       const auto& face = cell.faces_[f];
       const auto& n_f = face.normal_;
       const size_t num_face_nodes = cell_mapping.NumFaceNodes(f);
-      const auto fqp_data = cell_mapping.MakeSurfaceQuadraturePointData(f);
+      const auto fqp_data = cell_mapping.MakeSurfaceFiniteElementData(f);
 
       const double hm = HPerpendicular(cell_mapping, f);
 
@@ -163,7 +159,8 @@ chi_math_SDM_Test02_DisContinuous(const InputParameters& input_parameters)
 
         // Compute kappa
         double kappa = 1.0;
-        if (cell.Type() == CellType::SLAB) kappa = 2.0 * penalty_factor * (D / hp + D / hm) * 0.5;
+        if (cell.Type() == CellType::SLAB)
+          kappa = 2.0 * penalty_factor * (D / hp + D / hm) * 0.5;
         if (cell.Type() == CellType::POLYGON)
           kappa = 2.0 * penalty_factor * (D / hp + D / hm) * 0.5;
         if (cell.Type() == CellType::POLYHEDRON)
@@ -265,9 +262,12 @@ chi_math_SDM_Test02_DisContinuous(const InputParameters& input_parameters)
 
         // Compute kappa
         double kappa = 1.0;
-        if (cell.Type() == CellType::SLAB) kappa = 4.0 * penalty_factor * D / hm;
-        if (cell.Type() == CellType::POLYGON) kappa = 4.0 * penalty_factor * D / hm;
-        if (cell.Type() == CellType::POLYHEDRON) kappa = 8.0 * penalty_factor * D / hm;
+        if (cell.Type() == CellType::SLAB)
+          kappa = 4.0 * penalty_factor * D / hm;
+        if (cell.Type() == CellType::POLYGON)
+          kappa = 4.0 * penalty_factor * D / hm;
+        if (cell.Type() == CellType::POLYHEDRON)
+          kappa = 8.0 * penalty_factor * D / hm;
 
         // Assembly penalty terms
         for (size_t fi = 0; fi < num_face_nodes; ++fi)
@@ -386,7 +386,7 @@ chi_math_SDM_Test02_DisContinuous(const InputParameters& input_parameters)
     local_max = std::max(val, local_max);
 
   double global_max;
-  MPI_Allreduce(&local_max, &global_max, 1, MPI_DOUBLE, MPI_MAX, opensn::mpi.comm);
+  opensn::mpi_comm.all_reduce(local_max, global_max, mpi::op::max<double>());
 
   opensn::log.Log() << "Nodal max = " << global_max;
 
@@ -431,7 +431,8 @@ MapFaceNodeDisc(const CellMapping& cur_cell_mapping,
   for (size_t fj = 0; fj < adj_face_num_nodes; ++fj)
   {
     const int j = adj_cell_mapping.MapFaceNode(acf, fj);
-    if ((node_i_loc - ac_node_locs[j]).NormSquare() < epsilon) return j;
+    if ((node_i_loc - ac_node_locs[j]).NormSquare() < epsilon)
+      return j;
   }
 
   throw std::logic_error(
@@ -461,18 +462,21 @@ HPerpendicular(const CellMapping& cell_mapping, unsigned int f)
   };
 
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SLAB
-  if (cell.Type() == CellType::SLAB) hp = volume / 2.0;
+  if (cell.Type() == CellType::SLAB)
+    hp = volume / 2.0;
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% POLYGON
   else if (cell.Type() == CellType::POLYGON)
   {
-    if (num_faces == 3) hp = 2.0 * volume / face_area;
+    if (num_faces == 3)
+      hp = 2.0 * volume / face_area;
     else if (num_faces == 4)
       hp = volume / face_area;
     else // Nv > 4
     {
       const double surface_area = ComputeSurfaceArea();
 
-      if (num_faces % 2 == 0) hp = 4.0 * volume / surface_area;
+      if (num_faces % 2 == 0)
+        hp = 4.0 * volume / surface_area;
       else
       {
         hp = 2.0 * volume / surface_area;
@@ -489,7 +493,7 @@ HPerpendicular(const CellMapping& cell_mapping, unsigned int f)
 
     if (num_faces == 4) // Tet
       hp = 3 * volume / surface_area;
-    else if (num_faces == 6 && num_vertices == 8) // Hex
+    else if (num_faces == 6 and num_vertices == 8) // Hex
       hp = volume / surface_area;
     else // Polyhedron
       hp = 6 * volume / surface_area;

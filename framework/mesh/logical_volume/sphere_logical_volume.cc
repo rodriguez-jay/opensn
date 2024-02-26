@@ -5,7 +5,7 @@
 namespace opensn
 {
 
-OpenSnRegisterObject(chi_mesh, SphereLogicalVolume);
+OpenSnRegisterObjectInNamespace(mesh, SphereLogicalVolume);
 
 InputParameters
 SphereLogicalVolume::GetInputParameters()
@@ -42,7 +42,8 @@ SphereLogicalVolume::Inside(const Vector3& point) const
 
   double R2 = dx * dx + dy * dy + dz * dz;
 
-  if (R2 <= (r_ * r_)) return true;
+  if (R2 <= (r_ * r_))
+    return true;
   else
     return false;
 }

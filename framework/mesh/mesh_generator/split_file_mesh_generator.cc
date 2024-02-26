@@ -3,8 +3,7 @@
 #include "framework/data_types/byte_array.h"
 #include "framework/utils/utils.h"
 
-#include "framework/mesh/mesh_handler/mesh_handler.h"
-#include "framework/mesh/volume_mesher/volume_mesher.h"
+#include "framework/runtime.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 
 #include "framework/logging/log.h"
@@ -17,7 +16,7 @@
 namespace opensn
 {
 
-OpenSnRegisterObject(chi_mesh, SplitFileMeshGenerator);
+OpenSnRegisterObjectInNamespace(mesh, SplitFileMeshGenerator);
 
 InputParameters
 SplitFileMeshGenerator::GetInputParameters()
@@ -69,10 +68,10 @@ SplitFileMeshGenerator::SplitFileMeshGenerator(const InputParameters& params)
 void
 SplitFileMeshGenerator::Execute()
 {
-  const int num_mpi = opensn::mpi.process_count;
+  const int num_mpi = opensn::mpi_comm.size();
   const int num_parts = num_mpi == 1 ? num_parts_ : num_mpi;
 
-  if (opensn::mpi.location_id == 0 and (not read_only_))
+  if (opensn::mpi_comm.rank() == 0 and (not read_only_))
   {
     // Execute all input generators
     // Note these could be empty
@@ -93,22 +92,16 @@ SplitFileMeshGenerator::Execute()
   } // if home location
 
   // Other locations wait here for files to be written
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 
-  if (opensn::mpi.process_count == num_parts)
+  if (opensn::mpi_comm.size() == num_parts)
   {
     log.Log() << "Reading split-mesh";
     auto mesh_info = ReadSplitMesh();
 
     auto grid_ptr = SetupLocalMesh(mesh_info);
+    mesh_stack.push_back(grid_ptr);
 
-    auto new_mesher = std::make_shared<VolumeMesher>(VolumeMesherType::UNPARTITIONED);
-    new_mesher->SetContinuum(grid_ptr);
-
-    if (current_mesh_handler < 0) PushNewHandlerAndGetIndex();
-
-    auto& cur_hndlr = GetCurrentHandler();
-    cur_hndlr.SetVolumeMesher(new_mesher);
     log.Log() << "Done reading split-mesh files";
   }
   else
@@ -120,7 +113,7 @@ SplitFileMeshGenerator::Execute()
     Exit(EXIT_SUCCESS);
   }
 
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 }
 
 void
@@ -173,7 +166,8 @@ SplitFileMeshGenerator::WriteSplitMesh(const std::vector<int64_t>& cell_pids,
         uint64_t cell_global_id = 0;
         for (auto cell_pid : cell_pids)
         {
-          if (cell_pid == pid) local_cells_needed.push_back(cell_global_id);
+          if (cell_pid == pid)
+            local_cells_needed.push_back(cell_global_id);
           ++cell_global_id;
         }
       }
@@ -189,7 +183,8 @@ SplitFileMeshGenerator::WriteSplitMesh(const std::vector<int64_t>& cell_pids,
           vertices_needed.insert(vid);
           for (uint64_t ghost_gid : vertex_subs[vid])
           {
-            if (ghost_gid == cell_global_id) continue;
+            if (ghost_gid == cell_global_id)
+              continue;
             cells_needed.insert(ghost_gid);
 
             const auto& ghost_raw_cell = *raw_cells[ghost_gid];
@@ -317,7 +312,7 @@ SplitFileMeshGenerator::SerializeCell(const UnpartitionedMesh::LightWeightCell& 
 SplitFileMeshGenerator::SplitMeshInfo
 SplitFileMeshGenerator::ReadSplitMesh()
 {
-  const int pid = opensn::mpi.location_id;
+  const int pid = opensn::mpi_comm.rank();
   const std::filesystem::path dir_path = std::filesystem::absolute(split_mesh_dir_path_);
   const std::filesystem::path file_path =
     dir_path.string() + "/" + split_file_prefix_ + "_" + std::to_string(pid) + ".cmesh";
@@ -332,11 +327,11 @@ SplitFileMeshGenerator::ReadSplitMesh()
   // Read mesh attributes and general info
   const size_t file_num_parts = ReadBinaryValue<int>(ifile);
 
-  ChiLogicalErrorIf(opensn::mpi.process_count != file_num_parts,
+  ChiLogicalErrorIf(opensn::mpi_comm.size() != file_num_parts,
                     "Split mesh files with prefix \"" + split_file_prefix_ +
                       "\" has been created with " + std::to_string(file_num_parts) +
                       " parts but is now being read with " +
-                      std::to_string(opensn::mpi.process_count) + " processes.");
+                      std::to_string(opensn::mpi_comm.size()) + " processes.");
 
   info_block.mesh_attributes_ = ReadBinaryValue<int>(ifile);
   info_block.ortho_Nx_ = ReadBinaryValue<size_t>(ifile);

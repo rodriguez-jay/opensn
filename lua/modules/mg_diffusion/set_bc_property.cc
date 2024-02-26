@@ -11,11 +11,12 @@ namespace opensnlua::mg_diffusion
 {
 
 int
-chiCFEMMGDiffusionSetBCProperty(lua_State* L)
+CFEMMGDiffusionSetBCProperty(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args < 2) LuaPostArgAmountError(fname, num_args, 2);
+  if (num_args < 2)
+    LuaPostArgAmountError(fname, num_args, 2);
 
   LuaCheckNilValue(fname, L, 1);
   LuaCheckNilValue(fname, L, 2);
@@ -37,7 +38,7 @@ chiCFEMMGDiffusionSetBCProperty(lua_State* L)
     if (num_args < 4)
     {
       opensn::log.Log0Error() << "Invalid amount of arguments used in"
-                              << " chiCFEMMGDiffusionsetBCproperty(...,\"boundary_type\".... "
+                              << " CFEMMGDiffusionsetBCproperty(...,\"boundary_type\".... "
                               << " At least 4 arguments are expected.";
       opensn::Exit(EXIT_FAILURE);
     }
@@ -52,7 +53,7 @@ chiCFEMMGDiffusionSetBCProperty(lua_State* L)
       if (num_args != 4)
       {
         opensn::log.Log0Error() << "Invalid amount of arguments used in"
-                                << " chiCFEMMGDiffusionsetBCproperty(...,\"boundary_type\","
+                                << " CFEMMGDiffusionsetBCproperty(...,\"boundary_type\","
                                 << bound_index << ",\"reflecting\". "
                                 << " 4 arguments are expected.";
         opensn::Exit(EXIT_FAILURE);
@@ -69,7 +70,7 @@ chiCFEMMGDiffusionSetBCProperty(lua_State* L)
     else if (type_name == "dirichlet") // ------------- DIRICHLET
     {
       opensn::log.Log0Error() << "Dirichlet BC is not supported in multigroup diffusion "
-                              << "(chiCFEMMGDiffusionSetBCProperty).";
+                              << "(CFEMMGDiffusionSetBCProperty).";
       opensn::Exit(EXIT_FAILURE);
     }
     else if (type_name == "neumann") // ------------- NEUMANN
@@ -77,7 +78,7 @@ chiCFEMMGDiffusionSetBCProperty(lua_State* L)
       if (num_args != 5)
       {
         opensn::log.Log0Error() << "Invalid amount of arguments used in"
-                                << " chiCFEMMGDiffusionsetBCproperty(...,\"boundary_type\","
+                                << " CFEMMGDiffusionsetBCproperty(...,\"boundary_type\","
                                 << bound_index << ",\"neumann\". "
                                 << " 5 arguments are expected.";
         opensn::Exit(EXIT_FAILURE);
@@ -104,7 +105,7 @@ chiCFEMMGDiffusionSetBCProperty(lua_State* L)
       if (num_args != 4)
       {
         opensn::log.Log0Error() << "Invalid amount of arguments used in"
-                                << " chiCFEMMGDiffusionsetBCproperty(...,\"boundary_type\","
+                                << " CFEMMGDiffusionsetBCproperty(...,\"boundary_type\","
                                 << bound_index << ",\"vacuum\". "
                                 << " 4 arguments are expected.";
         opensn::Exit(EXIT_FAILURE);
@@ -127,7 +128,7 @@ chiCFEMMGDiffusionSetBCProperty(lua_State* L)
       if (num_args != 7)
       {
         opensn::log.Log0Error() << "Invalid amount of arguments used in"
-                                << " chiCFEMMGDiffusionSetBCProperty(...,\"boundary_type\","
+                                << " CFEMMGDiffusionSetBCProperty(...,\"boundary_type\","
                                 << bound_index << ",\"robin\". "
                                 << " 7 arguments are expected.";
         opensn::Exit(EXIT_FAILURE);
@@ -151,17 +152,17 @@ chiCFEMMGDiffusionSetBCProperty(lua_State* L)
     else
     {
       opensn::log.LogAllError() << "Unsupported boundary type encountered in call to "
-                                << "chiCFEMMGDiffusionSetBCProperty(..,\"boundary_type\",.. :"
+                                << "CFEMMGDiffusionSetBCProperty(..,\"boundary_type\",.. :"
                                 << type_name;
       opensn::Exit(EXIT_FAILURE);
     }
   }
   else // wrong property_name
   {
-    opensn::log.Log0Error() << "Invalid property in chiCFEMMGDiffusionSetBCProperty.";
+    opensn::log.Log0Error() << "Invalid property in CFEMMGDiffusionSetBCProperty.";
     opensn::Exit(EXIT_FAILURE);
   }
   return 0;
-} // end of chiCFEMMGDiffusionSetBCProperty
+} // end of CFEMMGDiffusionSetBCProperty
 
 } // namespace opensnlua::mg_diffusion

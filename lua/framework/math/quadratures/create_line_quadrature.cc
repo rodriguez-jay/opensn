@@ -10,15 +10,16 @@
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(chiCreateLineQuadrature);
+RegisterLuaFunctionAsIs(CreateLineQuadrature);
 
 int
-chiCreateLineQuadrature(lua_State* L)
+CreateLineQuadrature(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
 
-  if (not((num_args == 2) or (num_args == 3))) LuaPostArgAmountError(fname, 2, num_args);
+  if (not((num_args == 2) or (num_args == 3)))
+    LuaPostArgAmountError(fname, 2, num_args);
 
   LuaCheckNilValue(fname, L, 1);
   LuaCheckNilValue(fname, L, 2);
@@ -27,7 +28,8 @@ chiCreateLineQuadrature(lua_State* L)
   int ident = lua_tonumber(L, 1);
   int N = lua_tonumber(L, 2);
   bool verbose = false;
-  if (num_args == 3) verbose = lua_toboolean(L, 3);
+  if (num_args == 3)
+    verbose = lua_toboolean(L, 3);
 
   ParameterBlock params;
   params.AddParameter("verbose", verbose);
@@ -49,7 +51,7 @@ chiCreateLineQuadrature(lua_State* L)
     opensn::log.Log() << "Creating Gauss-Chebyshev Quadrature\n";
 
     const size_t handle =
-      obj_factory.MakeRegisteredObjectOfType("chi_math::QuadratureGaussChebyshev", params);
+      obj_factory.MakeRegisteredObjectOfType("math::QuadratureGaussChebyshev", params);
 
     lua_pushinteger(L, static_cast<lua_Integer>(handle));
     return 1;

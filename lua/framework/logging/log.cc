@@ -10,10 +10,10 @@ using namespace opensn;
 
 namespace opensnlua
 {
-RegisterLuaFunctionAsIs(chiLogSetVerbosity);
-RegisterLuaFunctionAsIs(chiLog);
-RegisterLuaFunctionAsIs(chiLogProcessEvent);
-RegisterLuaFunctionAsIs(chiLogPrintTimingGraph);
+RegisterLuaFunctionAsIs(LogSetVerbosity);
+RegisterLuaFunctionAsIs(Log);
+RegisterLuaFunctionAsIs(LogProcessEvent);
+RegisterLuaFunctionAsIs(LogPrintTimingGraph);
 
 RegisterLuaConstantAsIs(LOG_0, Varying(1));
 RegisterLuaConstantAsIs(LOG_0WARNING, Varying(2));
@@ -29,25 +29,32 @@ RegisterLuaConstantAsIs(LOG_ALLVERBOSE_1, Varying(11));
 RegisterLuaConstantAsIs(LOG_ALLVERBOSE_2, Varying(12));
 
 int
-chiLogSetVerbosity(lua_State* L)
+LogSetVerbosity(lua_State* L)
 {
   int num_args = lua_gettop(L);
 
-  if (num_args == 0) { return 0; }
+  if (num_args == 0)
+  {
+    return 0;
+  }
   else
   {
     int level = lua_tonumber(L, 1);
-    if (level <= 2) { opensn::log.SetVerbosity(level); }
+    if (level <= 2)
+    {
+      opensn::log.SetVerbosity(level);
+    }
   }
   return 0;
 }
 
 int
-chiLog(lua_State* L)
+Log(lua_State* L)
 {
   int num_args = lua_gettop(L);
 
-  if (num_args != 2) LuaPostArgAmountError("chiLog", 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError("Log", 2, num_args);
 
   int mode = lua_tonumber(L, 1);
   const char* message = lua_tostring(L, 2);
@@ -58,11 +65,12 @@ chiLog(lua_State* L)
 }
 
 int
-chiLogProcessEvent(lua_State* L)
+LogProcessEvent(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError(fname, 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError(fname, 2, num_args);
 
   LuaCheckStringValue(fname, L, 1);
   LuaCheckStringValue(fname, L, 2);
@@ -94,11 +102,11 @@ chiLogProcessEvent(lua_State* L)
 }
 
 int
-chiLogPrintTimingGraph(lua_State* L)
+LogPrintTimingGraph(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  auto& chitech_timing = opensn::log.GetTimingBlock(opensn::name);
+  auto& timing = opensn::log.GetTimingBlock(opensn::name);
 
   int rank = 0;
   if (num_args >= 1)
@@ -107,12 +115,12 @@ chiLogPrintTimingGraph(lua_State* L)
     rank = lua_tointeger(L, 1);
   }
 
-  ChiInvalidArgumentIf(rank >= opensn::mpi.process_count,
+  ChiInvalidArgumentIf(rank >= opensn::mpi_comm.size(),
                        "rank >= process_count, i.e., " + std::to_string(rank) +
-                         " >= " + std::to_string(opensn::mpi.process_count));
+                         " >= " + std::to_string(opensn::mpi_comm.size()));
 
-  if (opensn::mpi.location_id == rank)
-    opensn::log.LogAll() << "\nPerformance Graph:\n" << chitech_timing.MakeGraphString();
+  if (opensn::mpi_comm.rank() == rank)
+    opensn::log.LogAll() << "\nPerformance Graph:\n" << timing.MakeGraphString();
 
   return 0;
 }

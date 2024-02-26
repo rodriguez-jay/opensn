@@ -11,19 +11,21 @@ using namespace opensn;
 
 namespace unit_tests
 {
-int chi_ParameterBlock_Test00(lua_State* L);
+int ParameterBlock_Test00(lua_State* L);
 
-RegisterLuaFunction(chi_ParameterBlock_Test00, chi_unit_tests, chi_ParameterBlock_Test00);
+RegisterLuaFunctionNamespace(ParameterBlock_Test00, unit_tests, ParameterBlock_Test00);
 
 int
-chi_ParameterBlock_Test00(lua_State* L)
+ParameterBlock_Test00(lua_State* L)
 {
   opensn::log.Log() << "GOLD_BEGIN";
   const int num_args = lua_gettop(L);
   bool verbose = false;
-  if (num_args >= 1) verbose = lua_toboolean(L, 1);
+  if (num_args >= 1)
+    verbose = lua_toboolean(L, 1);
 
-  if (verbose) opensn::log.Log() << "Hello world";
+  if (verbose)
+    opensn::log.Log() << "Hello world";
 
   if (num_args == 2)
   {

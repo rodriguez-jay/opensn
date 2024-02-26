@@ -14,9 +14,9 @@
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(chiPhysicsMaterialAddProperty);
-RegisterLuaFunctionAsIs(chiPhysicsMaterialSetProperty);
-RegisterLuaFunctionAsIs(chiPhysicsMaterialGetProperty);
+RegisterLuaFunctionAsIs(PhysicsMaterialAddProperty);
+RegisterLuaFunctionAsIs(PhysicsMaterialSetProperty);
+RegisterLuaFunctionAsIs(PhysicsMaterialGetProperty);
 
 RegisterLuaConstantAsIs(SCALAR_VALUE, Varying(1));
 RegisterLuaConstantAsIs(TRANSPORT_XSECTIONS, Varying(10));
@@ -26,7 +26,7 @@ namespace
 {
 
 void
-ScalarPropertyPushTable(lua_State* L, std::shared_ptr<MaterialProperty> property)
+ScalarPropertyPushTable(lua_State* L, std::shared_ptr<PhysicsMaterialProperty> property)
 {
   lua_newtable(L);
   lua_pushstring(L, "is_empty");
@@ -73,9 +73,10 @@ MaterialPropertyPushLuaTable(lua_State* L)
 }
 
 void
-PropertyPushLuaTable(lua_State* L, std::shared_ptr<MaterialProperty> property)
+PropertyPushLuaTable(lua_State* L, std::shared_ptr<PhysicsMaterialProperty> property)
 {
-  if (property->Type() == PropertyType::SCALAR_VALUE) ScalarPropertyPushTable(L, property);
+  if (property->Type() == PropertyType::SCALAR_VALUE)
+    ScalarPropertyPushTable(L, property);
   else if (property->Type() == PropertyType::ISOTROPIC_MG_SOURCE)
     IsotropicMGSourcePropertyPushTable(
       L, std::dynamic_pointer_cast<IsotropicMultiGrpSource>(property));
@@ -86,15 +87,15 @@ PropertyPushLuaTable(lua_State* L, std::shared_ptr<MaterialProperty> property)
 } // namespace
 
 int
-chiPhysicsMaterialAddProperty(lua_State* L)
+PhysicsMaterialAddProperty(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int numArgs = lua_gettop(L);
 
-  if (!((numArgs >= 2) && (numArgs <= 3)))
+  if (not((numArgs >= 2) and (numArgs <= 3)))
   {
     opensn::log.Log0Error() << "Incorrect amount of arguments "
-                               "in chiPhysicsMaterialAddProperty";
+                               "in PhysicsMaterialAddProperty";
     opensn::Exit(EXIT_FAILURE);
   }
 
@@ -102,7 +103,10 @@ chiPhysicsMaterialAddProperty(lua_State* L)
   int property_index = lua_tonumber(L, 2);
 
   const char* provided_name = "";
-  if (numArgs == 3) { provided_name = lua_tostring(L, 3); }
+  if (numArgs == 3)
+  {
+    provided_name = lua_tostring(L, 3);
+  }
 
   // Get reference to material
   auto cur_material = opensn::GetStackItemPtr(opensn::material_stack, material_index, fname);
@@ -119,7 +123,8 @@ chiPhysicsMaterialAddProperty(lua_State* L)
     prop->property_name =
       std::string("Property ") + std::to_string(cur_material->properties_.size());
 
-    if (numArgs == 3) prop->property_name = std::string(provided_name);
+    if (numArgs == 3)
+      prop->property_name = std::string(provided_name);
 
     cur_material->properties_.push_back(prop);
     opensn::log.Log0Verbose1() << "Scalar Value Property added to material"
@@ -148,7 +153,8 @@ chiPhysicsMaterialAddProperty(lua_State* L)
     prop->property_name =
       std::string("Property ") + std::to_string(cur_material->properties_.size());
 
-    if (numArgs == 3) prop->property_name = std::string(provided_name);
+    if (numArgs == 3)
+      prop->property_name = std::string(provided_name);
 
     cur_material->properties_.push_back(prop);
     opensn::log.Log0Verbose1() << "Transport cross-sections added to material"
@@ -183,7 +189,8 @@ chiPhysicsMaterialAddProperty(lua_State* L)
     prop->property_name =
       std::string("Property ") + std::to_string(cur_material->properties_.size());
 
-    if (numArgs == 3) prop->property_name = std::string(provided_name);
+    if (numArgs == 3)
+      prop->property_name = std::string(provided_name);
 
     cur_material->properties_.push_back(prop);
     opensn::log.Log0Verbose1() << "Isotropic Multigroup Source added to material"
@@ -192,8 +199,7 @@ chiPhysicsMaterialAddProperty(lua_State* L)
   }
   else
   {
-    opensn::log.Log0Error()
-      << "Unsupported property type in call to chiPhysicsMaterialAddProperty.";
+    opensn::log.Log0Error() << "Unsupported property type in call to PhysicsMaterialAddProperty.";
     opensn::Exit(EXIT_FAILURE);
   }
 
@@ -201,7 +207,7 @@ chiPhysicsMaterialAddProperty(lua_State* L)
 }
 
 int
-chiPhysicsMaterialSetProperty(lua_State* L)
+PhysicsMaterialSetProperty(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int numArgs = lua_gettop(L);
@@ -209,14 +215,15 @@ chiPhysicsMaterialSetProperty(lua_State* L)
   if (numArgs < 3)
   {
     opensn::log.Log0Error() << "Incorrect amount of arguments "
-                               "in chiPhysicsMaterialSetProperty";
+                               "in PhysicsMaterialSetProperty";
     opensn::Exit(EXIT_FAILURE);
   }
 
   int material_index = lua_tonumber(L, 1);
   int property_index = -1;
   std::string property_index_name;
-  if (lua_isnumber(L, 2)) property_index = lua_tonumber(L, 2);
+  if (lua_isnumber(L, 2))
+    property_index = lua_tonumber(L, 2);
   else
   {
     const char* temp_name = lua_tostring(L, 2);
@@ -229,7 +236,7 @@ chiPhysicsMaterialSetProperty(lua_State* L)
   auto cur_material = opensn::GetStackItemPtr(opensn::material_stack, material_index, fname);
 
   // If user supplied name then find property index
-  if (!lua_isnumber(L, 2))
+  if (not lua_isnumber(L, 2))
   {
     for (auto& property : cur_material->properties_)
       if (property->property_name == property_index_name)
@@ -247,7 +254,8 @@ chiPhysicsMaterialSetProperty(lua_State* L)
     if (lua_isnumber(L, 2))
     {
       for (int p = 0; p < cur_material->properties_.size(); p++)
-        if (cur_material->properties_[p]->Type() == MatProperty::SCALAR_VALUE) location_of_prop = p;
+        if (cur_material->properties_[p]->Type() == MatProperty::SCALAR_VALUE)
+          location_of_prop = p;
     }
     else
     {
@@ -322,7 +330,8 @@ chiPhysicsMaterialSetProperty(lua_State* L)
       // Process operation
       if (operation_index == static_cast<int>(OpType::SIMPLEXS0))
       {
-        if (numArgs != 5) LuaPostArgAmountError("chiPhysicsMaterialSetProperty", 5, numArgs);
+        if (numArgs != 5)
+          LuaPostArgAmountError("PhysicsMaterialSetProperty", 5, numArgs);
 
         int G = lua_tonumber(L, 4);
         double sigma_t = lua_tonumber(L, 5);
@@ -331,7 +340,8 @@ chiPhysicsMaterialSetProperty(lua_State* L)
       }
       else if (operation_index == static_cast<int>(OpType::SIMPLEXS1))
       {
-        if (numArgs != 6) LuaPostArgAmountError("chiPhysicsMaterialSetProperty", 6, numArgs);
+        if (numArgs != 6)
+          LuaPostArgAmountError("PhysicsMaterialSetProperty", 6, numArgs);
 
         int G = lua_tonumber(L, 4);
         double sigma_t = lua_tonumber(L, 5);
@@ -339,19 +349,21 @@ chiPhysicsMaterialSetProperty(lua_State* L)
 
         prop->MakeSimple1(G, sigma_t, c);
       }
-      else if (operation_index == static_cast<int>(OpType::CHI_XSFILE))
+      else if (operation_index == static_cast<int>(OpType::OPENSN_XSFILE))
       {
-        if (numArgs != 4) LuaPostArgAmountError("chiPhysicsMaterialSetProperty", 4, numArgs);
+        if (numArgs != 4)
+          LuaPostArgAmountError("PhysicsMaterialSetProperty", 4, numArgs);
 
         const char* file_name_c = lua_tostring(L, 4);
 
-        prop->MakeFromChiXSFile(std::string(file_name_c));
+        prop->MakeFromOpenSnXSFile(std::string(file_name_c));
       }
       else if (operation_index == static_cast<int>(OpType::EXISTING))
       {
-        if (numArgs != 4) LuaPostArgAmountError("chiPhysicsMaterialSetProperty", 4, numArgs);
+        if (numArgs != 4)
+          LuaPostArgAmountError("PhysicsMaterialSetProperty", 4, numArgs);
 
-        LuaCheckNilValue("chiPhysicsMaterialSetProperty", L, 4);
+        LuaCheckNilValue("PhysicsMaterialSetProperty", L, 4);
         int handle = lua_tonumber(L, 4);
 
         std::shared_ptr<SingleStateMGXS> xs;
@@ -363,7 +375,7 @@ chiPhysicsMaterialSetProperty(lua_State* L)
         catch (const std::out_of_range& o)
         {
           opensn::log.LogAllError() << "ERROR: Invalid cross-section handle"
-                                    << " in call to chiPhysicsMaterialSetProperty." << std::endl;
+                                    << " in call to PhysicsMaterialSetProperty." << std::endl;
           opensn::Exit(EXIT_FAILURE);
         }
         //        auto old_prop = prop;
@@ -423,7 +435,8 @@ chiPhysicsMaterialSetProperty(lua_State* L)
 
       if (operation_index == static_cast<int>(OpType::SINGLE_VALUE))
       {
-        if (numArgs != 4) LuaPostArgAmountError("chiPhysicsMaterialSetProperty", 4, numArgs);
+        if (numArgs != 4)
+          LuaPostArgAmountError("PhysicsMaterialSetProperty", 4, numArgs);
 
         double value = lua_tonumber(L, 4);
 
@@ -435,11 +448,12 @@ chiPhysicsMaterialSetProperty(lua_State* L)
       }
       else if (operation_index == static_cast<int>(OpType::FROM_ARRAY))
       {
-        if (numArgs != 4) LuaPostArgAmountError("chiPhysicsMaterialSetProperty", 4, numArgs);
+        if (numArgs != 4)
+          LuaPostArgAmountError("PhysicsMaterialSetProperty", 4, numArgs);
 
-        if (!lua_istable(L, 4))
+        if (not lua_istable(L, 4))
         {
-          opensn::log.LogAllError() << "In call to chiPhysicsMaterialSetProperty: "
+          opensn::log.LogAllError() << "In call to PhysicsMaterialSetProperty: "
                                     << "Material \"" << cur_material->name_ << "\", when setting "
                                     << "ISOTROPIC_MG_SOURCE using operation FROM_ARRAY, the fourth "
                                        "argument was detected not to be a lua table.";
@@ -482,7 +496,7 @@ chiPhysicsMaterialSetProperty(lua_State* L)
   else
   {
     opensn::log.LogAllError() << "Unsupported material property specified in "
-                                 "call to chiPhysicsMaterialSetProperty."
+                                 "call to PhysicsMaterialSetProperty."
                               << property_index << std::endl;
     opensn::Exit(EXIT_FAILURE);
   }
@@ -491,16 +505,18 @@ chiPhysicsMaterialSetProperty(lua_State* L)
 }
 
 int
-chiPhysicsMaterialGetProperty(lua_State* L)
+PhysicsMaterialGetProperty(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError("chiPhysicsMaterialGetProperty", 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError("PhysicsMaterialGetProperty", 2, num_args);
 
   int material_index = lua_tonumber(L, 1);
   int property_index = -1;
   std::string property_index_name;
-  if (lua_isnumber(L, 2)) property_index = lua_tonumber(L, 2);
+  if (lua_isnumber(L, 2))
+    property_index = lua_tonumber(L, 2);
   else
   {
     const char* temp_name = lua_tostring(L, 2);
@@ -511,7 +527,7 @@ chiPhysicsMaterialGetProperty(lua_State* L)
   auto cur_material = opensn::GetStackItemPtr(opensn::material_stack, material_index, fname);
 
   // If user supplied name then find property index
-  if (!lua_isnumber(L, 2))
+  if (not lua_isnumber(L, 2))
   {
     for (auto& property : cur_material->properties_)
       if (property->property_name == property_index_name)
@@ -532,7 +548,7 @@ chiPhysicsMaterialGetProperty(lua_State* L)
   if (not property_polulated)
   {
     opensn::log.LogAllError() << "Invalid material property specified in "
-                                 "call to chiPhysicsMaterialGetProperty."
+                                 "call to PhysicsMaterialGetProperty."
                               << property_index << std::endl;
     opensn::Exit(EXIT_FAILURE);
   }

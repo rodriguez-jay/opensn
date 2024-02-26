@@ -1,6 +1,4 @@
 #include "framework/mesh/mesh_generator/mesh_generator.h"
-#include "framework/mesh/mesh_handler/mesh_handler.h"
-#include "framework/mesh/volume_mesher/volume_mesher.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/graphs/graph_partitioner.h"
 #include "framework/graphs/petsc_graph_partitioner.h"
@@ -12,7 +10,7 @@
 namespace opensn
 {
 
-OpenSnRegisterObject(chi_mesh, MeshGenerator);
+OpenSnRegisterObjectInNamespace(mesh, MeshGenerator);
 
 InputParameters
 MeshGenerator::GetInputParameters()
@@ -64,7 +62,7 @@ MeshGenerator::MeshGenerator(const InputParameters& params)
     auto& factory = ObjectFactory::GetInstance();
     auto valid_params = PETScGraphPartitioner::GetInputParameters();
     partitioner_handle =
-      factory.MakeRegisteredObjectOfType("chi::PETScGraphPartitioner", ParameterBlock());
+      factory.MakeRegisteredObjectOfType("PETScGraphPartitioner", ParameterBlock());
   }
   partitioner_ = &GetStackItem<GraphPartitioner>(object_stack, partitioner_handle, __FUNCTION__);
 }
@@ -91,23 +89,15 @@ MeshGenerator::Execute()
   current_umesh = GenerateUnpartitionedMesh(std::move(current_umesh));
 
   std::vector<int64_t> cell_pids;
-  if (opensn::mpi.location_id == 0)
-    cell_pids = PartitionMesh(*current_umesh, opensn::mpi.process_count);
+  if (opensn::mpi_comm.rank() == 0)
+    cell_pids = PartitionMesh(*current_umesh, opensn::mpi_comm.size());
 
-  BroadcastPIDs(cell_pids, 0, mpi.comm);
+  BroadcastPIDs(cell_pids, 0, mpi_comm);
 
   auto grid_ptr = SetupMesh(std::move(current_umesh), cell_pids);
+  mesh_stack.push_back(grid_ptr);
 
-  // Assign the mesh to a VolumeMesher
-  auto new_mesher = std::make_shared<VolumeMesher>(VolumeMesherType::UNPARTITIONED);
-  new_mesher->SetContinuum(grid_ptr);
-
-  if (current_mesh_handler < 0) PushNewHandlerAndGetIndex();
-
-  auto& cur_hndlr = GetCurrentHandler();
-  cur_hndlr.SetVolumeMesher(new_mesher);
-
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 }
 
 void
@@ -124,25 +114,22 @@ MeshGenerator::ComputeAndPrintStats(const MeshContinuum& grid)
   const size_t num_local_cells = grid.local_cells.size();
   size_t num_global_cells = 0;
 
-  MPI_Allreduce(&num_local_cells, &num_global_cells, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, mpi.comm);
+  mpi_comm.all_reduce(num_local_cells, num_global_cells, mpi::op::sum<size_t>());
 
   size_t max_num_local_cells;
-  MPI_Allreduce(
-    &num_local_cells, &max_num_local_cells, 1, MPI_UNSIGNED_LONG_LONG, MPI_MAX, mpi.comm);
+  mpi_comm.all_reduce(num_local_cells, max_num_local_cells, mpi::op::max<size_t>());
 
   size_t min_num_local_cells;
-  MPI_Allreduce(
-    &num_local_cells, &min_num_local_cells, 1, MPI_UNSIGNED_LONG_LONG, MPI_MIN, mpi.comm);
+  mpi_comm.all_reduce(num_local_cells, min_num_local_cells, mpi::op::min<size_t>());
 
-  const size_t avg_num_local_cells = num_global_cells / opensn::mpi.process_count;
+  const size_t avg_num_local_cells = num_global_cells / opensn::mpi_comm.size();
   const size_t num_local_ghosts = grid.cells.GetNumGhosts();
   const double local_ghost_to_local_cell_ratio = double(num_local_ghosts) / double(num_local_cells);
 
   double average_ghost_ratio;
-  MPI_Allreduce(
-    &local_ghost_to_local_cell_ratio, &average_ghost_ratio, 1, MPI_DOUBLE, MPI_SUM, mpi.comm);
+  mpi_comm.all_reduce(local_ghost_to_local_cell_ratio, average_ghost_ratio, mpi::op::sum<double>());
 
-  average_ghost_ratio /= opensn::mpi.process_count;
+  average_ghost_ratio /= opensn::mpi_comm.size();
 
   std::stringstream outstr;
   outstr << "Mesh statistics:\n";
@@ -155,7 +142,7 @@ MeshGenerator::ComputeAndPrintStats(const MeshContinuum& grid)
 
   log.Log() << "\n" << outstr.str() << "\n\n";
 
-  log.LogAllVerbose2() << opensn::mpi.location_id << "Local cells=" << num_local_cells;
+  log.LogAllVerbose2() << opensn::mpi_comm.rank() << "Local cells=" << num_local_cells;
 }
 
 std::vector<int64_t>
@@ -179,7 +166,8 @@ MeshGenerator::PartitionMesh(const UnpartitionedMesh& input_umesh, int num_parti
     {
       CellGraphNode cell_graph_node; // <-- Note A
       for (auto& face : raw_cell_ptr->faces)
-        if (face.has_neighbor) cell_graph_node.push_back(face.neighbor);
+        if (face.has_neighbor)
+          cell_graph_node.push_back(face.neighbor);
 
       cell_graph.push_back(cell_graph_node);
       cell_centroids.push_back(raw_cell_ptr->centroid);
@@ -228,7 +216,7 @@ MeshGenerator::SetupMesh(std::unique_ptr<UnpartitionedMesh> input_umesh_ptr,
   for (auto& raw_cell : input_umesh_ptr->GetRawCells())
   {
     if (CellHasLocalScope(
-          opensn::mpi.location_id, *raw_cell, cell_globl_id, vertex_subs, cell_pids))
+          opensn::mpi_comm.rank(), *raw_cell, cell_globl_id, vertex_subs, cell_pids))
     {
       auto cell = SetupCell(*raw_cell,
                             cell_globl_id,
@@ -261,17 +249,12 @@ MeshGenerator::SetupMesh(std::unique_ptr<UnpartitionedMesh> input_umesh_ptr,
 }
 
 void
-MeshGenerator::BroadcastPIDs(std::vector<int64_t>& cell_pids, int root, MPI_Comm communicator)
+MeshGenerator::BroadcastPIDs(std::vector<int64_t>& cell_pids,
+                             int root,
+                             const mpi::Communicator& communicator)
 {
-  size_t data_count = opensn::mpi.location_id == root ? cell_pids.size() : 0;
-
-  // Broadcast data_count to all locations
-  MPI_Bcast(&data_count, 1, MPI_UINT64_T, root, communicator);
-
-  if (opensn::mpi.location_id != root) cell_pids.assign(data_count, 0);
-
   // Broadcast partitioning to all locations
-  MPI_Bcast(cell_pids.data(), static_cast<int>(data_count), MPI_LONG_LONG_INT, root, communicator);
+  communicator.broadcast(cell_pids, root);
 }
 
 bool
@@ -281,18 +264,22 @@ MeshGenerator::CellHasLocalScope(int location_id,
                                  const std::vector<std::set<uint64_t>>& vertex_subscriptions,
                                  const std::vector<int64_t>& cell_partition_ids) const
 {
-  if (replicated_) return true;
+  if (replicated_)
+    return true;
   // First determine if the cell is a local cell
   int cell_pid = static_cast<int>(cell_partition_ids[cell_global_id]);
-  if (cell_pid == location_id) return true;
+  if (cell_pid == location_id)
+    return true;
 
   // Now determine if the cell is a ghost cell
   for (uint64_t vid : lwcell.vertex_ids)
     for (uint64_t cid : vertex_subscriptions[vid])
     {
-      if (cid == cell_global_id) continue;
+      if (cid == cell_global_id)
+        continue;
       int adj_pid = static_cast<int>(cell_partition_ids[cid]);
-      if (adj_pid == location_id) return true;
+      if (adj_pid == location_id)
+        return true;
     }
 
   return false;
@@ -331,7 +318,8 @@ MeshGenerator::SetupCell(const UnpartitionedMesh::LightWeightCell& raw_cell,
       // A slab face is very easy. If it is the first face
       // the normal is -khat. If it is the second face then
       // it is +khat.
-      if (face_counter == 0) newFace.normal_ = Vector3(0.0, 0.0, -1.0);
+      if (face_counter == 0)
+        newFace.normal_ = Vector3(0.0, 0.0, -1.0);
       else
         newFace.normal_ = Vector3(0.0, 0.0, 1.0);
     }

@@ -4,7 +4,6 @@
 
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-#include "framework/mpi/mpi.h"
 #include "framework/utils/timer.h"
 
 #include <algorithm>
@@ -17,12 +16,18 @@ SPDS::MapLocJToPrelocI(int locJ) const
 {
   for (int i = 0; i < location_dependencies_.size(); i++)
   {
-    if (location_dependencies_[i] == locJ) { return i; }
+    if (location_dependencies_[i] == locJ)
+    {
+      return i;
+    }
   }
 
   for (int i = 0; i < delayed_location_dependencies_.size(); i++)
   {
-    if (delayed_location_dependencies_[i] == locJ) { return -(i + 1); }
+    if (delayed_location_dependencies_[i] == locJ)
+    {
+      return -(i + 1);
+    }
   }
 
   log.LogAllError() << "SPDS Invalid mapping encountered in MapLocJToPrelocI.";
@@ -35,7 +40,10 @@ SPDS::MapLocJToDeplocI(int locJ) const
 {
   for (int i = 0; i < location_successors_.size(); i++)
   {
-    if (location_successors_[i] == locJ) { return i; }
+    if (location_successors_[i] == locJ)
+    {
+      return i;
+    }
   }
 
   log.LogAllError() << "SPDS Invalid mapping encountered in MapLocJToDeplocI.";
@@ -69,13 +77,15 @@ SPDS::PopulateCellRelationships(const Vector3& omega,
       const double mu = omega.Dot(face.normal_);
 
       bool owns_face = true;
-      if (face.has_neighbor_ and cell.global_id_ > face.neighbor_id_) owns_face = false;
+      if (face.has_neighbor_ and cell.global_id_ > face.neighbor_id_)
+        owns_face = false;
 
       if (owns_face)
       {
-        // clang-format off
-        if (mu > tolerance) orientation = FOOUTGOING;
-        else if (mu < tolerance) orientation = FOINCOMING;
+        if (mu > tolerance)
+          orientation = FOOUTGOING;
+        else if (mu < tolerance)
+          orientation = FOINCOMING;
 
         cell_face_orientations_[cell.local_id_][f] = orientation;
 
@@ -83,17 +93,21 @@ SPDS::PopulateCellRelationships(const Vector3& omega,
         {
           const auto& adj_cell = grid_.cells[face.neighbor_id_];
           const auto ass_face = face.GetNeighborAssociatedFace(grid_);
-          auto& adj_face_ori =
-            cell_face_orientations_[adj_cell.local_id_][ass_face];
+          auto& adj_face_ori = cell_face_orientations_[adj_cell.local_id_][ass_face];
 
           switch (orientation)
           {
-            case FOPARALLEL: adj_face_ori = FOPARALLEL; break;
-            case FOINCOMING: adj_face_ori = FOOUTGOING; break;
-            case FOOUTGOING: adj_face_ori = FOINCOMING; break;
+            case FOPARALLEL:
+              adj_face_ori = FOPARALLEL;
+              break;
+            case FOINCOMING:
+              adj_face_ori = FOOUTGOING;
+              break;
+            case FOOUTGOING:
+              adj_face_ori = FOINCOMING;
+              break;
           }
         }
-        // clang-format on
       } // if face owned
       else if (face.has_neighbor_ and not grid_.IsCellLocal(face.neighbor_id_))
       {
@@ -104,7 +118,8 @@ SPDS::PopulateCellRelationships(const Vector3& omega,
         auto& cur_face_ori = cell_face_orientations_[cell.local_id_][f];
 
         const double adj_mu = omega.Dot(adj_face.normal_);
-        if (adj_mu > tolerance) orientation = FOOUTGOING;
+        if (adj_mu > tolerance)
+          orientation = FOOUTGOING;
         else if (adj_mu < tolerance)
           orientation = FOINCOMING;
 
@@ -167,9 +182,9 @@ SPDS::PrintedGhostedGraph() const
 {
   constexpr double tolerance = 1.0e-16;
 
-  for (int p = 0; p < opensn::mpi.process_count; ++p)
+  for (int p = 0; p < opensn::mpi_comm.size(); ++p)
   {
-    if (p == opensn::mpi.location_id)
+    if (p == opensn::mpi_comm.rank())
     {
       std::cout << "// Printing directed graph for location " << p << ":\n";
       std::cout << "digraph DG {\n";
@@ -226,7 +241,7 @@ SPDS::PrintedGhostedGraph() const
       std::cout << "}\n";
 
     } // if current location
-    opensn::mpi.Barrier();
+    opensn::mpi_comm.barrier();
   } // for p
 }
 

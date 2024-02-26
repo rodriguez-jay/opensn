@@ -1,7 +1,7 @@
 #include "diffusion_mip_solver.h"
 #include "modules/linear_boltzmann_solvers/a_lbs_solver/acceleration/acceleration.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
-#include "framework/math/spatial_discretization/finite_element/quadrature_point_data.h"
+#include "framework/math/spatial_discretization/finite_element/finite_element_data.h"
 #include "framework/math/spatial_discretization/spatial_discretization.h"
 #include "framework/math/functions/scalar_spatial_function.h"
 #include "modules/linear_boltzmann_solvers/a_lbs_solver/lbs_structs.h"
@@ -59,7 +59,8 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
   if (A_ == nullptr or rhs_ == nullptr or ksp_ == nullptr)
     throw std::logic_error(fname + ": Some or all PETSc elements are null. "
                                    "Check that Initialize has been called.");
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Starting assembly";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Starting assembly";
 
   const size_t num_groups = uk_man_.unknowns_.front().num_components_;
 
@@ -71,7 +72,7 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
     const auto& cell_mapping = sdm_.GetCellMapping(cell);
     const size_t num_nodes = cell_mapping.NumNodes();
     const auto cc_nodes = cell_mapping.GetNodeLocations();
-    const auto qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
 
     const auto& xs = mat_id_2_xs_map_.at(cell.material_id_);
 
@@ -95,26 +96,26 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
         {
           const int64_t jmap = sdm_.MapDOF(cell, j, uk_man_, 0, g);
           double entry_aij = 0.0;
-          for (size_t qp : qp_data.QuadraturePointIndices())
+          for (size_t qp : fe_vol_data.QuadraturePointIndices())
           {
-            entry_aij +=
-              Dg * qp_data.ShapeGrad(i, qp).Dot(qp_data.ShapeGrad(j, qp)) * qp_data.JxW(qp);
+            entry_aij += Dg * fe_vol_data.ShapeGrad(i, qp).Dot(fe_vol_data.ShapeGrad(j, qp)) *
+                         fe_vol_data.JxW(qp);
 
-            entry_aij +=
-              sigr_g * qp_data.ShapeValue(i, qp) * qp_data.ShapeValue(j, qp) * qp_data.JxW(qp);
+            entry_aij += sigr_g * fe_vol_data.ShapeValue(i, qp) * fe_vol_data.ShapeValue(j, qp) *
+                         fe_vol_data.JxW(qp);
 
             if (not source_function_)
-              entry_rhs_i +=
-                qg[j] * qp_data.ShapeValue(i, qp) * qp_data.ShapeValue(j, qp) * qp_data.JxW(qp);
+              entry_rhs_i += fe_vol_data.ShapeValue(i, qp) * fe_vol_data.ShapeValue(j, qp) *
+                             fe_vol_data.JxW(qp) * qg[j];
           } // for qp
           MatSetValue(A_, imap, jmap, entry_aij, ADD_VALUES);
         } // for j
 
         if (source_function_)
         {
-          for (size_t qp : qp_data.QuadraturePointIndices())
-            entry_rhs_i += source_function_->Evaluate(qp_data.QPointXYZ(qp)) *
-                           qp_data.ShapeValue(i, qp) * qp_data.JxW(qp);
+          for (size_t qp : fe_vol_data.QuadraturePointIndices())
+            entry_rhs_i += source_function_->Evaluate(fe_vol_data.QPointXYZ(qp)) *
+                           fe_vol_data.ShapeValue(i, qp) * fe_vol_data.JxW(qp);
         }
 
         VecSetValue(rhs_, imap, entry_rhs_i, ADD_VALUES);
@@ -126,7 +127,7 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
         const auto& face = cell.faces_[f];
         const auto& n_f = face.normal_;
         const size_t num_face_nodes = cell_mapping.NumFaceNodes(f);
-        const auto fqp_data = cell_mapping.MakeSurfaceQuadraturePointData(f);
+        const auto fe_srf_data = cell_mapping.MakeSurfaceFiniteElementData(f);
 
         const double hm = HPerpendicular(cell, f);
 
@@ -167,9 +168,9 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
               const int64_t jpmap = sdm_.MapDOF(adj_cell, jp, uk_man_, 0, g);
 
               double aij = 0.0;
-              for (size_t qp : fqp_data.QuadraturePointIndices())
-                aij += kappa * fqp_data.ShapeValue(i, qp) * fqp_data.ShapeValue(jm, qp) *
-                       fqp_data.JxW(qp);
+              for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                aij += kappa * fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeValue(jm, qp) *
+                       fe_srf_data.JxW(qp);
 
               MatSetValue(A_, imap, jmmap, aij, ADD_VALUES);
               MatSetValue(A_, imap, jpmap, -aij, ADD_VALUES);
@@ -194,9 +195,9 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
               const int64_t jpmap = sdm_.MapDOF(adj_cell, jp, uk_man_, 0, g);
 
               Vector3 vec_aij;
-              for (size_t qp : fqp_data.QuadraturePointIndices())
-                vec_aij +=
-                  fqp_data.ShapeValue(jm, qp) * fqp_data.ShapeGrad(i, qp) * fqp_data.JxW(qp);
+              for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                vec_aij += fe_srf_data.ShapeValue(jm, qp) * fe_srf_data.ShapeGrad(i, qp) *
+                           fe_srf_data.JxW(qp);
               const double aij = -0.5 * Dg * n_f.Dot(vec_aij);
 
               MatSetValue(A_, imap, jmmap, aij, ADD_VALUES);
@@ -218,9 +219,9 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
               const int64_t jmap = sdm_.MapDOF(cell, j, uk_man_, 0, g);
 
               Vector3 vec_aij;
-              for (size_t qp : fqp_data.QuadraturePointIndices())
-                vec_aij +=
-                  fqp_data.ShapeValue(im, qp) * fqp_data.ShapeGrad(j, qp) * fqp_data.JxW(qp);
+              for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                vec_aij += fe_srf_data.ShapeValue(im, qp) * fe_srf_data.ShapeGrad(j, qp) *
+                           fe_srf_data.JxW(qp);
               const double aij = -0.5 * Dg * n_f.Dot(vec_aij);
 
               MatSetValue(A_, immap, jmap, aij, ADD_VALUES);
@@ -232,7 +233,8 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
         else
         {
           BoundaryCondition bc;
-          if (bcs_.count(face.neighbor_id_) > 0) bc = bcs_.at(face.neighbor_id_);
+          if (bcs_.count(face.neighbor_id_) > 0)
+            bc = bcs_.at(face.neighbor_id_);
 
           if (bc.type == BCType::DIRICHLET)
           {
@@ -240,7 +242,8 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
 
             // Compute kappa
             double kappa = 1.0;
-            if (cell.Type() == CellType::SLAB) kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
+            if (cell.Type() == CellType::SLAB)
+              kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYGON)
               kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYHEDRON)
@@ -258,18 +261,19 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
                 const int64_t jmmap = sdm_.MapDOF(cell, jm, uk_man_, 0, g);
 
                 double aij = 0.0;
-                for (size_t qp : fqp_data.QuadraturePointIndices())
-                  aij += kappa * fqp_data.ShapeValue(i, qp) * fqp_data.ShapeValue(jm, qp) *
-                         fqp_data.JxW(qp);
+                for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                  aij += kappa * fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeValue(jm, qp) *
+                         fe_srf_data.JxW(qp);
                 double aij_bc_value = aij * bc_value;
 
                 if (ref_solution_function_)
                 {
                   aij_bc_value = 0.0;
-                  for (size_t qp : fqp_data.QuadraturePointIndices())
-                    aij_bc_value +=
-                      kappa * ref_solution_function_->Evaluate(fqp_data.QPointXYZ(qp)) *
-                      fqp_data.ShapeValue(i, qp) * fqp_data.ShapeValue(jm, qp) * fqp_data.JxW(qp);
+                  for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                    aij_bc_value += kappa *
+                                    ref_solution_function_->Evaluate(fe_srf_data.QPointXYZ(qp)) *
+                                    fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeValue(jm, qp) *
+                                    fe_srf_data.JxW(qp);
                 }
 
                 MatSetValue(A_, imap, jmmap, aij, ADD_VALUES);
@@ -291,10 +295,11 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
                 const int64_t jmap = sdm_.MapDOF(cell, j, uk_man_, 0, g);
 
                 Vector3 vec_aij;
-                for (size_t qp : fqp_data.QuadraturePointIndices())
-                  vec_aij +=
-                    fqp_data.ShapeValue(j, qp) * fqp_data.ShapeGrad(i, qp) * fqp_data.JxW(qp) +
-                    fqp_data.ShapeValue(i, qp) * fqp_data.ShapeGrad(j, qp) * fqp_data.JxW(qp);
+                for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                  vec_aij += fe_srf_data.ShapeValue(j, qp) * fe_srf_data.ShapeGrad(i, qp) *
+                               fe_srf_data.JxW(qp) +
+                             fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeGrad(j, qp) *
+                               fe_srf_data.JxW(qp);
                 const double aij = -Dg * n_f.Dot(vec_aij);
 
                 double aij_bc_value = aij * bc_value;
@@ -302,11 +307,12 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
                 if (ref_solution_function_)
                 {
                   Vector3 vec_aij_mms;
-                  for (size_t qp : fqp_data.QuadraturePointIndices())
-                    vec_aij_mms +=
-                      ref_solution_function_->Evaluate(fqp_data.QPointXYZ(qp)) *
-                      (fqp_data.ShapeValue(j, qp) * fqp_data.ShapeGrad(i, qp) * fqp_data.JxW(qp) +
-                       fqp_data.ShapeValue(i, qp) * fqp_data.ShapeGrad(j, qp) * fqp_data.JxW(qp));
+                  for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                    vec_aij_mms += ref_solution_function_->Evaluate(fe_srf_data.QPointXYZ(qp)) *
+                                   (fe_srf_data.ShapeValue(j, qp) * fe_srf_data.ShapeGrad(i, qp) *
+                                      fe_srf_data.JxW(qp) +
+                                    fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeGrad(j, qp) *
+                                      fe_srf_data.JxW(qp));
                   aij_bc_value = -Dg * n_f.Dot(vec_aij_mms);
                 }
 
@@ -321,7 +327,8 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
             const double bval = bc.values[1];
             const double fval = bc.values[2];
 
-            if (std::fabs(bval) < 1.0e-12) continue; // a and f assumed zero
+            if (std::fabs(bval) < 1.0e-12)
+              continue; // a and f assumed zero
 
             for (size_t fi = 0; fi < num_face_nodes; fi++)
             {
@@ -336,9 +343,9 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
                   const int64_t jr = sdm_.MapDOF(cell, j, uk_man_, 0, g);
 
                   double aij = 0.0;
-                  for (size_t qp : fqp_data.QuadraturePointIndices())
-                    aij +=
-                      fqp_data.ShapeValue(i, qp) * fqp_data.ShapeValue(j, qp) * fqp_data.JxW(qp);
+                  for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                    aij += fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeValue(j, qp) *
+                           fe_srf_data.JxW(qp);
                   aij *= (aval / bval);
 
                   MatSetValue(A_, ir, jr, aij, ADD_VALUES);
@@ -348,8 +355,8 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
               if (std::fabs(fval) >= 1.0e-12)
               {
                 double rhs_val = 0.0;
-                for (size_t qp : fqp_data.QuadraturePointIndices())
-                  rhs_val += fqp_data.ShapeValue(i, qp) * fqp_data.JxW(qp);
+                for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                  rhs_val += fe_srf_data.ShapeValue(i, qp) * fe_srf_data.JxW(qp);
                 rhs_val *= (fval / bval);
 
                 VecSetValue(rhs_, ir, rhs_val, ADD_VALUES);
@@ -370,12 +377,14 @@ DiffusionMIPSolver::AssembleAand_b_wQpoints(const std::vector<double>& q_vector)
   {
     PetscBool symmetry = PETSC_FALSE;
     MatIsSymmetric(A_, 1.0e-6, &symmetry);
-    if (symmetry == PETSC_FALSE) throw std::logic_error(fname + ":Symmetry check failed");
+    if (symmetry == PETSC_FALSE)
+      throw std::logic_error(fname + ":Symmetry check failed");
   }
 
   KSPSetOperators(ksp_, A_, A_);
 
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Assembly completed";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Assembly completed";
 
   PC pc;
   KSPGetPC(ksp_, &pc);
@@ -392,7 +401,8 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
   if (A_ == nullptr or rhs_ == nullptr or ksp_ == nullptr)
     throw std::logic_error(fname + ": Some or all PETSc elements are null. "
                                    "Check that Initialize has been called.");
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Starting assembly";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Starting assembly";
 
   VecSet(rhs_, 0.0);
 
@@ -401,7 +411,7 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
     const size_t num_faces = cell.faces_.size();
     const auto& cell_mapping = sdm_.GetCellMapping(cell);
     const size_t num_nodes = cell_mapping.NumNodes();
-    const auto qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
     const size_t num_groups = uk_man_.unknowns_.front().num_components_;
 
     const auto& xs = mat_id_2_xs_map_.at(cell.material_id_);
@@ -424,17 +434,17 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
         if (not source_function_)
           for (size_t j = 0; j < num_nodes; j++)
           {
-            for (size_t qp : qp_data.QuadraturePointIndices())
+            for (size_t qp : fe_vol_data.QuadraturePointIndices())
             {
-              entry_rhs_i +=
-                qg[j] * qp_data.ShapeValue(i, qp) * qp_data.ShapeValue(j, qp) * qp_data.JxW(qp);
+              entry_rhs_i += fe_vol_data.ShapeValue(i, qp) * fe_vol_data.ShapeValue(j, qp) *
+                             fe_vol_data.JxW(qp) * qg[j];
             } // for qp
           }   // for j
         else
         {
-          for (size_t qp : qp_data.QuadraturePointIndices())
-            entry_rhs_i += source_function_->Evaluate(qp_data.QPointXYZ(qp)) *
-                           qp_data.ShapeValue(i, qp) * qp_data.JxW(qp);
+          for (size_t qp : fe_vol_data.QuadraturePointIndices())
+            entry_rhs_i += source_function_->Evaluate(fe_vol_data.QPointXYZ(qp)) *
+                           fe_vol_data.ShapeValue(i, qp) * fe_vol_data.JxW(qp);
         }
 
         VecSetValue(rhs_, imap, entry_rhs_i, ADD_VALUES);
@@ -446,14 +456,15 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
         const auto& face = cell.faces_[f];
         const auto& n_f = face.normal_;
         const size_t num_face_nodes = cell_mapping.NumFaceNodes(f);
-        const auto fqp_data = cell_mapping.MakeSurfaceQuadraturePointData(f);
+        const auto fe_srf_data = cell_mapping.MakeSurfaceFiniteElementData(f);
 
         const double hm = HPerpendicular(cell, f);
 
         if (not face.has_neighbor_)
         {
           BoundaryCondition bc;
-          if (bcs_.count(face.neighbor_id_) > 0) bc = bcs_.at(face.neighbor_id_);
+          if (bcs_.count(face.neighbor_id_) > 0)
+            bc = bcs_.at(face.neighbor_id_);
 
           if (bc.type == BCType::DIRICHLET)
           {
@@ -461,7 +472,8 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
 
             // Compute kappa
             double kappa = 1.0;
-            if (cell.Type() == CellType::SLAB) kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
+            if (cell.Type() == CellType::SLAB)
+              kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYGON)
               kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYHEDRON)
@@ -478,18 +490,18 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
                 const int jm = cell_mapping.MapFaceNode(f, fj);
 
                 double aij = 0.0;
-                for (size_t qp : fqp_data.QuadraturePointIndices())
-                  aij += kappa * fqp_data.ShapeValue(i, qp) * fqp_data.ShapeValue(jm, qp) *
-                         fqp_data.JxW(qp);
+                for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                  aij += kappa * fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeValue(jm, qp) *
+                         fe_srf_data.JxW(qp);
                 double aij_bc_value = aij * bc_value;
 
                 if (ref_solution_function_)
                 {
                   aij_bc_value = 0.0;
-                  for (size_t qp : fqp_data.QuadraturePointIndices())
-                    aij_bc_value += kappa * source_function_->Evaluate(fqp_data.QPointXYZ(qp)) *
-                                    fqp_data.ShapeValue(i, qp) * fqp_data.ShapeValue(jm, qp) *
-                                    fqp_data.JxW(qp);
+                  for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                    aij_bc_value += kappa * source_function_->Evaluate(fe_srf_data.QPointXYZ(qp)) *
+                                    fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeValue(jm, qp) *
+                                    fe_srf_data.JxW(qp);
                 }
 
                 VecSetValue(rhs_, imap, aij_bc_value, ADD_VALUES);
@@ -508,10 +520,11 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
               for (size_t j = 0; j < num_nodes; j++)
               {
                 Vector3 vec_aij;
-                for (size_t qp : fqp_data.QuadraturePointIndices())
-                  vec_aij +=
-                    fqp_data.ShapeValue(j, qp) * fqp_data.ShapeGrad(i, qp) * fqp_data.JxW(qp) +
-                    fqp_data.ShapeValue(i, qp) * fqp_data.ShapeGrad(j, qp) * fqp_data.JxW(qp);
+                for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                  vec_aij += fe_srf_data.ShapeValue(j, qp) * fe_srf_data.ShapeGrad(i, qp) *
+                               fe_srf_data.JxW(qp) +
+                             fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeGrad(j, qp) *
+                               fe_srf_data.JxW(qp);
                 const double aij = -Dg * n_f.Dot(vec_aij);
 
                 double aij_bc_value = aij * bc_value;
@@ -519,11 +532,12 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
                 if (ref_solution_function_)
                 {
                   Vector3 vec_aij_mms;
-                  for (size_t qp : fqp_data.QuadraturePointIndices())
-                    vec_aij_mms +=
-                      ref_solution_function_->Evaluate(fqp_data.QPointXYZ(qp)) *
-                      (fqp_data.ShapeValue(j, qp) * fqp_data.ShapeGrad(i, qp) * fqp_data.JxW(qp) +
-                       fqp_data.ShapeValue(i, qp) * fqp_data.ShapeGrad(j, qp) * fqp_data.JxW(qp));
+                  for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                    vec_aij_mms += ref_solution_function_->Evaluate(fe_srf_data.QPointXYZ(qp)) *
+                                   (fe_srf_data.ShapeValue(j, qp) * fe_srf_data.ShapeGrad(i, qp) *
+                                      fe_srf_data.JxW(qp) +
+                                    fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeGrad(j, qp) *
+                                      fe_srf_data.JxW(qp));
                   aij_bc_value = -Dg * n_f.Dot(vec_aij_mms);
                 }
 
@@ -536,7 +550,8 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
             const double bval = bc.values[1];
             const double fval = bc.values[2];
 
-            if (std::fabs(bval) < 1.0e-12) continue; // a and f assumed zero
+            if (std::fabs(bval) < 1.0e-12)
+              continue; // a and f assumed zero
 
             for (size_t fi = 0; fi < num_face_nodes; fi++)
             {
@@ -546,8 +561,8 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
               if (std::fabs(fval) >= 1.0e-12)
               {
                 double rhs_val = 0.0;
-                for (size_t qp : fqp_data.QuadraturePointIndices())
-                  rhs_val += fqp_data.ShapeValue(i, qp) * fqp_data.JxW(qp);
+                for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                  rhs_val += fe_srf_data.ShapeValue(i, qp) * fe_srf_data.JxW(qp);
                 rhs_val *= (fval / bval);
 
                 VecSetValue(rhs_, ir, rhs_val, ADD_VALUES);
@@ -564,7 +579,8 @@ DiffusionMIPSolver::Assemble_b_wQpoints(const std::vector<double>& q_vector)
 
   KSPSetOperators(ksp_, A_, A_);
 
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Assembly completed";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Assembly completed";
 
   PC pc;
   KSPGetPC(ksp_, &pc);
@@ -581,7 +597,8 @@ DiffusionMIPSolver::AssembleAand_b(const std::vector<double>& q_vector)
   if (A_ == nullptr or rhs_ == nullptr or ksp_ == nullptr)
     throw std::logic_error(fname + ": Some or all PETSc elements are null. "
                                    "Check that Initialize has been called.");
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Starting assembly";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Starting assembly";
 
   const size_t num_groups = uk_man_.unknowns_.front().num_components_;
 
@@ -621,7 +638,7 @@ DiffusionMIPSolver::AssembleAand_b(const std::vector<double>& q_vector)
           const double entry_aij =
             Dg * intV_gradshapeI_gradshapeJ[i][j] + sigr_g * intV_shapeI_shapeJ[i][j];
 
-          entry_rhs_i += qg[j] * intV_shapeI_shapeJ[i][j];
+          entry_rhs_i += intV_shapeI_shapeJ[i][j] * qg[j];
 
           MatSetValue(A_, imap, jmap, entry_aij, ADD_VALUES);
         } // for j
@@ -733,7 +750,8 @@ DiffusionMIPSolver::AssembleAand_b(const std::vector<double>& q_vector)
         else
         {
           BoundaryCondition bc;
-          if (bcs_.count(face.neighbor_id_) > 0) bc = bcs_.at(face.neighbor_id_);
+          if (bcs_.count(face.neighbor_id_) > 0)
+            bc = bcs_.at(face.neighbor_id_);
 
           if (bc.type == BCType::DIRICHLET)
           {
@@ -741,7 +759,8 @@ DiffusionMIPSolver::AssembleAand_b(const std::vector<double>& q_vector)
 
             // Compute kappa
             double kappa = 1.0;
-            if (cell.Type() == CellType::SLAB) kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
+            if (cell.Type() == CellType::SLAB)
+              kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYGON)
               kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYHEDRON)
@@ -794,7 +813,8 @@ DiffusionMIPSolver::AssembleAand_b(const std::vector<double>& q_vector)
             const double bval = bc.values[1];
             const double fval = bc.values[2];
 
-            if (std::fabs(bval) < 1.0e-12) continue; // a and f assumed zero
+            if (std::fabs(bval) < 1.0e-12)
+              continue; // a and f assumed zero
 
             for (size_t fi = 0; fi < num_face_nodes; fi++)
             {
@@ -847,12 +867,14 @@ DiffusionMIPSolver::AssembleAand_b(const std::vector<double>& q_vector)
   {
     PetscBool symmetry = PETSC_FALSE;
     MatIsSymmetric(A_, 1.0e-6, &symmetry);
-    if (symmetry == PETSC_FALSE) throw std::logic_error(fname + ":Symmetry check failed");
+    if (symmetry == PETSC_FALSE)
+      throw std::logic_error(fname + ":Symmetry check failed");
   }
 
   KSPSetOperators(ksp_, A_, A_);
 
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Assembly completed";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Assembly completed";
 
   PC pc;
   KSPGetPC(ksp_, &pc);
@@ -869,7 +891,8 @@ DiffusionMIPSolver::Assemble_b(const std::vector<double>& q_vector)
   if (A_ == nullptr or rhs_ == nullptr or ksp_ == nullptr)
     throw std::logic_error(fname + ": Some or all PETSc elements are null. "
                                    "Check that Initialize has been called.");
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Starting assembly";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Starting assembly";
 
   const size_t num_groups = uk_man_.unknowns_.front().num_components_;
 
@@ -901,7 +924,7 @@ DiffusionMIPSolver::Assemble_b(const std::vector<double>& q_vector)
         const int64_t imap = sdm_.MapDOF(cell, i, uk_man_, 0, g);
         double entry_rhs_i = 0.0;
         for (size_t j = 0; j < num_nodes; j++)
-          entry_rhs_i += qg[j] * intV_shapeI_shapeJ[i][j];
+          entry_rhs_i += intV_shapeI_shapeJ[i][j] * qg[j];
 
         VecSetValue(rhs_, imap, entry_rhs_i, ADD_VALUES);
       } // for i
@@ -922,7 +945,8 @@ DiffusionMIPSolver::Assemble_b(const std::vector<double>& q_vector)
         if (not face.has_neighbor_)
         {
           BoundaryCondition bc;
-          if (bcs_.count(face.neighbor_id_) > 0) bc = bcs_.at(face.neighbor_id_);
+          if (bcs_.count(face.neighbor_id_) > 0)
+            bc = bcs_.at(face.neighbor_id_);
 
           if (bc.type == BCType::DIRICHLET)
           {
@@ -930,7 +954,8 @@ DiffusionMIPSolver::Assemble_b(const std::vector<double>& q_vector)
 
             // Compute kappa
             double kappa = 1.0;
-            if (cell.Type() == CellType::SLAB) kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
+            if (cell.Type() == CellType::SLAB)
+              kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYGON)
               kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYHEDRON)
@@ -977,7 +1002,8 @@ DiffusionMIPSolver::Assemble_b(const std::vector<double>& q_vector)
             const double bval = bc.values[1];
             const double fval = bc.values[2];
 
-            if (std::fabs(bval) < 1.0e-12) continue; // a and f assumed zero
+            if (std::fabs(bval) < 1.0e-12)
+              continue; // a and f assumed zero
 
             for (size_t fi = 0; fi < num_face_nodes; fi++)
             {
@@ -1000,7 +1026,8 @@ DiffusionMIPSolver::Assemble_b(const std::vector<double>& q_vector)
   VecAssemblyBegin(rhs_);
   VecAssemblyEnd(rhs_);
 
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Assembly completed";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Assembly completed";
 }
 
 void
@@ -1011,7 +1038,8 @@ DiffusionMIPSolver::Assemble_b(Vec petsc_q_vector)
   if (A_ == nullptr or rhs_ == nullptr or ksp_ == nullptr)
     throw std::logic_error(fname + ": Some or all PETSc elements are null. "
                                    "Check that Initialize has been called.");
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Starting assembly";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Starting assembly";
 
   const size_t num_groups = uk_man_.unknowns_.front().num_components_;
 
@@ -1046,7 +1074,7 @@ DiffusionMIPSolver::Assemble_b(Vec petsc_q_vector)
         const int64_t imap = sdm_.MapDOF(cell, i, uk_man_, 0, g);
         double entry_rhs_i = 0.0;
         for (size_t j = 0; j < num_nodes; j++)
-          entry_rhs_i += qg[j] * intV_shapeI_shapeJ[i][j];
+          entry_rhs_i += intV_shapeI_shapeJ[i][j] * qg[j];
 
         VecSetValue(rhs_, imap, entry_rhs_i, ADD_VALUES);
       } // for i
@@ -1067,7 +1095,8 @@ DiffusionMIPSolver::Assemble_b(Vec petsc_q_vector)
         if (not face.has_neighbor_)
         {
           BoundaryCondition bc;
-          if (bcs_.count(face.neighbor_id_) > 0) bc = bcs_.at(face.neighbor_id_);
+          if (bcs_.count(face.neighbor_id_) > 0)
+            bc = bcs_.at(face.neighbor_id_);
 
           if (bc.type == BCType::DIRICHLET)
           {
@@ -1075,7 +1104,8 @@ DiffusionMIPSolver::Assemble_b(Vec petsc_q_vector)
 
             // Compute kappa
             double kappa = 1.0;
-            if (cell.Type() == CellType::SLAB) kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
+            if (cell.Type() == CellType::SLAB)
+              kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYGON)
               kappa = fmax(options.penalty_factor * Dg / hm, 0.25);
             if (cell.Type() == CellType::POLYHEDRON)
@@ -1122,7 +1152,8 @@ DiffusionMIPSolver::Assemble_b(Vec petsc_q_vector)
             const double bval = bc.values[1];
             const double fval = bc.values[2];
 
-            if (std::fabs(bval) < 1.0e-12) continue; // a and f assumed zero
+            if (std::fabs(bval) < 1.0e-12)
+              continue; // a and f assumed zero
 
             for (size_t fi = 0; fi < num_face_nodes; fi++)
             {
@@ -1147,7 +1178,8 @@ DiffusionMIPSolver::Assemble_b(Vec petsc_q_vector)
   VecAssemblyBegin(rhs_);
   VecAssemblyEnd(rhs_);
 
-  if (options.verbose) log.Log() << program_timer.GetTimeString() << " Assembly completed";
+  if (options.verbose)
+    log.Log() << program_timer.GetTimeString() << " Assembly completed";
 }
 
 double
@@ -1173,18 +1205,21 @@ DiffusionMIPSolver::HPerpendicular(const Cell& cell, unsigned int f)
   };
 
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% SLAB
-  if (cell.Type() == CellType::SLAB) hp = volume / 2.0;
+  if (cell.Type() == CellType::SLAB)
+    hp = volume / 2.0;
   //%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% POLYGON
   else if (cell.Type() == CellType::POLYGON)
   {
-    if (num_faces == 3) hp = 2.0 * volume / face_area;
+    if (num_faces == 3)
+      hp = 2.0 * volume / face_area;
     else if (num_faces == 4)
       hp = volume / face_area;
     else // Nv > 4
     {
       const double surface_area = ComputeSurfaceArea();
 
-      if (num_faces % 2 == 0) hp = 4.0 * volume / surface_area;
+      if (num_faces % 2 == 0)
+        hp = 4.0 * volume / surface_area;
       else
       {
         hp = 2.0 * volume / surface_area;
@@ -1201,7 +1236,7 @@ DiffusionMIPSolver::HPerpendicular(const Cell& cell, unsigned int f)
 
     if (num_faces == 4) // Tet
       hp = 3 * volume / surface_area;
-    else if (num_faces == 6 && num_vertices == 8) // Hex
+    else if (num_faces == 6 and num_vertices == 8) // Hex
       hp = volume / surface_area;
     else // Polyhedron
       hp = 6 * volume / surface_area;
@@ -1234,7 +1269,8 @@ DiffusionMIPSolver::MapFaceNodeDisc(const Cell& cur_cell,
   for (size_t fj = 0; fj < adj_face_num_nodes; ++fj)
   {
     const int j = adj_cell_mapping.MapFaceNode(acf, fj);
-    if ((node_i_loc - ac_node_locs[j]).NormSquare() < epsilon) return j;
+    if ((node_i_loc - ac_node_locs[j]).NormSquare() < epsilon)
+      return j;
   }
 
   throw std::logic_error(

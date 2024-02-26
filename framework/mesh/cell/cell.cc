@@ -5,7 +5,6 @@
 
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-#include "framework/mpi/mpi.h"
 
 namespace opensn
 {
@@ -89,19 +88,23 @@ Cell::operator=(const Cell& other)
 bool
 CellFace::IsNeighborLocal(const MeshContinuum& grid) const
 {
-  if (not has_neighbor_) return false;
-  if (opensn::mpi.process_count == 1) return true;
+  if (not has_neighbor_)
+    return false;
+  if (opensn::mpi_comm.size() == 1)
+    return true;
 
   auto& adj_cell = grid.cells[neighbor_id_];
 
-  return (adj_cell.partition_id_ == static_cast<uint64_t>(opensn::mpi.location_id));
+  return (adj_cell.partition_id_ == static_cast<uint64_t>(opensn::mpi_comm.rank()));
 }
 
 int
 CellFace::GetNeighborPartitionID(const MeshContinuum& grid) const
 {
-  if (not has_neighbor_) return -1;
-  if (opensn::mpi.process_count == 1) return 0;
+  if (not has_neighbor_)
+    return -1;
+  if (opensn::mpi_comm.size() == 1)
+    return 0;
 
   auto& adj_cell = grid.cells[neighbor_id_];
 
@@ -111,12 +114,14 @@ CellFace::GetNeighborPartitionID(const MeshContinuum& grid) const
 uint64_t
 CellFace::GetNeighborLocalID(const MeshContinuum& grid) const
 {
-  if (not has_neighbor_) return -1;
-  if (opensn::mpi.process_count == 1) return neighbor_id_; // cause global_ids=local_ids
+  if (not has_neighbor_)
+    return -1;
+  if (opensn::mpi_comm.size() == 1)
+    return neighbor_id_; // cause global_ids=local_ids
 
   auto& adj_cell = grid.cells[neighbor_id_];
 
-  if (adj_cell.partition_id_ != opensn::mpi.location_id)
+  if (adj_cell.partition_id_ != opensn::mpi_comm.rank())
     throw std::logic_error("Cell local ID requested from a non-local cell.");
 
   return adj_cell.local_id_;
@@ -179,7 +184,8 @@ CellFace::GetNeighborAssociatedFace(const MeshContinuum& grid) const
 double
 CellFace::ComputeFaceArea(const MeshContinuum& grid) const
 {
-  if (vertex_ids_.size() <= 1) return 1.0;
+  if (vertex_ids_.size() <= 1)
+    return 1.0;
   else if (vertex_ids_.size() == 2)
   {
     const auto& v0 = grid.vertices[vertex_ids_[0]];

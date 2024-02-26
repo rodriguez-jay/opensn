@@ -1,15 +1,9 @@
-#include "framework/mesh/mesh_handler/mesh_handler.h"
-
 #include "framework/math/spatial_discretization/finite_volume/finite_volume.h"
 #include "framework/math/petsc_utils/petsc_utils.h"
-
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
-
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-
 #include "lua/framework/console/console.h"
 
 using namespace opensn;
@@ -19,17 +13,17 @@ namespace unit_sim_tests
 
 /**This is a simple test of the Finite Volume spatial discretization applied
  * to Laplace's problem. */
-ParameterBlock chiSimTest01_FV(const InputParameters& params);
+ParameterBlock SimTest01_FV(const InputParameters& params);
 
-RegisterWrapperFunction(chi_unit_sim_tests, chiSimTest01_FV, nullptr, chiSimTest01_FV);
+RegisterWrapperFunctionNamespace(unit_sim_tests, SimTest01_FV, nullptr, SimTest01_FV);
 
 ParameterBlock
-chiSimTest01_FV(const InputParameters&)
+SimTest01_FV(const InputParameters&)
 {
   opensn::log.Log() << "Coding Tutorial 1";
 
   // Get grid
-  auto grid_ptr = GetCurrentHandler().GetGrid();
+  auto grid_ptr = GetCurrentMesh();
   const auto& grid = *grid_ptr;
 
   opensn::log.Log() << "Global num cells: " << grid.GetGlobalNumberOfCells();

@@ -1,7 +1,5 @@
 #include "framework/lua.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
-
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
 #include "field_functions_lua.h"
@@ -9,15 +7,16 @@
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(chiExportFieldFunctionToVTK);
-RegisterLuaFunctionAsIs(chiExportMultiFieldFunctionToVTK);
+RegisterLuaFunctionAsIs(ExportFieldFunctionToVTK);
+RegisterLuaFunctionAsIs(ExportMultiFieldFunctionToVTK);
 
 int
-chiExportFieldFunctionToVTK(lua_State* L)
+ExportFieldFunctionToVTK(lua_State* L)
 {
-  const std::string fname = "chiExportFieldFunctionToVTK";
+  const std::string fname = "ExportFieldFunctionToVTK";
   const int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError(fname, 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError(fname, 2, num_args);
 
   int ff_handle = lua_tonumber(L, 1);
   const char* base_name = lua_tostring(L, 2);
@@ -34,11 +33,12 @@ chiExportFieldFunctionToVTK(lua_State* L)
 }
 
 int
-chiExportMultiFieldFunctionToVTK(lua_State* L)
+ExportMultiFieldFunctionToVTK(lua_State* L)
 {
-  const std::string fname = "chiExportMultiFieldFunctionToVTK";
+  const std::string fname = "ExportMultiFieldFunctionToVTK";
   const int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError(fname, 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError(fname, 2, num_args);
 
   const char* base_name = lua_tostring(L, 2);
 

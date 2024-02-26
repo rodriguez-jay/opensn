@@ -1,6 +1,5 @@
 #include "field_ops_lua.h"
-#include "framework/physics/field_operations/field_operation.h"
-
+#include "framework/field_functions/operations/field_operation.h"
 #include "framework/console/console.h"
 
 using namespace opensn;
@@ -8,14 +7,15 @@ using namespace opensn;
 namespace opensnlua
 {
 
-RegisterLuaFunctionAsIs(chiFieldOperationExecute);
+RegisterLuaFunctionAsIs(FieldOperationExecute);
 
 int
-chiFieldOperationExecute(lua_State* L)
+FieldOperationExecute(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
 
   LuaCheckNilValue(fname, L, 1);
 

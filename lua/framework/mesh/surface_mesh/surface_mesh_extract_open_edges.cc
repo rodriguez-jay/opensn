@@ -18,12 +18,11 @@ using namespace opensn;
  * \author Jan
  */
 int
-chiSurfaceMeshExtractOpenEdgesToObj(lua_State* L)
+SurfaceMeshExtractOpenEdgesToObj(lua_State* L)
 {
   int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError("chiSurfaceMeshExtractOpenEdgesToObj", 2, num_args);
-
-  auto& cur_hndlr = opensn::GetCurrentHandler();
+  if (num_args != 2)
+    LuaPostArgAmountError("SurfaceMeshExtractOpenEdgesToObj", 2, num_args);
 
   int surf_handle = lua_tonumber(L, 1);
   const char* file_name = lua_tostring(L, 2);

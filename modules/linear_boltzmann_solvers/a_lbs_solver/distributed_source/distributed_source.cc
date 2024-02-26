@@ -13,7 +13,7 @@
 namespace opensn::lbs
 {
 
-OpenSnRegisterObject(lbs, DistributedSource);
+OpenSnRegisterObjectInNamespace(lbs, DistributedSource);
 
 InputParameters
 DistributedSource::GetInputParameters()
@@ -53,18 +53,14 @@ lbs::DistributedSource::Initialize(const LBSSolver& lbs_solver)
 {
   subscribers_.clear();
   for (const auto& cell : lbs_solver.Grid().local_cells)
-    if (logical_volume_ptr_->Inside(cell.centroid_)) subscribers_.push_back(cell.local_id_);
+    if (logical_volume_ptr_->Inside(cell.centroid_))
+      subscribers_.push_back(cell.local_id_);
 
   num_local_subsribers_ = subscribers_.size();
-  MPI_Allreduce(&num_local_subsribers_,
-                &num_global_subscribers_,
-                1,
-                MPI_UNSIGNED_LONG_LONG,
-                MPI_SUM,
-                MPI_COMM_WORLD);
+  mpi_comm.all_reduce(num_local_subsribers_, num_global_subscribers_, mpi::op::sum<size_t>());
 
   log.LogAll() << "Distributed source has " << num_local_subsribers_
-               << " subscribing cells on processor " << opensn::mpi.location_id << ".";
+               << " subscribing cells on processor " << opensn::mpi_comm.rank() << ".";
   log.Log() << "Distributed source has " << num_global_subscribers_ << " total subscribing cells.";
 }
 

@@ -10,15 +10,16 @@
 namespace opensnlua::lbs
 {
 
-RegisterLuaFunctionAsIs(chiLBSComputeLeakage);
+RegisterLuaFunctionAsIs(LBSComputeLeakage);
 
 int
-chiLBSComputeLeakage(lua_State* L)
+LBSComputeLeakage(lua_State* L)
 {
-  const std::string fname = "chiLBSComputeLeakage";
+  const std::string fname = "LBSComputeLeakage";
   const int num_args = lua_gettop(L);
 
-  if (num_args != 3) LuaPostArgAmountError(fname, 3, num_args);
+  if (num_args != 3)
+    LuaPostArgAmountError(fname, 3, num_args);
 
   LuaCheckNilValue(fname, L, 1);
 
@@ -48,7 +49,7 @@ chiLBSComputeLeakage(lua_State* L)
   return 1;
 }
 
-RegisterLuaFunction(ComputeLeakage, lbs, ComputeLeakage);
+RegisterLuaFunctionNamespace(ComputeLeakage, lbs, ComputeLeakage);
 
 int
 ComputeLeakage(lua_State* L)

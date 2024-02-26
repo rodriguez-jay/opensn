@@ -3,10 +3,9 @@
 #include "framework/logging/log.h"
 #include "framework/utils/timer.h"
 #include "framework/math/functions/scalar_spatial_material_function.h"
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "modules/cfem_diffusion/cfem_diffusion_bndry.h"
-#include "framework/physics/field_function/field_function_grid_based.h"
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_continuous.h"
 
 namespace opensn
@@ -53,7 +52,7 @@ Solver::Initialize()
             << ": Initializing CFEM Diffusion solver ";
 
   // Get grid
-  grid_ptr_ = GetCurrentHandler().GetGrid();
+  grid_ptr_ = GetCurrentMesh();
   const auto& grid = *grid_ptr_;
   if (grid_ptr_ == nullptr)
     throw std::logic_error(std::string(__PRETTY_FUNCTION__) + " No grid defined.");
@@ -86,7 +85,8 @@ Solver::Initialize()
         }
         case BoundaryType::Dirichlet:
         {
-          if (bndry_vals.empty()) bndry_vals.resize(1, 0.0);
+          if (bndry_vals.empty())
+            bndry_vals.resize(1, 0.0);
           boundaries_.insert(
             std::make_pair(bndry_id, Boundary{BoundaryType::Dirichlet, {bndry_vals[0], 0., 0.}}));
           log.Log() << "Boundary " << bndry_name << " set to dirichlet.";
@@ -159,7 +159,8 @@ Solver::Initialize()
   if (field_functions_.empty())
   {
     std::string solver_name;
-    if (not TextName().empty()) solver_name = TextName() + "-";
+    if (not TextName().empty())
+      solver_name = TextName() + "-";
 
     std::string text_name = solver_name + "phi";
 
@@ -184,7 +185,7 @@ Solver::Execute()
   for (const auto& cell : grid.local_cells)
   {
     const auto& cell_mapping = sdm.GetCellMapping(cell);
-    const auto qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
 
     const auto imat = cell.material_id_;
     const size_t num_nodes = cell_mapping.NumNodes();
@@ -196,19 +197,19 @@ Solver::Execute()
       for (size_t j = 0; j < num_nodes; ++j)
       {
         double entry_aij = 0.0;
-        for (size_t qp : qp_data.QuadraturePointIndices())
+        for (size_t qp : fe_vol_data.QuadraturePointIndices())
         {
-          entry_aij += (d_coef_function_->Evaluate(imat, qp_data.QPointXYZ(qp)) *
-                          qp_data.ShapeGrad(i, qp).Dot(qp_data.ShapeGrad(j, qp)) +
-                        sigma_a_function_->Evaluate(imat, qp_data.QPointXYZ(qp)) *
-                          qp_data.ShapeValue(i, qp) * qp_data.ShapeValue(j, qp)) *
-                       qp_data.JxW(qp);
+          entry_aij += (d_coef_function_->Evaluate(imat, fe_vol_data.QPointXYZ(qp)) *
+                          fe_vol_data.ShapeGrad(i, qp).Dot(fe_vol_data.ShapeGrad(j, qp)) +
+                        sigma_a_function_->Evaluate(imat, fe_vol_data.QPointXYZ(qp)) *
+                          fe_vol_data.ShapeValue(i, qp) * fe_vol_data.ShapeValue(j, qp)) *
+                       fe_vol_data.JxW(qp);
         } // for qp
         Acell[i][j] = entry_aij;
       } // for j
-      for (size_t qp : qp_data.QuadraturePointIndices())
-        cell_rhs[i] += q_ext_function_->Evaluate(imat, qp_data.QPointXYZ(qp)) *
-                       qp_data.ShapeValue(i, qp) * qp_data.JxW(qp);
+      for (size_t qp : fe_vol_data.QuadraturePointIndices())
+        cell_rhs[i] += q_ext_function_->Evaluate(imat, fe_vol_data.QPointXYZ(qp)) *
+                       fe_vol_data.ShapeValue(i, qp) * fe_vol_data.JxW(qp);
     } // for i
 
     // Flag nodes for being on a boundary
@@ -220,14 +221,15 @@ Solver::Execute()
     {
       const auto& face = cell.faces_[f];
       // not a boundary face
-      if (face.has_neighbor_) continue;
+      if (face.has_neighbor_)
+        continue;
 
       const auto& bndry = boundaries_[face.neighbor_id_];
 
       // Robin boundary
       if (bndry.type_ == BoundaryType::Robin)
       {
-        const auto qp_face_data = cell_mapping.MakeSurfaceQuadraturePointData(f);
+        const auto fe_srf_data = cell_mapping.MakeSurfaceFiniteElementData(f);
         const size_t num_face_nodes = face.vertex_ids_.size();
 
         const auto& aval = bndry.values_[0];
@@ -247,8 +249,8 @@ Solver::Execute()
           const uint i = cell_mapping.MapFaceNode(f, fi);
 
           double entry_rhsi = 0.0;
-          for (size_t qp : qp_face_data.QuadraturePointIndices())
-            entry_rhsi += qp_face_data.ShapeValue(i, qp) * qp_face_data.JxW(qp);
+          for (size_t qp : fe_srf_data.QuadraturePointIndices())
+            entry_rhsi += fe_srf_data.ShapeValue(i, qp) * fe_srf_data.JxW(qp);
           cell_rhs[i] += fval / bval * entry_rhsi;
 
           // only do this part if true Robin (i.e., a!=0)
@@ -259,9 +261,9 @@ Solver::Execute()
               const uint j = cell_mapping.MapFaceNode(f, fj);
 
               double entry_aij = 0.0;
-              for (size_t qp : qp_face_data.QuadraturePointIndices())
-                entry_aij += qp_face_data.ShapeValue(i, qp) * qp_face_data.ShapeValue(j, qp) *
-                             qp_face_data.JxW(qp);
+              for (size_t qp : fe_srf_data.QuadraturePointIndices())
+                entry_aij += fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeValue(j, qp) *
+                             fe_srf_data.JxW(qp);
               Acell[i][j] += aval / bval * entry_aij;
             } // for fj
           }   // end true Robin

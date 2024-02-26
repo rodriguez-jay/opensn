@@ -15,14 +15,15 @@ namespace opensnlua::lbs
 {
 
 int
-chiLBSAddPointSource(lua_State* L)
+LBSAddPointSource(lua_State* L)
 {
-  opensn::log.Log0Warning() << "chiLBSAddPointSource has been deprecated and will be removed soon. "
+  opensn::log.Log0Warning() << "LBSAddPointSource has been deprecated and will be removed soon. "
                                "Consider using lbs.AddPointSource instead, or setting point "
                                "sources via LBSSolver::Options.";
 
   const int num_args = lua_gettop(L);
-  if (num_args != 5) LuaPostArgAmountError(__FUNCTION__, 5, num_args);
+  if (num_args != 5)
+    LuaPostArgAmountError(__FUNCTION__, 5, num_args);
 
   LuaCheckIntegerValue(__FUNCTION__, L, 1);
   LuaCheckNumberValue(__FUNCTION__, L, 2);
@@ -60,14 +61,15 @@ chiLBSAddPointSource(lua_State* L)
 }
 
 int
-chiLBSClearPointSources(lua_State* L)
+LBSClearPointSources(lua_State* L)
 {
   opensn::log.Log0Warning() << "chiLBSClearPointSource has been deprecated and will "
                                "be removed soon. Consider using lbs.ClearPointSources instead, "
                                "or clearing point sources via LBSSolver::Options.";
 
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError(__FUNCTION__, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(__FUNCTION__, 1, num_args);
 
   LuaCheckIntegerValue(__FUNCTION__, L, 1);
 
@@ -81,12 +83,13 @@ chiLBSClearPointSources(lua_State* L)
   return 0;
 }
 
-RegisterLuaFunction(AddPointSource, lbs, AddPointSource);
+RegisterLuaFunctionNamespace(AddPointSource, lbs, AddPointSource);
 int
 AddPointSource(lua_State* L)
 {
   const int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError(__FUNCTION__, 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError(__FUNCTION__, 2, num_args);
 
   LuaCheckIntegerValue(__FUNCTION__, L, 1);
   LuaCheckIntegerValue(__FUNCTION__, L, 2);
@@ -103,12 +106,13 @@ AddPointSource(lua_State* L)
   return 1;
 }
 
-RegisterLuaFunction(ClearPointSources, lbs, ClearPointSources);
+RegisterLuaFunctionNamespace(ClearPointSources, lbs, ClearPointSources);
 int
 ClearPointSources(lua_State* L)
 {
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError(__FUNCTION__, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(__FUNCTION__, 1, num_args);
 
   LuaCheckIntegerValue(__FUNCTION__, L, 1);
 
@@ -122,12 +126,13 @@ ClearPointSources(lua_State* L)
   return 0;
 }
 
-RegisterLuaFunction(AddDistributedSource, lbs, AddDistributedSource);
+RegisterLuaFunctionNamespace(AddDistributedSource, lbs, AddDistributedSource);
 int
 AddDistributedSource(lua_State* L)
 {
   const int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError(__FUNCTION__, 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError(__FUNCTION__, 2, num_args);
 
   LuaCheckIntegerValue(__FUNCTION__, L, 1);
   LuaCheckIntegerValue(__FUNCTION__, L, 2);
@@ -144,12 +149,13 @@ AddDistributedSource(lua_State* L)
   return 0;
 }
 
-RegisterLuaFunction(ClearDistributedSources, lbs, ClearDistributedSources);
+RegisterLuaFunctionNamespace(ClearDistributedSources, lbs, ClearDistributedSources);
 int
 ClearDistributedSources(lua_State* L)
 {
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError(__FUNCTION__, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(__FUNCTION__, 1, num_args);
 
   LuaCheckIntegerValue(__FUNCTION__, L, 1);
 

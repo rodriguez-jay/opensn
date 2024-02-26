@@ -1,21 +1,14 @@
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
-
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_discontinuous.h"
 #include "framework/math/quadratures/angular_quadrature_base.h"
 #include "framework/math/quadratures/angular_product_quadrature.h"
 #include "framework/math/math_range.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/physics/physics_material/multi_group_xs/single_state_mgxs.h"
-
 #include "framework/data_types/ndarray.h"
-
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-
 #include "lua/framework/console/console.h"
-
 #include <iomanip>
 
 using namespace opensn;
@@ -24,21 +17,22 @@ namespace unit_sim_tests
 {
 
 /**PWLD Sweep. */
-ParameterBlock chiSimTest91_PWLD(const InputParameters&);
+ParameterBlock SimTest91_PWLD(const InputParameters&);
 
-RegisterWrapperFunction(chi_unit_tests, chiSimTest91_PWLD, nullptr, chiSimTest91_PWLD);
+RegisterWrapperFunctionNamespace(unit_tests, SimTest91_PWLD, nullptr, SimTest91_PWLD);
 
 ParameterBlock
-chiSimTest91_PWLD(const InputParameters&)
+SimTest91_PWLD(const InputParameters&)
 {
-  const std::string fname = "chiSimTest91_PWLD";
+  const std::string fname = "SimTest91_PWLD";
 
-  opensn::log.Log() << "chiSimTest91_PWLD num_args = " << 0;
+  opensn::log.Log() << "SimTest91_PWLD num_args = " << 0;
 
-  if (opensn::mpi.process_count != 1) throw std::logic_error(fname + ": Is serial only.");
+  if (opensn::mpi_comm.size() != 1)
+    throw std::logic_error(fname + ": Is serial only.");
 
   // Get grid
-  auto grid_ptr = GetCurrentHandler().GetGrid();
+  auto grid_ptr = GetCurrentMesh();
   const auto& grid = *grid_ptr;
 
   opensn::log.Log() << "Global num cells: " << grid.GetGlobalNumberOfCells();
@@ -56,9 +50,12 @@ chiSimTest91_PWLD(const InputParameters&)
   const auto Dim3 = DIMENSION_3;
 
   int dimension = 0;
-  if (grid.Attributes() & Dim1) dimension = 1;
-  if (grid.Attributes() & Dim2) dimension = 2;
-  if (grid.Attributes() & Dim3) dimension = 3;
+  if (grid.Attributes() & Dim1)
+    dimension = 1;
+  if (grid.Attributes() & Dim2)
+    dimension = 2;
+  if (grid.Attributes() & Dim3)
+    dimension = 3;
 
   // Make SDM
   std::shared_ptr<SpatialDiscretization> sdm_ptr = PieceWiseLinearDiscontinuous::New(grid);
@@ -74,7 +71,8 @@ chiSimTest91_PWLD(const InputParameters&)
 
   // Make an angular quadrature
   std::shared_ptr<AngularQuadrature> quadrature;
-  if (dimension == 1) quadrature = std::make_shared<AngularQuadratureProdGL>(8);
+  if (dimension == 1)
+    quadrature = std::make_shared<AngularQuadratureProdGL>(8);
   else if (dimension == 2)
   {
     quadrature = std::make_shared<AngularQuadratureProdGLC>(8, 8);
@@ -121,7 +119,7 @@ chiSimTest91_PWLD(const InputParameters&)
 
   // Make XSs
   SingleStateMGXS xs;
-  xs.MakeFromChiXSFile("xs_graphite_pure.cxs");
+  xs.MakeFromOpenSnXSFile("xs_graphite_pure.xs");
 
   // Initializes vectors
   std::vector<double> phi_old(num_local_phi_dofs, 0.0);
@@ -166,20 +164,20 @@ chiSimTest91_PWLD(const InputParameters&)
   {
     const auto& cell_mapping = sdm.GetCellMapping(cell);
     const size_t num_nodes = cell_mapping.NumNodes();
-    const auto vol_qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
 
     MatVec3 IntV_shapeI_gradshapeJ(num_nodes, VecVec3(num_nodes, Vec3(0, 0, 0)));
     MatDbl IntV_shapeI_shapeJ(num_nodes, VecDbl(num_nodes, 0.0));
 
     for (unsigned int i = 0; i < num_nodes; ++i)
       for (unsigned int j = 0; j < num_nodes; ++j)
-        for (const auto& qp : vol_qp_data.QuadraturePointIndices())
+        for (const auto& qp : fe_vol_data.QuadraturePointIndices())
         {
           IntV_shapeI_gradshapeJ[i][j] +=
-            vol_qp_data.ShapeValue(i, qp) * vol_qp_data.ShapeGrad(j, qp) * vol_qp_data.JxW(qp);
+            fe_vol_data.ShapeValue(i, qp) * fe_vol_data.ShapeGrad(j, qp) * fe_vol_data.JxW(qp);
 
           IntV_shapeI_shapeJ[i][j] +=
-            vol_qp_data.ShapeValue(i, qp) * vol_qp_data.ShapeValue(j, qp) * vol_qp_data.JxW(qp);
+            fe_vol_data.ShapeValue(i, qp) * fe_vol_data.ShapeValue(j, qp) * fe_vol_data.JxW(qp);
         } // for qp
 
     cell_Gmatrices.push_back(std::move(IntV_shapeI_gradshapeJ));
@@ -189,13 +187,13 @@ chiSimTest91_PWLD(const InputParameters&)
     VecMatDbl faces_Mmatrices;
     for (size_t f = 0; f < num_faces; ++f)
     {
-      const auto face_qp_data = cell_mapping.MakeSurfaceQuadraturePointData(f);
+      const auto fe_srf_data = cell_mapping.MakeSurfaceFiniteElementData(f);
       MatDbl IntS_shapeI_shapeJ(num_nodes, VecDbl(num_nodes, 0.0));
       for (unsigned int i = 0; i < num_nodes; ++i)
         for (unsigned int j = 0; j < num_nodes; ++j)
-          for (const auto& qp : face_qp_data.QuadraturePointIndices())
-            IntS_shapeI_shapeJ[i][j] += face_qp_data.ShapeValue(i, qp) *
-                                        face_qp_data.ShapeValue(j, qp) * face_qp_data.JxW(qp);
+          for (const auto& qp : fe_srf_data.QuadraturePointIndices())
+            IntS_shapeI_shapeJ[i][j] +=
+              fe_srf_data.ShapeValue(i, qp) * fe_srf_data.ShapeValue(j, qp) * fe_srf_data.JxW(qp);
 
       faces_Mmatrices.push_back(std::move(IntS_shapeI_shapeJ));
     } // for face f
@@ -351,13 +349,16 @@ chiSimTest91_PWLD(const InputParameters&)
       const auto& weight = quadrature->weights_[d];
 
       std::vector<int64_t> iorder, jorder, korder;
-      if (omega.x > 0.0) iorder = Range<int64_t>(0, Nx);
+      if (omega.x > 0.0)
+        iorder = Range<int64_t>(0, Nx);
       else
         iorder = Range<int64_t>(Nx - 1, -1, -1);
-      if (omega.y > 0.0) jorder = Range<int64_t>(0, Ny);
+      if (omega.y > 0.0)
+        jorder = Range<int64_t>(0, Ny);
       else
         jorder = Range<int64_t>(Ny - 1, -1, -1);
-      if (omega.z > 0.0) korder = Range<int64_t>(0, Nz);
+      if (omega.z > 0.0)
+        korder = Range<int64_t>(0, Nz);
       else
         korder = Range<int64_t>(Nz - 1, -1, -1);
 
@@ -482,7 +483,8 @@ chiSimTest91_PWLD(const InputParameters&)
 
     phi_old = phi_new;
 
-    if (rel_change < 1.0e-6 and iter > 0) break;
+    if (rel_change < 1.0e-6 and iter > 0)
+      break;
   } // for iteration
 
   // Create Field Functions
@@ -512,9 +514,12 @@ chiSimTest91_PWLD(const InputParameters&)
   ff_list[0]->UpdateFieldVector(m0_phi);
 
   std::array<unsigned int, 3> j_map = {0, 0, 0};
-  if (dimension == 1 and num_moments >= 2) j_map = {0, 0, 1};
-  if (dimension == 2 and num_moments >= 3) j_map = {2, 1, 0};
-  if (dimension == 3 and num_moments >= 4) j_map = {3, 1, 2};
+  if (dimension == 1 and num_moments >= 2)
+    j_map = {0, 0, 1};
+  if (dimension == 2 and num_moments >= 3)
+    j_map = {2, 1, 0};
+  if (dimension == 3 and num_moments >= 4)
+    j_map = {3, 1, 2};
 
   sdm.CopyVectorWithUnknownScope(phi_old, mx_phi, phi_uk_man, j_map[0], m0_uk_man, 0);
   sdm.CopyVectorWithUnknownScope(phi_old, my_phi, phi_uk_man, j_map[1], m0_uk_man, 0);

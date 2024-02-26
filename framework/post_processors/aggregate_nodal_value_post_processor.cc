@@ -1,8 +1,6 @@
 #include "framework/post_processors/aggregate_nodal_value_post_processor.h"
-
 #include "framework/object_factory.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/math/spatial_discretization/spatial_discretization.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/mesh/logical_volume/logical_volume.h"
@@ -11,7 +9,7 @@
 namespace opensn
 {
 
-OpenSnRegisterObject(chi, AggregateNodalValuePostProcessor);
+OpenSnRegisterObject(AggregateNodalValuePostProcessor);
 
 InputParameters
 AggregateNodalValuePostProcessor::GetInputParameters()
@@ -60,7 +58,8 @@ AggregateNodalValuePostProcessor::Initialize()
   else
   {
     for (const auto& cell : grid.local_cells)
-      if (logical_volume_ptr_->Inside(cell.centroid_)) cell_local_ids_.push_back(cell.local_id_);
+      if (logical_volume_ptr_->Inside(cell.centroid_))
+        cell_local_ids_.push_back(cell.local_id_);
   }
 
   initialized_ = true;
@@ -69,7 +68,8 @@ AggregateNodalValuePostProcessor::Initialize()
 void
 AggregateNodalValuePostProcessor::Execute(const Event& event_context)
 {
-  if (not initialized_) Initialize();
+  if (not initialized_)
+    Initialize();
 
   const auto* grid_field_function = GetGridBasedFieldFunction();
 
@@ -122,21 +122,21 @@ AggregateNodalValuePostProcessor::Execute(const Event& event_context)
   if (operation_ == "max")
   {
     double globl_max_value;
-    MPI_Allreduce(&local_max_value, &globl_max_value, 1, MPI_DOUBLE, MPI_MAX, mpi.comm);
+    mpi_comm.all_reduce(local_max_value, globl_max_value, mpi::op::sum<double>());
 
     value_ = ParameterBlock("", globl_max_value);
   }
   else if (operation_ == "min")
   {
     double globl_min_value;
-    MPI_Allreduce(&local_min_value, &globl_min_value, 1, MPI_DOUBLE, MPI_MIN, mpi.comm);
+    mpi_comm.all_reduce(local_min_value, globl_min_value, mpi::op::min<double>());
 
     value_ = ParameterBlock("", globl_min_value);
   }
   else if (operation_ == "avg")
   {
     double globl_accumulation;
-    MPI_Allreduce(&local_accumulation, &globl_accumulation, 1, MPI_DOUBLE, MPI_SUM, mpi.comm);
+    mpi_comm.all_reduce(local_accumulation, globl_accumulation, mpi::op::sum<double>());
 
     const size_t num_globl_dofs =
       ref_ff.GetSpatialDiscretization().GetNumGlobalDOFs(ref_ff.GetUnknownManager());

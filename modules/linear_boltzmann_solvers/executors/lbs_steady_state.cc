@@ -9,7 +9,7 @@ namespace opensn
 namespace lbs
 {
 
-OpenSnRegisterObject(lbs, SteadyStateSolver);
+OpenSnRegisterObjectInNamespace(lbs, SteadyStateSolver);
 
 InputParameters
 SteadyStateSolver::GetInputParameters()
@@ -49,7 +49,11 @@ SteadyStateSolver::Execute()
   ags_solver.Setup();
   ags_solver.Solve();
 
-  if (lbs_solver_.Options().use_precursors) lbs_solver_.ComputePrecursors();
+  if (lbs_solver_.Options().use_precursors)
+    lbs_solver_.ComputePrecursors();
+
+  if (lbs_solver_.Options().adjoint)
+    lbs_solver_.ReorientAdjointSolution();
 
   lbs_solver_.UpdateFieldFunctions();
 }

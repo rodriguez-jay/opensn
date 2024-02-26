@@ -1,21 +1,14 @@
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
-
 #include "framework/math/spatial_discretization/finite_volume/finite_volume.h"
 #include "framework/math/quadratures/angular_quadrature_base.h"
 #include "framework/math/quadratures/angular_product_quadrature.h"
 #include "framework/math/math_range.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/physics/physics_material/multi_group_xs/single_state_mgxs.h"
-
 #include "framework/data_types/ndarray.h"
-
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-
 #include "lua/framework/console/console.h"
-
 #include <iomanip>
 
 using namespace opensn;
@@ -38,21 +31,22 @@ std::vector<double> SetSource(const MeshContinuum& grid,
                               const std::vector<YlmIndices>& m_ell_em_map);
 
 /**WDD Sweep. */
-ParameterBlock chiSimTest06_WDD(const InputParameters&);
+ParameterBlock SimTest06_WDD(const InputParameters&);
 
-RegisterWrapperFunction(chi_unit_testsB, chiSimTest06_WDD, nullptr, chiSimTest06_WDD);
+RegisterWrapperFunctionNamespace(unit_testsB, SimTest06_WDD, nullptr, SimTest06_WDD);
 
 ParameterBlock
-chiSimTest06_WDD(const InputParameters&)
+SimTest06_WDD(const InputParameters&)
 {
-  const std::string fname = "chiSimTest06_WDD";
+  const std::string fname = "SimTest06_WDD";
 
-  opensn::log.Log() << "chiSimTest06_WDD num_args = " << 0;
+  opensn::log.Log() << "SimTest06_WDD num_args = " << 0;
 
-  if (opensn::mpi.process_count != 1) throw std::logic_error(fname + ": Is serial only.");
+  if (opensn::mpi_comm.size() != 1)
+    throw std::logic_error(fname + ": Is serial only.");
 
   // Get grid
-  auto grid_ptr = GetCurrentHandler().GetGrid();
+  auto grid_ptr = GetCurrentMesh();
   const auto& grid = *grid_ptr;
 
   opensn::log.Log() << "Global num cells: " << grid.GetGlobalNumberOfCells();
@@ -71,9 +65,12 @@ chiSimTest06_WDD(const InputParameters&)
   const auto Dim3 = DIMENSION_3;
 
   int dimension = 0;
-  if (grid.Attributes() & Dim1) dimension = 1;
-  if (grid.Attributes() & Dim2) dimension = 2;
-  if (grid.Attributes() & Dim3) dimension = 3;
+  if (grid.Attributes() & Dim1)
+    dimension = 1;
+  if (grid.Attributes() & Dim2)
+    dimension = 2;
+  if (grid.Attributes() & Dim3)
+    dimension = 3;
 
   // Make SDM
   std::shared_ptr<SpatialDiscretization> sdm_ptr = FiniteVolume::New(grid);
@@ -89,7 +86,8 @@ chiSimTest06_WDD(const InputParameters&)
 
   // Make an angular quadrature
   std::shared_ptr<AngularQuadrature> quadrature;
-  if (dimension == 1) quadrature = std::make_shared<AngularQuadratureProdGL>(8);
+  if (dimension == 1)
+    quadrature = std::make_shared<AngularQuadratureProdGL>(8);
   else if (dimension == 2)
   {
     quadrature = std::make_shared<AngularQuadratureProdGLC>(8, 8);
@@ -136,7 +134,7 @@ chiSimTest06_WDD(const InputParameters&)
 
   // Make XSs
   SingleStateMGXS xs;
-  xs.MakeFromChiXSFile("xs_graphite_pure.cxs");
+  xs.MakeFromOpenSnXSFile("xs_graphite_pure.xs");
 
   // Initializes vectors
   std::vector<double> phi_old(num_local_phi_dofs, 0.0);
@@ -214,12 +212,18 @@ chiSimTest06_WDD(const InputParameters&)
     const double* psi_us_y = zero_vector.data();
     const double* psi_us_z = zero_vector.data();
 
-    if (omega.x > 0.0 and i > 0) psi_us_x = &psi_ds_x(i - 1, j, k, 0);
-    if (omega.x < 0.0 and i < (Nx - 1)) psi_us_x = &psi_ds_x(i + 1, j, k, 0);
-    if (omega.y > 0.0 and j > 0) psi_us_y = &psi_ds_y(i, j - 1, k, 0);
-    if (omega.y < 0.0 and j < (Ny - 1)) psi_us_y = &psi_ds_y(i, j + 1, k, 0);
-    if (omega.z > 0.0 and k > 0) psi_us_z = &psi_ds_z(i, j, k - 1, 0);
-    if (omega.z < 0.0 and k < (Nz - 1)) psi_us_z = &psi_ds_z(i, j, k + 1, 0);
+    if (omega.x > 0.0 and i > 0)
+      psi_us_x = &psi_ds_x(i - 1, j, k, 0);
+    if (omega.x < 0.0 and i < (Nx - 1))
+      psi_us_x = &psi_ds_x(i + 1, j, k, 0);
+    if (omega.y > 0.0 and j > 0)
+      psi_us_y = &psi_ds_y(i, j - 1, k, 0);
+    if (omega.y < 0.0 and j < (Ny - 1))
+      psi_us_y = &psi_ds_y(i, j + 1, k, 0);
+    if (omega.z > 0.0 and k > 0)
+      psi_us_z = &psi_ds_z(i, j, k - 1, 0);
+    if (omega.z < 0.0 and k < (Nz - 1))
+      psi_us_z = &psi_ds_z(i, j, k + 1, 0);
 
     const auto& sigma_t = cell_xs.SigmaTotal();
     for (size_t g = 0; g < num_groups; ++g)
@@ -232,14 +236,20 @@ chiSimTest06_WDD(const InputParameters&)
         rhs += source_moments[dof_map] * m2d[m][d];
       }
 
-      if (Nx > 1) rhs += 2.0 * std::fabs(omega.x) * psi_us_x[g] / dx;
-      if (Ny > 1) rhs += 2.0 * std::fabs(omega.y) * psi_us_y[g] / dy;
-      if (Nz > 1) rhs += 2.0 * std::fabs(omega.z) * psi_us_z[g] / dz;
+      if (Nx > 1)
+        rhs += 2.0 * std::fabs(omega.x) * psi_us_x[g] / dx;
+      if (Ny > 1)
+        rhs += 2.0 * std::fabs(omega.y) * psi_us_y[g] / dy;
+      if (Nz > 1)
+        rhs += 2.0 * std::fabs(omega.z) * psi_us_z[g] / dz;
 
       double lhs = sigma_t[g];
-      if (Nx > 1) lhs += 2.0 * std::fabs(omega.x) / dx;
-      if (Ny > 1) lhs += 2.0 * std::fabs(omega.y) / dy;
-      if (Nz > 1) lhs += 2.0 * std::fabs(omega.z) / dz;
+      if (Nx > 1)
+        lhs += 2.0 * std::fabs(omega.x) / dx;
+      if (Ny > 1)
+        lhs += 2.0 * std::fabs(omega.y) / dy;
+      if (Nz > 1)
+        lhs += 2.0 * std::fabs(omega.z) / dz;
 
       double psi_ijk = rhs / lhs;
 
@@ -268,13 +278,16 @@ chiSimTest06_WDD(const InputParameters&)
       const auto& omega = quadrature->omegas_[d];
 
       std::vector<int64_t> iorder, jorder, korder;
-      if (omega.x > 0.0) iorder = Range<int64_t>(0, Nx);
+      if (omega.x > 0.0)
+        iorder = Range<int64_t>(0, Nx);
       else
         iorder = Range<int64_t>(Nx - 1, -1, -1);
-      if (omega.y > 0.0) jorder = Range<int64_t>(0, Ny);
+      if (omega.y > 0.0)
+        jorder = Range<int64_t>(0, Ny);
       else
         jorder = Range<int64_t>(Ny - 1, -1, -1);
-      if (omega.z > 0.0) korder = Range<int64_t>(0, Nz);
+      if (omega.z > 0.0)
+        korder = Range<int64_t>(0, Nz);
       else
         korder = Range<int64_t>(Nz - 1, -1, -1);
 
@@ -308,7 +321,8 @@ chiSimTest06_WDD(const InputParameters&)
 
     phi_old = phi_new;
 
-    if (rel_change < 1.0e-6 and iter > 0) break;
+    if (rel_change < 1.0e-6 and iter > 0)
+      break;
   } // for iteration
 
   // Localize zeroth moment

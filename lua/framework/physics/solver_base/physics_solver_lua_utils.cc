@@ -1,11 +1,8 @@
 #include "physics_solver_lua_utils.h"
-
 #include "framework/physics/solver_base/solver.h"
-#include "framework/physics/field_function/field_function_grid_based.h"
-#include "framework/physics/physics_event_publisher.h"
-
+#include "framework/field_functions/field_function_grid_based.h"
+#include "framework/event_system/physics_event_publisher.h"
 #include "framework/object_factory.h"
-
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
 #include "framework/console/console.h"
@@ -14,24 +11,25 @@ using namespace opensn;
 
 namespace opensnlua
 {
-RegisterLuaFunctionAsIs(chiSolverCreate);
+RegisterLuaFunctionAsIs(SolverCreate);
 
-RegisterLuaFunctionAsIs(chiSolverInitialize);
-RegisterLuaFunctionAsIs(chiSolverExecute);
-RegisterLuaFunctionAsIs(chiSolverStep);
-RegisterLuaFunctionAsIs(chiSolverAdvance);
-RegisterLuaFunctionAsIs(chiSolverSetBasicOption);
-RegisterLuaFunctionAsIs(chiSolverGetName);
-RegisterLuaFunctionAsIs(chiSolverGetFieldFunctionList);
-RegisterLuaFunctionAsIs(chiSolverGetInfo);
-RegisterLuaFunctionAsIs(chiSolverSetProperties);
+RegisterLuaFunctionAsIs(SolverInitialize);
+RegisterLuaFunctionAsIs(SolverExecute);
+RegisterLuaFunctionAsIs(SolverStep);
+RegisterLuaFunctionAsIs(SolverAdvance);
+RegisterLuaFunctionAsIs(SolverSetBasicOption);
+RegisterLuaFunctionAsIs(SolverGetName);
+RegisterLuaFunctionAsIs(SolverGetFieldFunctionList);
+RegisterLuaFunctionAsIs(SolverGetInfo);
+RegisterLuaFunctionAsIs(SolverSetProperties);
 
 int
-chiSolverCreate(lua_State* L)
+SolverCreate(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
 
   LuaCheckTableValue(fname, L, 1);
 
@@ -45,12 +43,13 @@ chiSolverCreate(lua_State* L)
 }
 
 int
-chiSolverInitialize(lua_State* L)
+SolverInitialize(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
 
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
   LuaCheckNilValue(fname, L, 1);
   LuaCheckIntegerValue(fname, L, 1);
 
@@ -64,12 +63,13 @@ chiSolverInitialize(lua_State* L)
 }
 
 int
-chiSolverExecute(lua_State* L)
+SolverExecute(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
 
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
   LuaCheckNilValue(fname, L, 1);
   LuaCheckIntegerValue(fname, L, 1);
 
@@ -83,12 +83,13 @@ chiSolverExecute(lua_State* L)
 }
 
 int
-chiSolverStep(lua_State* L)
+SolverStep(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
 
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
   LuaCheckNilValue(fname, L, 1);
   LuaCheckIntegerValue(fname, L, 1);
 
@@ -102,12 +103,13 @@ chiSolverStep(lua_State* L)
 }
 
 int
-chiSolverAdvance(lua_State* L)
+SolverAdvance(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
 
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
   LuaCheckNilValue(fname, L, 1);
   LuaCheckIntegerValue(fname, L, 1);
 
@@ -121,11 +123,12 @@ chiSolverAdvance(lua_State* L)
 }
 
 int
-chiSolverSetBasicOption(lua_State* L)
+SolverSetBasicOption(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 3) LuaPostArgAmountError(fname, 3, num_args);
+  if (num_args != 3)
+    LuaPostArgAmountError(fname, 3, num_args);
 
   LuaCheckNilValue(fname, L, 1);
   LuaCheckNilValue(fname, L, 2);
@@ -186,12 +189,13 @@ chiSolverSetBasicOption(lua_State* L)
 }
 
 int
-chiSolverGetName(lua_State* L)
+SolverGetName(lua_State* L)
 {
-  const std::string fname = "chiSolverGetName";
+  const std::string fname = "SolverGetName";
   const int num_args = lua_gettop(L);
 
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
   LuaCheckNilValue(fname, L, 1);
   LuaCheckIntegerValue(fname, L, 1);
 
@@ -205,11 +209,12 @@ chiSolverGetName(lua_State* L)
 }
 
 int
-chiSolverGetFieldFunctionList(lua_State* L)
+SolverGetFieldFunctionList(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError("chiGetFieldFunctionList", 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError("GetFieldFunctionList", 1, num_args);
 
   // Getting solver
   const int solver_handle = lua_tonumber(L, 1);
@@ -247,12 +252,13 @@ chiSolverGetFieldFunctionList(lua_State* L)
 }
 
 int
-chiSolverGetInfo(lua_State* L)
+SolverGetInfo(lua_State* L)
 {
-  const std::string fname = "chiSolverGetInfo";
+  const std::string fname = "SolverGetInfo";
   const int num_args = lua_gettop(L);
 
-  if (num_args != 2) LuaPostArgAmountError(fname, 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError(fname, 2, num_args);
   LuaCheckNilValue(fname, L, 1);
   LuaCheckIntegerValue(fname, L, 1);
 
@@ -261,7 +267,8 @@ chiSolverGetInfo(lua_State* L)
   const auto& solver = opensn::GetStackItem<Solver>(opensn::object_stack, solver_handle, fname);
 
   ParameterBlock params;
-  if (lua_isstring(L, 2)) params.AddParameter("name", std::string(lua_tostring(L, 2)));
+  if (lua_isstring(L, 2))
+    params.AddParameter("name", std::string(lua_tostring(L, 2)));
   else if (lua_istable(L, 2))
     params = TableParserAsParameterBlock::ParseTable(L, 2);
   else
@@ -277,11 +284,12 @@ chiSolverGetInfo(lua_State* L)
 }
 
 int
-chiSolverSetProperties(lua_State* L)
+SolverSetProperties(lua_State* L)
 {
-  const std::string fname = "chiSolverSetProperties";
+  const std::string fname = "SolverSetProperties";
   const int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError(fname, 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError(fname, 2, num_args);
 
   LuaCheckNilValue(fname, L, 1);
   LuaCheckIntegerValue(fname, L, 1);

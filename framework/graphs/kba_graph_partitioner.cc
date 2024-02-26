@@ -13,7 +13,7 @@
 namespace opensn
 {
 
-OpenSnRegisterObject(chi, KBAGraphPartitioner);
+OpenSnRegisterObject(KBAGraphPartitioner);
 
 InputParameters
 KBAGraphPartitioner::GetInputParameters()
@@ -58,7 +58,8 @@ KBAGraphPartitioner::KBAGraphPartitioner(const InputParameters& params)
     if (cuts.size() != (n - 1))
       ChiInvalidArgument("The number of cuts supplied for \"" + name + "cuts\" is not equal to n" +
                          name + "-1.");
-    if (cuts.empty()) continue;
+    if (cuts.empty())
+      continue;
 
     // Check monitonically increasing
     {

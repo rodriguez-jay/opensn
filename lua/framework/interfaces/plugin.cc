@@ -32,17 +32,14 @@ GetStatusOfRegistries()
   return stats;
 }
 
-OpenSnRegisterObject(chi, Plugin);
+OpenSnRegisterObject(Plugin);
 
 InputParameters
 Plugin::GetInputParameters()
 {
   InputParameters params = Object::GetInputParameters();
 
-  // clang-format off
-  params.SetGeneralDescription(
-  "Object to handle the loading of shared libraries as plug-ins");
-  // clang-format on
+  params.SetGeneralDescription("Object to handle the loading of shared libraries as plug-ins");
   params.SetDocGroup("DocInterfaces");
 
   params.AddRequiredParameter<std::string>("plugin_path",

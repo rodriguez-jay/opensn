@@ -3,14 +3,9 @@
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
 #include "framework/utils/timer.h"
-
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
-
 #include "modules/fv_diffusion/fv_diffusion_bndry.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
-
+#include "framework/field_functions/field_function_grid_based.h"
 #include "framework/math/spatial_discretization/finite_volume/finite_volume.h"
 #include "framework/math/functions/scalar_spatial_material_function.h"
 
@@ -59,7 +54,7 @@ fv_diffusion::Solver::Initialize()
             << ": Initializing CFEM Diffusion solver ";
 
   // Get grid
-  grid_ptr_ = GetCurrentHandler().GetGrid();
+  grid_ptr_ = GetCurrentMesh();
   const auto& grid = *grid_ptr_;
   if (grid_ptr_ == nullptr)
     throw std::logic_error(std::string(__PRETTY_FUNCTION__) + " No grid defined.");
@@ -92,7 +87,8 @@ fv_diffusion::Solver::Initialize()
         }
         case BoundaryType::Dirichlet:
         {
-          if (bndry_vals.empty()) bndry_vals.resize(1, 0.0);
+          if (bndry_vals.empty())
+            bndry_vals.resize(1, 0.0);
           boundaries_.insert(
             std::make_pair(bndry_id, Boundary{BoundaryType::Dirichlet, {bndry_vals[0], 0., 0.}}));
           log.Log() << "Boundary " << bndry_name << " set to dirichlet.";
@@ -165,7 +161,8 @@ fv_diffusion::Solver::Initialize()
   if (field_functions_.empty())
   {
     std::string solver_name;
-    if (not TextName().empty()) solver_name = TextName() + "-";
+    if (not TextName().empty())
+      solver_name = TextName() + "-";
 
     std::string text_name = solver_name + "phi";
 
@@ -247,8 +244,10 @@ fv_diffusion::Solver::Execute()
           if (std::fabs(bval) < 1e-8)
             throw std::logic_error("if b=0, this is a Dirichlet BC, not a Robin BC");
 
-          if (std::fabs(aval) > 1.0e-8) MatSetValue(A_, imap, imap, A_f * aval / bval, ADD_VALUES);
-          if (std::fabs(fval) > 1.0e-8) VecSetValue(b_, imap, A_f * fval / bval, ADD_VALUES);
+          if (std::fabs(aval) > 1.0e-8)
+            MatSetValue(A_, imap, imap, A_f * aval / bval, ADD_VALUES);
+          if (std::fabs(fval) > 1.0e-8)
+            VecSetValue(b_, imap, A_f * fval / bval, ADD_VALUES);
         } // if Robin
 
         if (bndry.type_ == BoundaryType::Dirichlet)

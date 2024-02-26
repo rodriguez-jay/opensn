@@ -6,7 +6,6 @@
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
 #include "framework/logging/log_exceptions.h"
-#include "framework/mpi/mpi.h"
 #include "framework/utils/utils.h"
 #include "lua/framework/interfaces/plugin.h"
 #include "framework/runtime.h"
@@ -16,7 +15,7 @@ using namespace opensn;
 
 namespace opensn::lua_utils
 {
-int chiMakeObject(lua_State* L);
+int MakeObject(lua_State* L);
 }
 
 namespace opensnlua
@@ -24,7 +23,7 @@ namespace opensnlua
 
 Console& console = Console::GetInstance();
 
-RegisterLuaFunction(Console::LuaWrapperCall, chi_console, LuaWrapperCall);
+RegisterLuaFunctionNamespace(Console::LuaWrapperCall, console, LuaWrapperCall);
 
 Console&
 Console::GetInstance() noexcept
@@ -85,7 +84,8 @@ Console::LuaWrapperCall(lua_State* L)
   {
     const std::string arg_name = "arg" + std::to_string(p - 2);
 
-    if (lua_isboolean(L, p)) main_arguments_block.AddParameter(arg_name, lua_toboolean(L, p));
+    if (lua_isboolean(L, p))
+      main_arguments_block.AddParameter(arg_name, lua_toboolean(L, p));
     else if (lua_isinteger(L, p))
       main_arguments_block.AddParameter(arg_name, lua_tointeger(L, p));
     else if (lua_isnumber(L, p))
@@ -127,29 +127,6 @@ Console::RunConsoleLoop(char*) const
   opensn::log.Log() << "Console loop started. "
                     << "Type \"exit\" to quit (or Ctl-C).";
 
-  /** Wrapper to an MPI_Bcast call for a single integer
-   * broadcast from location 0. */
-  auto BroadcastSingleInteger = [](int* int_being_bcast)
-  { MPI_Bcast(int_being_bcast, 1, MPI_INT, 0, mpi.comm); };
-
-  /** Wrapper to an MPI_Bcast call for an array of characters
-   * broadcast from location 0. */
-  auto HomeBroadcastStringAsRaw = [](std::string string_to_bcast, int length)
-  {
-    char* raw_string_to_bcast = string_to_bcast.data();
-    MPI_Bcast(raw_string_to_bcast, length, MPI_CHAR, 0, mpi.comm);
-  };
-
-  /** Wrapper to an MPI_Bcast call for an array of characters
-   * broadcast from location 0. This call is for non-home locations. */
-  auto NonHomeBroadcastStringAsRaw = [](std::string& string_to_bcast, int length)
-  {
-    std::vector<char> raw_chars(length + 1, '\0');
-    MPI_Bcast(raw_chars.data(), length, MPI_CHAR, 0, mpi.comm);
-
-    string_to_bcast = std::string(raw_chars.data());
-  };
-
   /** Executes a string within the lua-console. */
   auto LuaDoString = [this](const std::string& the_string)
   {
@@ -161,31 +138,18 @@ Console::RunConsoleLoop(char*) const
     }
   };
 
-  auto ConsoleInputNumChars = [](const std::string& input)
-  {
-    int L = static_cast<int>(input.size());
-    if (input == std::string("exit")) L = -1;
-
-    return L;
-  };
-
-  const bool HOME = opensn::mpi.location_id == 0;
+  const bool HOME = opensn::mpi_comm.rank() == 0;
 
   while (true)
   {
     std::string console_input;
 
-    if (HOME) std::cin >> console_input; // Home will be waiting here
+    if (HOME)
+      std::cin >> console_input; // Home will be waiting here
 
-    int console_input_len = ConsoleInputNumChars(console_input);
-
-    BroadcastSingleInteger(&console_input_len); // Non-Home locs wait here
-
-    if (console_input_len < 0) break;
-    else if (HOME)
-      HomeBroadcastStringAsRaw(console_input, console_input_len);
-    else
-      NonHomeBroadcastStringAsRaw(console_input, console_input_len);
+    mpi_comm.broadcast(console_input, 0);
+    if (console_input == "exit")
+      break;
 
     try
     {
@@ -220,7 +184,7 @@ Console::ExecuteFile(const std::string& fileName, int argc, char** argv) const
         lua_pushstring(L, argv[i - 1]);
         lua_settable(L, -3);
       }
-      lua_setglobal(L, "chiArgs");
+      lua_setglobal(L, "Args");
     }
     int error = luaL_dofile(this->console_state_, fileName.c_str());
 
@@ -239,10 +203,10 @@ Console::PostMPIInfo(int location_id, int number_of_processes) const
   lua_State* L = this->console_state_;
 
   lua_pushinteger(L, location_id);
-  lua_setglobal(L, "chi_location_id");
+  lua_setglobal(L, "location_id");
 
   lua_pushinteger(L, number_of_processes);
-  lua_setglobal(L, "chi_number_of_processes");
+  lua_setglobal(L, "number_of_processes");
 }
 
 void
@@ -329,17 +293,25 @@ Console::AddWrapperToRegistryInNamespaceWithName(const std::string& namespace_na
                                                  WrapperCallFunc actual_function,
                                                  bool ignore_null_call_func)
 {
-  const std::string name =
-    (namespace_name.empty()) ? name_in_lua : namespace_name + "::" + name_in_lua;
+  return AddWrapperToRegistryInNamespaceWithName(
+    namespace_name + "::" + name_in_lua, syntax_function, actual_function, ignore_null_call_func);
+}
 
+char
+Console::AddWrapperToRegistryInNamespaceWithName(const std::string& name_in_lua,
+                                                 WrapperGetInParamsFunc syntax_function,
+                                                 WrapperCallFunc actual_function,
+                                                 bool ignore_null_call_func)
+{
   auto& console = GetInstance();
   auto& registry = console.function_wrapper_registry_;
 
-  ChiLogicalErrorIf(registry.count(name) > 0,
-                    std::string("Attempted to register lua-function wrapper \"") + name +
+  ChiLogicalErrorIf(registry.count(name_in_lua) > 0,
+                    std::string("Attempted to register lua-function wrapper \"") + name_in_lua +
                       "\" but a wrapper with the same name already exists");
 
-  if (not syntax_function) syntax_function = DefaultGetInParamsFunc;
+  if (not syntax_function)
+    syntax_function = DefaultGetInParamsFunc;
 
   if (not ignore_null_call_func)
     ChiLogicalErrorIf(not actual_function, "Problem with get_in_params_func");
@@ -348,7 +320,7 @@ Console::AddWrapperToRegistryInNamespaceWithName(const std::string& namespace_na
   reg_entry.get_in_params_func = syntax_function;
   reg_entry.call_func = actual_function;
 
-  registry.insert(std::make_pair(name, reg_entry));
+  registry.insert(std::make_pair(name_in_lua, reg_entry));
 
   return 0;
 }
@@ -387,7 +359,7 @@ Console::SetLuaFuncWrapperNamespaceTableStructure(const std::string& full_lua_na
   auto MakeChunk = [&L, &full_lua_name]()
   {
     std::string chunk_code = "local params = ...; ";
-    chunk_code += "return chi_console.LuaWrapperCall(\"" + full_lua_name + "\", ...)";
+    chunk_code += "return console.LuaWrapperCall(\"" + full_lua_name + "\", ...)";
 
     luaL_loadstring(L, chunk_code.c_str());
   };
@@ -395,7 +367,8 @@ Console::SetLuaFuncWrapperNamespaceTableStructure(const std::string& full_lua_na
   const auto table_names = StringSplit(full_lua_name, "::");
   std::vector<std::string> namespace_names;
   for (const auto& table_name : table_names)
-    if (table_name != table_names.back()) namespace_names.push_back(table_name);
+    if (table_name != table_names.back())
+      namespace_names.push_back(table_name);
 
   const auto& function_name = table_names.back();
 
@@ -429,7 +402,7 @@ Console::SetObjectNamespaceTableStructure(const std::string& full_lua_name)
 
     lua_pushstring(L, "Create");
     std::string chunk_code = "local params = ...; ";
-    chunk_code += "return chiMakeObjectType(\"" + full_name + "\", ...)";
+    chunk_code += "return MakeObjectType(\"" + full_name + "\", ...)";
 
     luaL_loadstring(L, chunk_code.c_str());
     lua_settable(L, -3);
@@ -488,7 +461,8 @@ Console::SetLuaConstant(const std::string& constant_name, const Varying& value)
 
   auto PushVaryingValue = [&L](const Varying& var_value)
   {
-    if (var_value.Type() == VaryingDataType::BOOL) lua_pushboolean(L, var_value.BoolValue());
+    if (var_value.Type() == VaryingDataType::BOOL)
+      lua_pushboolean(L, var_value.BoolValue());
     else if (var_value.Type() == VaryingDataType::STRING)
       lua_pushstring(L, var_value.StringValue().c_str());
     else if (var_value.Type() == VaryingDataType::INTEGER)
@@ -509,7 +483,10 @@ Console::SetLuaConstant(const std::string& constant_name, const Varying& value)
   {
     std::vector<std::string> namespace_names;
     for (const auto& table_name : path_names)
-      if (table_name != path_names.back()) { namespace_names.push_back(table_name); }
+      if (table_name != path_names.back())
+      {
+        namespace_names.push_back(table_name);
+      }
 
     FleshOutLuaTableStructure(namespace_names);
     lua_pushstring(L, path_names.back().c_str());
@@ -534,7 +511,8 @@ Console::DumpRegister() const
 
     opensn::log.Log() << "LUA_FUNCWRAPPER_BEGIN " << key;
 
-    if (not entry.call_func) opensn::log.Log() << "SYNTAX_BLOCK";
+    if (not entry.call_func)
+      opensn::log.Log() << "SYNTAX_BLOCK";
 
     const auto in_params = entry.get_in_params_func();
     in_params.DumpParameters();
@@ -552,7 +530,8 @@ Console::UpdateConsoleBindings(const RegistryStatuses& old_statuses)
 
   const auto& object_factory = ObjectFactory::GetInstance();
   for (const auto& [key, _] : object_factory.Registry())
-    if (not ListHasValue(old_statuses.objfactory_keys_, key)) SetObjectNamespaceTableStructure(key);
+    if (not ListHasValue(old_statuses.objfactory_keys_, key))
+      SetObjectNamespaceTableStructure(key);
 
   for (const auto& [key, entry] : lua_function_registry_)
     if (not ListHasValue(old_statuses.objfactory_keys_, key))
@@ -560,7 +539,8 @@ Console::UpdateConsoleBindings(const RegistryStatuses& old_statuses)
 
   for (const auto& [key, entry] : function_wrapper_registry_)
     if (not ListHasValue(old_statuses.objfactory_keys_, key))
-      if (entry.call_func) SetLuaFuncWrapperNamespaceTableStructure(key);
+      if (entry.call_func)
+        SetLuaFuncWrapperNamespaceTableStructure(key);
 }
 
 } // namespace opensnlua

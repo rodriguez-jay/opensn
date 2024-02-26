@@ -1,28 +1,19 @@
 #include "framework/lua.h"
-#include "framework/mesh/mesh_handler/mesh_handler.h"
-
-#include "framework/physics/field_function/field_function_grid_based.h"
-
-#include "framework/mesh/field_function_interpolation/ffinter_point.h"
-#include "framework/mesh/field_function_interpolation/ffinter_slice.h"
-#include "framework/mesh/field_function_interpolation/ffinter_line.h"
-#include "framework/mesh/field_function_interpolation/ffinter_volume.h"
+#include "framework/field_functions/field_function_grid_based.h"
+#include "framework/field_functions/interpolation/ffinter_point.h"
+#include "framework/field_functions/interpolation/ffinter_slice.h"
+#include "framework/field_functions/interpolation/ffinter_line.h"
+#include "framework/field_functions/interpolation/ffinter_volume.h"
 #include "lua/framework/math/functions/lua_scalar_material_function.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-
-#define dcastPoint(x) dynamic_cast<FieldFunctionInterpolationPoint&>(x)
-#define dcastLine(x) dynamic_cast<FieldFunctionInterpolationLine&>(x)
-#define dcastSlice(x) dynamic_cast<FieldFunctionInterpolationSlice&>(x)
-#define dcastVolume(x) dynamic_cast<FieldFunctionInterpolationVolume&>(x)
-
 #include "ffinterpol_lua.h"
 #include "framework/console/console.h"
 
 using namespace opensn;
 using namespace opensnlua;
 
-RegisterLuaFunctionAsIs(chiFFInterpolationSetProperty);
+RegisterLuaFunctionAsIs(FFInterpolationSetProperty);
 RegisterLuaConstantAsIs(PROBEPOINT, Varying(0));
 RegisterLuaConstantAsIs(SLICE_POINT, Varying(1));
 RegisterLuaConstantAsIs(SLICE_NORMAL, Varying(2));
@@ -61,9 +52,9 @@ CreateFunction(const std::string& function_name)
 } // namespace
 
 int
-chiFFInterpolationSetProperty(lua_State* L)
+FFInterpolationSetProperty(lua_State* L)
 {
-  const std::string fname = "chiFFInterpolationSetProperty";
+  const std::string fname = "FFInterpolationSetProperty";
   int numArgs = lua_gettop(L);
 
   // Get handle to field function
@@ -76,23 +67,22 @@ chiFFInterpolationSetProperty(lua_State* L)
   // Check point properties
   if (property == FieldFunctionInterpolationProperty::PROBEPOINT)
     if (p_ffi->Type() != FieldFunctionInterpolationType::POINT)
-      throw std::logic_error(
-        "Point property" + std::to_string(static_cast<int>(property)) +
-        " used in chiFFInterpolationSetProperty but FFI is not a point-probe.");
+      throw std::logic_error("Point property" + std::to_string(static_cast<int>(property)) +
+                             " used in FFInterpolationSetProperty but FFI is not a point-probe.");
 
   // Check slice properties
-  if ((property >= FieldFunctionInterpolationProperty::SLICEPOINT) &&
+  if ((property >= FieldFunctionInterpolationProperty::SLICEPOINT) and
       (property <= FieldFunctionInterpolationProperty::SLICEBINORM))
     if (p_ffi->Type() != FieldFunctionInterpolationType::SLICE)
       throw std::logic_error("Slice property" + std::to_string(static_cast<int>(property)) +
-                             " used in chiFFInterpolationSetProperty but FFI is not a slice.");
+                             " used in FFInterpolationSetProperty but FFI is not a slice.");
 
   // Check Line properties
-  if ((property >= FieldFunctionInterpolationProperty::FIRSTPOINT) &&
+  if ((property >= FieldFunctionInterpolationProperty::FIRSTPOINT) and
       (property <= FieldFunctionInterpolationProperty::NUMBEROFPOINTS))
     if (p_ffi->Type() != FieldFunctionInterpolationType::LINE)
       throw std::logic_error("Line property " + std::to_string(static_cast<int>(property)) +
-                             " used in chiFFInterpolationSetProperty but FFI is not a line.");
+                             " used in FFInterpolationSetProperty but FFI is not a line.");
 
   // Generic
   if (property == FieldFunctionInterpolationProperty::ADD_FIELD_FUNCTION)
@@ -120,7 +110,7 @@ chiFFInterpolationSetProperty(lua_State* L)
   }
   else if (property == FieldFunctionInterpolationProperty::PROBEPOINT)
   {
-    auto& cur_ffi = dcastPoint(*p_ffi);
+    auto& cur_ffi = dynamic_cast<FieldFunctionInterpolationPoint&>(*p_ffi);
 
     double x = lua_tonumber(L, 3);
     double y = lua_tonumber(L, 4);
@@ -130,7 +120,7 @@ chiFFInterpolationSetProperty(lua_State* L)
   }
   else if (property == FieldFunctionInterpolationProperty::SLICEPOINT)
   {
-    auto& cur_ffi_slice = dcastSlice(*p_ffi);
+    auto& cur_ffi_slice = dynamic_cast<FieldFunctionInterpolationSlice&>(*p_ffi);
 
     double x = lua_tonumber(L, 3);
     double y = lua_tonumber(L, 4);
@@ -140,7 +130,7 @@ chiFFInterpolationSetProperty(lua_State* L)
   }
   else if (property == FieldFunctionInterpolationProperty::SLICENORMAL)
   {
-    auto& cur_ffi_slice = dcastSlice(*p_ffi);
+    auto& cur_ffi_slice = dynamic_cast<FieldFunctionInterpolationSlice&>(*p_ffi);
 
     double x = lua_tonumber(L, 3);
     double y = lua_tonumber(L, 4);
@@ -150,7 +140,7 @@ chiFFInterpolationSetProperty(lua_State* L)
   }
   else if (property == FieldFunctionInterpolationProperty::SLICETANGENT)
   {
-    auto& cur_ffi_slice = dcastSlice(*p_ffi);
+    auto& cur_ffi_slice = dynamic_cast<FieldFunctionInterpolationSlice&>(*p_ffi);
 
     double x = lua_tonumber(L, 3);
     double y = lua_tonumber(L, 4);
@@ -160,7 +150,7 @@ chiFFInterpolationSetProperty(lua_State* L)
   }
   else if (property == FieldFunctionInterpolationProperty::SLICEBINORM)
   {
-    auto& cur_ffi_slice = dcastSlice(*p_ffi);
+    auto& cur_ffi_slice = dynamic_cast<FieldFunctionInterpolationSlice&>(*p_ffi);
 
     double x = lua_tonumber(L, 3);
     double y = lua_tonumber(L, 4);
@@ -170,34 +160,37 @@ chiFFInterpolationSetProperty(lua_State* L)
   }
   else if (property == FieldFunctionInterpolationProperty::FIRSTPOINT)
   {
-    if (numArgs != 5) LuaPostArgAmountError("chiFFInterpolationSetProperty", 5, numArgs);
+    if (numArgs != 5)
+      LuaPostArgAmountError("FFInterpolationSetProperty", 5, numArgs);
 
-    auto& cur_ffi_line = dcastLine(*p_ffi);
+    auto& cur_ffi_line = dynamic_cast<FieldFunctionInterpolationLine&>(*p_ffi);
 
     Vector3 point(lua_tonumber(L, 3), lua_tonumber(L, 4), lua_tonumber(L, 5));
     cur_ffi_line.GetInitialPoint() = point;
   }
   else if (property == FieldFunctionInterpolationProperty::SECONDPOINT)
   {
-    if (numArgs != 5) LuaPostArgAmountError("chiFFInterpolationSetProperty", 5, numArgs);
+    if (numArgs != 5)
+      LuaPostArgAmountError("FFInterpolationSetProperty", 5, numArgs);
 
-    auto& cur_ffi_line = dcastLine(*p_ffi);
+    auto& cur_ffi_line = dynamic_cast<FieldFunctionInterpolationLine&>(*p_ffi);
 
     Vector3 point(lua_tonumber(L, 3), lua_tonumber(L, 4), lua_tonumber(L, 5));
     cur_ffi_line.GetFinalPoint() = point;
   }
   else if (property == FieldFunctionInterpolationProperty::NUMBEROFPOINTS)
   {
-    if (numArgs != 3) LuaPostArgAmountError("chiFFInterpolationSetProperty", 3, numArgs);
+    if (numArgs != 3)
+      LuaPostArgAmountError("FFInterpolationSetProperty", 3, numArgs);
 
-    auto& cur_ffi_line = dcastLine(*p_ffi);
+    auto& cur_ffi_line = dynamic_cast<FieldFunctionInterpolationLine&>(*p_ffi);
 
     int num_points = lua_tonumber(L, 3);
 
     if (num_points < 2)
     {
       opensn::log.LogAllError() << "Line property FFI_LINE_NUMBEROFPOINTS"
-                                << " used in chiFFInterpolationSetProperty. Number of points must"
+                                << " used in FFInterpolationSetProperty. Number of points must"
                                 << " be greater than or equal to 2.";
       opensn::Exit(EXIT_FAILURE);
     }
@@ -205,14 +198,15 @@ chiFFInterpolationSetProperty(lua_State* L)
   }
   else if (property == FieldFunctionInterpolationProperty::CUSTOM_ARRAY)
   {
-    if (numArgs != 3) LuaPostArgAmountError("chiFFInterpolationSetProperty", 3, numArgs);
+    if (numArgs != 3)
+      LuaPostArgAmountError("FFInterpolationSetProperty", 3, numArgs);
 
-    auto& cur_ffi_line = dcastLine(*p_ffi);
+    auto& cur_ffi_line = dynamic_cast<FieldFunctionInterpolationLine&>(*p_ffi);
 
     if (not lua_istable(L, 3))
     {
       opensn::log.LogAllError() << "Line property FFI_LINE_CUSTOM_ARRAY"
-                                << " used in chiFFInterpolationSetProperty. Argument 3 is expected "
+                                << " used in FFInterpolationSetProperty. Argument 3 is expected "
                                    "to be an array.";
       opensn::Exit(EXIT_FAILURE);
     }
@@ -233,14 +227,14 @@ chiFFInterpolationSetProperty(lua_State* L)
   else if (property == FieldFunctionInterpolationProperty::OPERATION)
   {
     if (numArgs != 3 and numArgs != 4)
-      LuaPostArgAmountError("chiFFInterpolationSetProperty", 3, numArgs);
+      LuaPostArgAmountError("FFInterpolationSetProperty", 3, numArgs);
 
     if (p_ffi->Type() != FieldFunctionInterpolationType::VOLUME)
       throw std::logic_error("Volume property FFI_PROP_OPERATION"
-                             " used in chiFFInterpolationSetProperty can only be used with "
+                             " used in FFInterpolationSetProperty can only be used with "
                              "Volume type interpolations.");
 
-    auto& cur_ffi_volume = dcastVolume(*p_ffi);
+    auto& cur_ffi_volume = dynamic_cast<FieldFunctionInterpolationVolume&>(*p_ffi);
 
     int op_type = lua_tonumber(L, 3);
 
@@ -248,17 +242,18 @@ chiFFInterpolationSetProperty(lua_State* L)
     int OP_MAX_FUNC = static_cast<int>(FieldFunctionInterpolationOperation::OP_MAX_FUNC);
     int OP_SUM_FUNC = static_cast<int>(FieldFunctionInterpolationOperation::OP_SUM_FUNC);
 
-    if (!((op_type >= OP_SUM) and (op_type <= OP_MAX_FUNC)))
+    if (not((op_type >= OP_SUM) and (op_type <= OP_MAX_FUNC)))
     {
       opensn::log.LogAllError() << "Volume property FFI_PROP_OPERATION"
-                                << " used in chiFFInterpolationSetProperty. Unsupported OPERATON."
+                                << " used in FFInterpolationSetProperty. Unsupported OPERATON."
                                 << " Supported types are OP_AVG and OP_SUM. " << op_type;
       opensn::Exit(EXIT_FAILURE);
     }
 
     if ((op_type >= OP_SUM_FUNC) and (op_type <= OP_MAX_FUNC))
     {
-      if (numArgs != 4) LuaPostArgAmountError("chiFFInterpolationSetProperty", 4, numArgs);
+      if (numArgs != 4)
+        LuaPostArgAmountError("FFInterpolationSetProperty", 4, numArgs);
       const char* func_name = lua_tostring(L, 4);
       auto operation_function = CreateFunction(func_name);
       opensn::function_stack.push_back(operation_function);
@@ -269,7 +264,8 @@ chiFFInterpolationSetProperty(lua_State* L)
   }
   else if (property == FieldFunctionInterpolationProperty::LOGICAL_VOLUME)
   {
-    if (numArgs != 3) LuaPostArgAmountError("chiFFInterpolationSetProperty", 3, numArgs);
+    if (numArgs != 3)
+      LuaPostArgAmountError("FFInterpolationSetProperty", 3, numArgs);
 
     int logvol_hndle = lua_tonumber(L, 3);
 
@@ -278,16 +274,16 @@ chiFFInterpolationSetProperty(lua_State* L)
 
     if (p_ffi->Type() != FieldFunctionInterpolationType::VOLUME)
       throw std::logic_error("Volume property FFI_PROP_LOGICAL_VOLUME"
-                             " used in chiFFInterpolationSetProperty can only be used with "
+                             " used in FFInterpolationSetProperty can only be used with "
                              "Volume type interpolations.");
 
-    auto& cur_ffi_volume = dcastVolume(*p_ffi);
+    auto& cur_ffi_volume = dynamic_cast<FieldFunctionInterpolationVolume&>(*p_ffi);
 
     cur_ffi_volume.GetLogicalVolume() = p_logical_volume;
   }
   else // Fall back
   {
-    opensn::log.LogAllError() << "Invalid PropertyIndex used in chiFFInterpolationSetProperty.";
+    opensn::log.LogAllError() << "Invalid PropertyIndex used in FFInterpolationSetProperty.";
     opensn::Exit(EXIT_FAILURE);
   }
 

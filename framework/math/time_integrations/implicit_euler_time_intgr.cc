@@ -5,17 +5,15 @@
 namespace opensn
 {
 
-OpenSnRegisterObject(chi_math, ImplicitEulerTimeIntegration);
+OpenSnRegisterObjectInNamespace(math, ImplicitEulerTimeIntegration);
 
 InputParameters
 ImplicitEulerTimeIntegration::GetInputParameters()
 {
   InputParameters params = ThetaSchemeTimeIntegration::GetInputParameters();
 
-  // clang-format off
   params.SetGeneralDescription("General implicit Euler Time Integration");
   params.SetDocGroup("DocTimeIntegrations");
-  // clang-format on
 
   params.ChangeExistingParamToOptional("method", static_cast<int>(SteppingMethod::IMPLICIT_EULER));
   params.ChangeExistingParamToOptional("theta", 1.0);

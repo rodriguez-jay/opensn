@@ -5,15 +5,16 @@
 #include <string>
 #include <stdexcept>
 #include <memory>
+#include "mpicpp-lite/mpicpp-lite.h"
 
-#include "framework/mpi/mpi.h"
+namespace mpi = mpicpp_lite;
 
 namespace opensn
 {
 
 const std::string name = "OpenSn";
 
-class MeshHandler;
+class MeshContinuum;
 class SurfaceMesh;
 class FieldFunctionInterpolation;
 class UnpartitionedMesh;
@@ -30,12 +31,12 @@ class Logger;
 class PostProcessor;
 class Object;
 
-extern MPI_Info& mpi;
+extern mpi::Communicator mpi_comm;
 extern Logger& log;
 extern Timer program_timer;
 
 /** Global stack of handlers */
-extern std::vector<std::shared_ptr<MeshHandler>> meshhandler_stack;
+extern std::vector<std::shared_ptr<MeshContinuum>> mesh_stack;
 extern int current_mesh_handler;
 
 extern std::vector<std::shared_ptr<SurfaceMesh>> surface_mesh_stack;
@@ -100,15 +101,13 @@ GetStackItem(std::vector<std::shared_ptr<T>>& stack,
     std::shared_ptr<T>& item = stack.at(handle);
     std::shared_ptr<R> ret_item = std::dynamic_pointer_cast<R>(item);
     if (not ret_item)
-      throw std::logic_error("chi::GetStackItem: Invalid return type used. "
-                             "Calling function: " +
+      throw std::logic_error("GetStackItem: Invalid return type used. Calling function: " +
                              calling_function_name);
     return *ret_item;
   }
   catch (const std::out_of_range& oor)
   {
-    throw std::out_of_range("chi::GetStackItem: Invalid handle used. "
-                            "Calling function: " +
+    throw std::out_of_range("GetStackItem: Invalid handle used. Calling function: " +
                             calling_function_name);
   }
 }
@@ -138,14 +137,13 @@ GetStackItemPtrAsType(std::vector<std::shared_ptr<P>>& stack,
   }
   catch (const std::out_of_range& oor)
   {
-    throw std::out_of_range("chi::GetStackItem: Invalid handle used. "
-                            "Calling function: " +
+    throw std::out_of_range("GetStackItem: Invalid handle used. Calling function: " +
                             calling_function_name);
   }
 
   auto item_type_T = std::dynamic_pointer_cast<T>(item_type_P);
   if (not item_type_T)
-    throw std::logic_error(calling_function_name + "Failed to cast to requested type");
+    throw std::logic_error(calling_function_name + " Failed to cast to requested type");
 
   return item_type_T;
 }
@@ -174,8 +172,7 @@ GetStackItemPtr(std::vector<std::shared_ptr<T>>& stack,
   }
   catch (const std::out_of_range& oor)
   {
-    throw std::out_of_range("chi::GetStackItem: Invalid handle used. "
-                            "Calling function: " +
+    throw std::out_of_range("GetStackItem: Invalid handle used. Calling function: " +
                             calling_function_name);
   }
 }

@@ -1,7 +1,6 @@
 #include "modules_lua.h"
 #include "framework/object_factory.h"
 #include "lua/framework/console/console.h"
-#include "diffusion_solver/diffusion_lua.h"
 #include "cfem_diffusion/ds_lua_utils.h"
 #include "dfem_diffusion/ip_lua_utils.h"
 #include "fv_diffusion/ds_lua_utils.h"
@@ -23,13 +22,13 @@ LoadRegisteredLuaItems()
 
   // Register version
   lua_pushstring(L, PROJECT_VERSION);
-  lua_setglobal(L, "chi_version");
+  lua_setglobal(L, "version");
   lua_pushinteger(L, PROJECT_MAJOR_VERSION);
-  lua_setglobal(L, "chi_major_version");
+  lua_setglobal(L, "major_version");
   lua_pushinteger(L, PROJECT_MINOR_VERSION);
-  lua_setglobal(L, "chi_minor_version");
+  lua_setglobal(L, "minor_version");
   lua_pushinteger(L, PROJECT_PATCH_VERSION);
-  lua_setglobal(L, "chi_patch_version");
+  lua_setglobal(L, "patch_version");
 
   // Registering functions
   RegisterLuaEntities(L);
@@ -40,7 +39,8 @@ LoadRegisteredLuaItems()
 
   // Registering LuaFunctionWrappers
   for (const auto& [key, entry] : console.GetFunctionWrapperRegistry())
-    if (entry.call_func) Console::SetLuaFuncWrapperNamespaceTableStructure(key);
+    if (entry.call_func)
+      Console::SetLuaFuncWrapperNamespaceTableStructure(key);
 
   for (const auto& [key, value] : console.GetLuaConstantsRegistry())
     Console::SetLuaConstant(key, value);
@@ -56,7 +56,6 @@ void
 RegisterLuaEntities(lua_State* L)
 {
   opensnlua::lbs::RegisterLuaEntities(L);
-  opensnlua::diffusion_solver::RegisterLuaEntities(L);
 
   opensnlua::cfem_diffusion::RegisterLuaEntities(L);
   opensnlua::dfem_diffusion::RegisterLuaEntities(L);

@@ -34,7 +34,7 @@ Event::Parameters() const
 bool
 Event::IsSolverEvent() const
 {
-  return (code_ >= SolverPreInitialize) && (code_ <= SolverAdvanced);
+  return (code_ >= SolverPreInitialize) and (code_ <= SolverAdvanced);
 }
 
 Event::EventCode
@@ -54,7 +54,8 @@ Event::GetStandardCode(const std::string& event_name)
   };
 
   const auto it = event_name_2_code_map.find(event_name);
-  if (it != event_name_2_code_map.end()) return it->second;
+  if (it != event_name_2_code_map.end())
+    return it->second;
 
   return Event::Unknown;
 }

@@ -1,20 +1,19 @@
 #include "framework/lua.h"
-
-#include "framework/mesh/field_function_interpolation/ffinterpolation.h"
-
+#include "framework/field_functions/interpolation/ffinterpolation.h"
 #include "framework/runtime.h"
 #include "ffinterpol_lua.h"
 #include "framework/console/console.h"
 
-RegisterLuaFunctionAsIs(chiFFInterpolationInitialize);
-RegisterLuaFunctionAsIs(chiFFInterpolationExecute);
+RegisterLuaFunctionAsIs(FFInterpolationInitialize);
+RegisterLuaFunctionAsIs(FFInterpolationExecute);
 
 int
-chiFFInterpolationInitialize(lua_State* L)
+FFInterpolationInitialize(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
 
   // Get handle to field function
   const size_t ffihandle = lua_tonumber(L, 1);
@@ -26,11 +25,12 @@ chiFFInterpolationInitialize(lua_State* L)
 }
 
 int
-chiFFInterpolationExecute(lua_State* L)
+FFInterpolationExecute(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
 
   // Get handle to field function
   const size_t ffihandle = lua_tonumber(L, 1);

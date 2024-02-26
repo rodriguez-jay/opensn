@@ -9,12 +9,13 @@ namespace opensnlua::lbs
 {
 
 int
-chiLBSInitializeMaterials(lua_State* L)
+LBSInitializeMaterials(lua_State* L)
 {
-  const std::string fname = "chiLBSInitializeMaterials";
+  const std::string fname = "LBSInitializeMaterials";
   const int num_args = lua_gettop(L);
 
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
 
   LuaCheckNilValue(fname, L, 1);
 
@@ -24,7 +25,7 @@ chiLBSInitializeMaterials(lua_State* L)
   auto& lbs_solver =
     opensn::GetStackItem<opensn::lbs::LBSSolver>(opensn::object_stack, solver_handle, fname);
 
-  lbs_solver.InitMaterials();
+  lbs_solver.InitializeMaterials();
 
   return 0;
 }

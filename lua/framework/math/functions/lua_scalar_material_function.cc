@@ -9,7 +9,7 @@ using namespace opensn;
 namespace opensnlua
 {
 
-OpenSnRegisterObject(opensn, LuaScalarMaterialFunction);
+OpenSnRegisterObjectInNamespace(opensn, LuaScalarMaterialFunction);
 
 InputParameters
 LuaScalarMaterialFunction::GetInputParameters()
@@ -36,7 +36,10 @@ LuaScalarMaterialFunction::Evaluate(double val, int mat_id) const
   lua_pushnumber(L, mat_id);
 
   // 2 arguments, 1 result, 0=original error object
-  if (lua_pcall(L, 2, 1, 0) == 0) { ret_val = lua_tonumber(L, -1); }
+  if (lua_pcall(L, 2, 1, 0) == 0)
+  {
+    ret_val = lua_tonumber(L, -1);
+  }
   lua_pop(L, 1);
 
   return ret_val;

@@ -8,8 +8,8 @@ namespace opensn
 {
 
 void
-MultiGroupXS::ExportToChiXSFile(const std::string& file_name,
-                                const double fission_scaling /* = 1.0 */) const
+MultiGroupXS::ExportToOpenSnXSFile(const std::string& file_name,
+                                   const double fission_scaling /* = 1.0 */) const
 {
   log.Log() << "Exporting transport cross section to file: " << file_name;
 
@@ -29,7 +29,8 @@ MultiGroupXS::ExportToChiXSFile(const std::string& file_name,
           break;
         }
 
-      if (not proceed) return;
+      if (not proceed)
+        return;
     }
 
     ofile << "\n";
@@ -46,11 +47,12 @@ MultiGroupXS::ExportToChiXSFile(const std::string& file_name,
   std::ofstream ofile(file_name);
 
   // Write the header info
-  ofile << "# Exported cross section from ChiTech\n";
+  ofile << "# Exported cross section from OpenSn\n";
   ofile << "# Date: " << Timer::GetLocalDateTimeString() << "\n";
   ofile << "NUM_GROUPS " << NumGroups() << "\n";
   ofile << "NUM_MOMENTS " << ScatteringOrder() + 1 << "\n";
-  if (NumPrecursors() > 0) ofile << "NUM_PRECURSORS " << NumPrecursors() << "\n";
+  if (NumPrecursors() > 0)
+    ofile << "NUM_PRECURSORS " << NumPrecursors() << "\n";
 
   // Basic cross section data
   Print1DXS(ofile, "SIGMA_T", SigmaTotal(), 1.0e-20);
@@ -118,7 +120,8 @@ MultiGroupXS::ExportToChiXSFile(const std::string& file_name,
   }
 
   // Inverse velocity data
-  if (not InverseVelocity().empty()) Print1DXS(ofile, "INV_VELOCITY", InverseVelocity(), 1.0e-20);
+  if (not InverseVelocity().empty())
+    Print1DXS(ofile, "INV_VELOCITY", InverseVelocity(), 1.0e-20);
 
   // Transfer matrices
   if (not TransferMatrices().empty())
@@ -127,7 +130,8 @@ MultiGroupXS::ExportToChiXSFile(const std::string& file_name,
     ofile << "TRANSFER_MOMENTS_BEGIN\n";
     for (size_t ell = 0; ell < TransferMatrices().size(); ++ell)
     {
-      if (ell == 0) ofile << "#Zeroth moment (l=0)\n";
+      if (ell == 0)
+        ofile << "#Zeroth moment (l=0)\n";
       else
         ofile << "#(l=" << ell << ")\n";
 

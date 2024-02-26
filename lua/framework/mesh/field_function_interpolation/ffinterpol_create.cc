@@ -1,33 +1,27 @@
 #include "framework/lua.h"
-#include "framework/mesh/field_function_interpolation/ffinter_point.h"
-#include "framework/mesh/field_function_interpolation/ffinter_slice.h"
-#include "framework/mesh/field_function_interpolation/ffinter_line.h"
-#include "framework/mesh/field_function_interpolation/ffinter_volume.h"
-
+#include "framework/field_functions/interpolation/ffinter_point.h"
+#include "framework/field_functions/interpolation/ffinter_slice.h"
+#include "framework/field_functions/interpolation/ffinter_line.h"
+#include "framework/field_functions/interpolation/ffinter_volume.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-
-#define scint(x) static_cast<int>(x)
-
 #include "ffinterpol_lua.h"
 #include "framework/console/console.h"
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(chiFFInterpolationCreate);
+RegisterLuaFunctionAsIs(FFInterpolationCreate);
 RegisterLuaConstantAsIs(SLICE, Varying(1));
 RegisterLuaConstantAsIs(LINE, Varying(2));
 RegisterLuaConstantAsIs(VOLUME, Varying(3));
 RegisterLuaConstantAsIs(POINT, Varying(4));
 
 int
-chiFFInterpolationCreate(lua_State* L)
+FFInterpolationCreate(lua_State* L)
 {
-  auto& cur_hndlr = GetCurrentHandler();
-
   // Process types
   int ffitype = lua_tonumber(L, 1);
-  if (ffitype == scint(FieldFunctionInterpolationType::POINT))
+  if (ffitype == static_cast<int>(FieldFunctionInterpolationType::POINT))
   {
     auto new_ffi = new FieldFunctionInterpolationPoint;
 
@@ -37,7 +31,7 @@ chiFFInterpolationCreate(lua_State* L)
     lua_pushnumber(L, static_cast<lua_Number>(index));
     return 1;
   }
-  else if (ffitype == scint(FieldFunctionInterpolationType::SLICE))
+  else if (ffitype == static_cast<int>(FieldFunctionInterpolationType::SLICE))
   {
     auto new_ffi = new FieldFunctionInterpolationSlice;
 
@@ -47,7 +41,7 @@ chiFFInterpolationCreate(lua_State* L)
     lua_pushnumber(L, static_cast<lua_Number>(index));
     return 1;
   }
-  else if (ffitype == scint(FieldFunctionInterpolationType::LINE))
+  else if (ffitype == static_cast<int>(FieldFunctionInterpolationType::LINE))
   {
     auto new_ffi = new FieldFunctionInterpolationLine;
 
@@ -57,7 +51,7 @@ chiFFInterpolationCreate(lua_State* L)
     lua_pushnumber(L, static_cast<lua_Number>(index));
     return 1;
   }
-  else if (ffitype == scint(FieldFunctionInterpolationType::VOLUME))
+  else if (ffitype == static_cast<int>(FieldFunctionInterpolationType::VOLUME))
   {
     auto new_ffi = new FieldFunctionInterpolationVolume;
 
@@ -69,7 +63,7 @@ chiFFInterpolationCreate(lua_State* L)
   }
   else // Fall back
   {
-    opensn::log.LogAllError() << "Invalid FFITypeIndex used in chiFFInterpolationCreate.";
+    opensn::log.LogAllError() << "Invalid FFITypeIndex used in FFInterpolationCreate.";
     opensn::Exit(EXIT_FAILURE);
   }
   return 0;

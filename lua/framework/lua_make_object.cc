@@ -10,23 +10,24 @@ namespace opensnlua
  * \param params ParameterBlock A single block tree that requires a parameter
  *  called obj_type that indicates the type of object to make.
  */
-int chiMakeObject(lua_State* L);
+int MakeObject(lua_State* L);
 
 /**Generic lua routine for the creation of objects.
  * \param type string The type to create.
  * \param params ParameterBlock A single block tree.
  */
-int chiMakeObjectType(lua_State* L);
+int MakeObjectType(lua_State* L);
 
-RegisterLuaFunctionAsIs(chiMakeObject);
-RegisterLuaFunctionAsIs(chiMakeObjectType);
+RegisterLuaFunctionAsIs(MakeObject);
+RegisterLuaFunctionAsIs(MakeObjectType);
 
 int
-chiMakeObject(lua_State* L)
+MakeObject(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError(fname, 2, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 2, num_args);
 
   LuaCheckTableValue(fname, L, 1);
 
@@ -42,11 +43,12 @@ chiMakeObject(lua_State* L)
 }
 
 int
-chiMakeObjectType(lua_State* L)
+MakeObjectType(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError(fname, 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError(fname, 2, num_args);
 
   LuaCheckStringValue(fname, L, 1);
   LuaCheckTableValue(fname, L, 2);

@@ -11,15 +11,16 @@ using namespace opensn;
 namespace opensnlua::lbs
 {
 
-RegisterLuaFunctionAsIs(chiAdjointSolverMakeExpRepFromP1Moments);
+RegisterLuaFunctionAsIs(AdjointSolverMakeExpRepFromP1Moments);
 
 int
-chiAdjointSolverMakeExpRepFromP1Moments(lua_State* L)
+AdjointSolverMakeExpRepFromP1Moments(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
 
-  if (num_args < 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args < 1)
+    LuaPostArgAmountError(fname, 1, num_args);
 
   LuaCheckNilValue(fname, L, 1);
   LuaCheckTableValue(fname, L, 1);

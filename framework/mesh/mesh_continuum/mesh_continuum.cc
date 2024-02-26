@@ -2,14 +2,12 @@
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
 #include "framework/mpi/mpi_comm_set.h"
-#include "framework/mpi/mpi.h"
-#include "framework/mesh/mesh_handler/mesh_handler.h"
-#include "framework/mesh/volume_mesher/volume_mesher.h"
 #include "framework/mesh/mesh_continuum/grid_vtk_utils.h"
 #include "framework/mesh/cell/cell.h"
 #include "framework/mesh/logical_volume/logical_volume.h"
 #include "framework/mesh/mesh_continuum/grid_face_histogram.h"
 #include "framework/data_types/ndarray.h"
+#include "framework/utils/timer.h"
 #include <vtkUnstructuredGrid.h>
 #include <vtkMultiBlockDataSet.h>
 #include <vtkInformation.h>
@@ -31,7 +29,7 @@ MeshContinuum::MakeMPILocalCommunicatorSet() const
 
   // Loop over local cells
   // Populate local_graph_edges
-  local_graph_edges.insert(opensn::mpi.location_id); // add current location
+  local_graph_edges.insert(opensn::mpi_comm.rank()); // add current location
   for (auto& cell : local_cells)
   {
     for (auto& face : cell.faces_)
@@ -50,17 +48,20 @@ MeshContinuum::MakeMPILocalCommunicatorSet() const
   // Broadcast local connection size
   log.Log0Verbose1() << "Communicating local connections.";
 
-  std::vector<std::vector<int>> global_graph(opensn::mpi.process_count, std::vector<int>());
-  for (int locI = 0; locI < opensn::mpi.process_count; locI++)
+  std::vector<std::vector<int>> global_graph(opensn::mpi_comm.size(), std::vector<int>());
+  for (int locI = 0; locI < opensn::mpi_comm.size(); locI++)
   {
     int locI_num_connections = static_cast<int>(local_connections.size());
 
     // If chi::mpi.location_id == locI then this call will
     // act like a send instead of receive. Otherwise
     // It receives the count.
-    MPI_Bcast(&locI_num_connections, 1, MPI_INT, locI, mpi.comm);
+    mpi_comm.broadcast(locI_num_connections, locI);
 
-    if (opensn::mpi.location_id != locI) { global_graph[locI].resize(locI_num_connections, -1); }
+    if (opensn::mpi_comm.rank() != locI)
+    {
+      global_graph[locI].resize(locI_num_connections, -1);
+    }
     else
     {
       std::copy(
@@ -69,46 +70,32 @@ MeshContinuum::MakeMPILocalCommunicatorSet() const
   }
 
   // Broadcast local connections
-  for (int locI = 0; locI < opensn::mpi.process_count; locI++)
+  for (int locI = 0; locI < opensn::mpi_comm.size(); locI++)
   {
     // If chi::mpi.location_id == locI then this call will
     // act like a send instead of receive. Otherwise
     // It receives the count.
-    MPI_Bcast(global_graph[locI].data(),
-              static_cast<int>(global_graph[locI].size()),
-              MPI_INT,
-              locI,
-              mpi.comm);
+    mpi_comm.broadcast(global_graph[locI].data(), global_graph[locI].size(), locI);
   }
 
   log.Log0Verbose1() << "Done communicating local connections.";
 
   // Build groups
-  MPI_Group world_group;
-  MPI_Comm_group(mpi.comm, &world_group);
+  mpi::Group world_group = mpi_comm.group();
 
-  std::vector<MPI_Group> location_groups;
-  location_groups.resize(opensn::mpi.process_count, MPI_Group());
+  std::vector<mpi::Group> location_groups;
+  location_groups.resize(opensn::mpi_comm.size());
 
-  for (int locI = 0; locI < opensn::mpi.process_count; locI++)
-  {
-    MPI_Group_incl(world_group,
-                   static_cast<int>(global_graph[locI].size()),
-                   global_graph[locI].data(),
-                   &location_groups[locI]);
-  }
+  for (int locI = 0; locI < opensn::mpi_comm.size(); locI++)
+    location_groups[locI] = world_group.include(global_graph[locI]);
 
   // Build communicators
-  std::vector<MPI_Comm> communicators;
+  std::vector<mpi::Communicator> communicators;
   log.Log0Verbose1() << "Building communicators.";
-  communicators.resize(opensn::mpi.process_count, MPI_Comm());
+  communicators.resize(opensn::mpi_comm.size());
 
-  for (int locI = 0; locI < opensn::mpi.process_count; locI++)
-  {
-    int err = MPI_Comm_create_group(mpi.comm, location_groups[locI], 0, &communicators[locI]);
-
-    if (err != MPI_SUCCESS) { log.Log0Verbose1() << "Communicator creation failed."; }
-  }
+  for (int locI = 0; locI < opensn::mpi_comm.size(); locI++)
+    communicators[locI] = mpi_comm.create(location_groups[locI], 0);
 
   log.Log0Verbose1() << "Done building communicators.";
 
@@ -123,7 +110,7 @@ MeshContinuum::ExportCellsToExodus(const std::string& file_base_name,
   const std::string fname = "MeshContinuum::ExportCellsToExodus";
   log.Log() << "Exporting mesh to Exodus file with base " << file_base_name;
 
-  if (opensn::mpi.process_count != 1)
+  if (opensn::mpi_comm.size() != 1)
     throw std::logic_error(fname + ": Currently this routine is only allowed "
                                    "in serial.");
 
@@ -134,7 +121,8 @@ MeshContinuum::ExportCellsToExodus(const std::string& file_base_name,
   for (const auto& cell : local_cells)
   {
     const int mat_id = cell.material_id_;
-    if (block_id_map.count(mat_id) == 0) block_id_map[mat_id] = cell.SubType();
+    if (block_id_map.count(mat_id) == 0)
+      block_id_map[mat_id] = cell.SubType();
     else
     {
       if (cell.SubType() != block_id_map.at(mat_id))
@@ -220,16 +208,17 @@ MeshContinuum::ExportCellsToExodus(const std::string& file_base_name,
   std::map<uint64_t, ListOfFaces> boundary_id_faces_map;
   for (const auto& cell : grid.local_cells)
   {
-    // Here we build a face mapping because ChiTech's face orientation
+    // Here we build a face mapping because OpenSn's face orientation
     // for prisms (wedges) and hexahedrons differ from that of VTK.
-    // ChiTech's orientation for prisms and hexes actually matches that
+    // OpenSn's orientation for prisms and hexes actually matches that
     // of Exodus but VTK assumes the incoming mesh to be conformant to
     // VTK and therefore, internally performs a mapping. Fortunately,
     // the only relevant cell-types, for which a special mapping is
     // required, are the prisms and hexes.
     const size_t num_faces = cell.faces_.size();
     std::vector<int> face_mapping(num_faces, 0);
-    if (cell.SubType() == CellType::WEDGE) face_mapping = {2, 3, 4, 0, 1};
+    if (cell.SubType() == CellType::WEDGE)
+      face_mapping = {2, 3, 4, 0, 1};
     else if (cell.SubType() == CellType::HEXAHEDRON)
       face_mapping = {2, 1, 3, 0, 4, 5};
     else
@@ -427,13 +416,13 @@ MeshContinuum::ExportCellsToExodus(const std::string& file_base_name,
   // writer->PrintSelf(std::cout, vtkIndent());
 
   log.Log() << "Done exporting mesh to exodus.";
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 }
 
 void
 MeshContinuum::ExportCellsToObj(const char* fileName, bool per_material, int options) const
 {
-  if (!per_material)
+  if (not per_material)
   {
     FILE* of = fopen(fileName, "w");
 
@@ -539,7 +528,8 @@ MeshContinuum::ExportCellsToObj(const char* fileName, bool per_material, int opt
       {
         if (cell.Type() == CellType::POLYHEDRON)
         {
-          if (cell.material_id_ != mat) continue;
+          if (cell.material_id_ != mat)
+            continue;
 
           for (const auto& face : cell.faces_)
           {
@@ -612,6 +602,7 @@ MeshContinuum::ExportCellsToObj(const char* fileName, bool per_material, int opt
       log.Log() << "Exported Material Volume mesh to " << mat_file_name;
     } // for mat
   }   // if per material
+  opensn::mpi_comm.barrier();
 }
 
 void
@@ -626,50 +617,26 @@ MeshContinuum::ExportCellsToVTK(const std::string& file_base_name) const
   WritePVTUFiles(ugrid, file_base_name);
 
   log.Log() << "Done exporting mesh to VTK.";
+  opensn::mpi_comm.barrier();
 }
 
 std::vector<uint64_t>
 MeshContinuum::GetDomainUniqueBoundaryIDs() const
 {
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
   log.LogAllVerbose1() << "Identifying unique boundary-ids.";
 
   // Develop local bndry-id set
   std::set<uint64_t> local_bndry_ids_set;
   for (auto& cell : local_cells)
     for (auto& face : cell.faces_)
-      if (not face.has_neighbor_) local_bndry_ids_set.insert(face.neighbor_id_);
+      if (not face.has_neighbor_)
+        local_bndry_ids_set.insert(face.neighbor_id_);
 
-  // Vectorify it and get local count
+  // Vectorify it
   std::vector<uint64_t> local_bndry_ids(local_bndry_ids_set.begin(), local_bndry_ids_set.end());
-  int local_num_bndry_ids = (int)local_bndry_ids.size();
-
-  // Everyone now tells everyone
-  //                                       how many bndry-ids they have
-  std::vector<int> locI_bndry_count(opensn::mpi.process_count, 0);
-
-  MPI_Allgather(&local_num_bndry_ids, 1, MPI_INT, locI_bndry_count.data(), 1, MPI_INT, mpi.comm);
-
-  // Build a displacement list, in prep for gathering all bndry-ids
-  std::vector<int> locI_bndry_ids_displs(opensn::mpi.process_count, 0);
-  size_t total_num_global_bndry_ids = locI_bndry_count[0];
-  for (int locI = 1; locI < opensn::mpi.process_count; ++locI)
-  {
-    locI_bndry_ids_displs[locI] = locI_bndry_ids_displs[locI - 1] + locI_bndry_count[locI - 1];
-    total_num_global_bndry_ids += locI_bndry_count[locI];
-  }
-
-  // Everyone now sends everyone their boundary-ids
-  std::vector<uint64_t> globl_bndry_ids(total_num_global_bndry_ids);
-
-  MPI_Allgatherv(local_bndry_ids.data(),
-                 local_num_bndry_ids,
-                 MPI_UNSIGNED_LONG_LONG,
-                 globl_bndry_ids.data(),
-                 locI_bndry_count.data(),
-                 locI_bndry_ids_displs.data(),
-                 MPI_UNSIGNED_LONG_LONG,
-                 mpi.comm);
+  std::vector<uint64_t> globl_bndry_ids;
+  mpi_comm.all_gather(local_bndry_ids, globl_bndry_ids);
 
   std::set<uint64_t> globl_bndry_ids_set(globl_bndry_ids.begin(), globl_bndry_ids.end());
 
@@ -764,7 +731,8 @@ MeshContinuum::IsCellLocal(uint64_t cell_global_index) const
 {
   auto native_index = global_cell_id_to_local_id_map_.find(cell_global_index);
 
-  if (native_index != global_cell_id_to_local_id_map_.end()) return true;
+  if (native_index != global_cell_id_to_local_id_map_.end())
+    return true;
 
   return false;
 }
@@ -828,7 +796,7 @@ MeshContinuum::FindAssociatedVertices(const CellFace& cur_face,
       afv++;
     }
 
-    if (!found)
+    if (not found)
     {
       log.LogAllError() << "Face DOF mapping failed in call to "
                         << "MeshContinuum::FindAssociatedVertices. Could not find a matching"
@@ -868,7 +836,7 @@ MeshContinuum::FindAssociatedCellVertices(const CellFace& cur_face,
       ++acv;
     }
 
-    if (!found)
+    if (not found)
     {
       log.LogAllError() << "Face DOF mapping failed in call to "
                         << "MeshContinuum::FindAssociatedVertices. Could not find a matching"
@@ -905,7 +873,8 @@ MeshContinuum::MapCellFace(const Cell& cur_cell, const Cell& adj_cell, unsigned 
     }
   } // for adj faces
 
-  if (not map_found) throw std::logic_error("MeshContinuum::MapCellFace: Mapping failure.");
+  if (not map_found)
+    throw std::logic_error("MeshContinuum::MapCellFace: Mapping failure.");
 
   return fmap;
 }
@@ -934,15 +903,12 @@ MeshContinuum::ComputeCentroidFromListOfNodes(const std::vector<uint64_t>& list)
 size_t
 MeshContinuum::CountCellsInLogicalVolume(const LogicalVolume& log_vol) const
 {
-  size_t local_count = 0;
+  size_t count = 0;
   for (const auto& cell : local_cells)
-    if (log_vol.Inside(cell.centroid_)) ++local_count;
-
-  size_t global_count = 0;
-
-  MPI_Allreduce(&local_count, &global_count, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, mpi.comm);
-
-  return global_count;
+    if (log_vol.Inside(cell.centroid_))
+      ++count;
+  mpi_comm.all_reduce(count, mpi::op::sum<size_t>());
+  return count;
 }
 
 bool
@@ -960,7 +926,8 @@ MeshContinuum::CheckPointInsideCell(const Cell& cell, const Vector3& point) cons
 
     const auto pc = point - c;
 
-    if (pc.Dot(n) > 0.0) return true;
+    if (pc.Dot(n) > 0.0)
+      return true;
     else
       return false;
   };
@@ -976,7 +943,8 @@ MeshContinuum::CheckPointInsideCell(const Cell& cell, const Vector3& point) cons
 
     const double v0p_dot_v01 = v0p.Dot(v01);
 
-    if (not(v0p_dot_v01 >= 0 and v0p_dot_v01 < v01.Norm())) inside = false;
+    if (not(v0p_dot_v01 >= 0 and v0p_dot_v01 < v01.Norm()))
+      inside = false;
   } // slab
 
   else if (cell.Type() == CellType::POLYGON)
@@ -1035,7 +1003,8 @@ MeshContinuum::CheckPointInsideCell(const Cell& cell, const Vector3& point) cons
           break;
         }
       } // for side
-      if (inside) break;
+      if (inside)
+        break;
     } // for face
   }   // polyhedron
   else
@@ -1106,10 +1075,12 @@ MeshContinuum::MakeCellOrthoSizes() const
 uint64_t
 MeshContinuum::MakeBoundaryID(const std::string& boundary_name) const
 {
-  if (boundary_id_map_.empty()) return 0;
+  if (boundary_id_map_.empty())
+    return 0;
 
   for (const auto& [id, name] : boundary_id_map_)
-    if (boundary_name == name) return id;
+    if (boundary_name == name)
+      return id;
 
   uint64_t max_id = 0;
   for (const auto& [id, name] : boundary_id_map_)
@@ -1157,12 +1128,81 @@ MeshContinuum::GetLocalBoundingBox() const
 size_t
 MeshContinuum::GetGlobalNumberOfCells() const
 {
-  size_t num_local_cells = local_cells_.size();
-  size_t num_globl_cells = 0;
+  size_t num_cells = local_cells_.size();
+  mpi_comm.all_reduce(num_cells, mpi::op::sum<size_t>());
+  return num_cells;
+}
 
-  MPI_Allreduce(&num_local_cells, &num_globl_cells, 1, MPI_UNSIGNED_LONG_LONG, MPI_SUM, mpi.comm);
+void
+MeshContinuum::SetUniformMaterialID(int mat_id)
+{
+  for (auto& cell : local_cells)
+    cell.material_id_ = mat_id;
 
-  return num_globl_cells;
+  const auto& ghost_ids = cells.GetGhostGlobalIDs();
+  for (uint64_t ghost_id : ghost_ids)
+    cells[ghost_id].material_id_ = mat_id;
+}
+
+void
+MeshContinuum::SetMaterialIDFromLogical(const LogicalVolume& log_vol, bool sense, int mat_id)
+{
+  int num_cells_modified = 0;
+  for (auto& cell : local_cells)
+  {
+    if (log_vol.Inside(cell.centroid_) and sense)
+    {
+      cell.material_id_ = mat_id;
+      ++num_cells_modified;
+    }
+  }
+
+  const auto& ghost_ids = cells.GetGhostGlobalIDs();
+  for (uint64_t ghost_id : ghost_ids)
+  {
+    auto& cell = cells[ghost_id];
+    if (log_vol.Inside(cell.centroid_) and sense)
+      cell.material_id_ = mat_id;
+  }
+
+  int global_num_cells_modified;
+  mpi_comm.all_reduce(num_cells_modified, global_num_cells_modified, mpi::op::sum<int>());
+
+  log.Log0Verbose1() << program_timer.GetTimeString()
+                     << " Done setting material id from logical volume. "
+                     << "Number of cells modified = " << global_num_cells_modified << ".";
+}
+
+void
+MeshContinuum::SetBoundaryIDFromLogical(const LogicalVolume& log_vol,
+                                        bool sense,
+                                        const std::string& boundary_name)
+{
+  // Check if name already has id
+  auto& grid_bndry_id_map = GetBoundaryIDMap();
+  uint64_t bndry_id = MakeBoundaryID(boundary_name);
+
+  // Loop over cells
+  int num_faces_modified = 0;
+  for (auto& cell : local_cells)
+  {
+    for (auto& face : cell.faces_)
+    {
+      if (face.has_neighbor_)
+        continue;
+      if (log_vol.Inside(face.centroid_) and sense)
+      {
+        face.neighbor_id_ = bndry_id;
+        ++num_faces_modified;
+      }
+    }
+  }
+
+  int global_num_faces_modified;
+  mpi_comm.all_reduce(num_faces_modified, global_num_faces_modified, mpi::op::sum<int>());
+
+  if (global_num_faces_modified > 0 and grid_bndry_id_map.count(bndry_id) == 0)
+    grid_bndry_id_map[bndry_id] = boundary_name;
 }
 
 } // namespace opensn

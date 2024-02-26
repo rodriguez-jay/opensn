@@ -10,6 +10,17 @@
 namespace opensn
 {
 
+InputParameters
+SurfaceMesh::GetInputParameters()
+{
+  InputParameters params = Object::GetInputParameters();
+  return params;
+}
+
+SurfaceMesh::SurfaceMesh(const InputParameters& params) : Object(params)
+{
+}
+
 SurfaceMesh::SurfaceMesh()
 {
 }
@@ -74,7 +85,10 @@ SurfaceMesh::CheckNegativeSense(double x, double y, double z)
     Vector3 p_xyz = xyz - p;
     double dprod = cur_face->assigned_normal.Dot(p_xyz);
 
-    if (dprod < 0.0) { return true; }
+    if (dprod < 0.0)
+    {
+      return true;
+    }
   }
 
   return false;
@@ -88,21 +102,24 @@ SurfaceMesh::ExtractOpenEdgesToObj(const char* fileName)
   {
     for (auto edge : face->edges)
     {
-      if (edge[2] < 0) { edges.push_back(std::pair<int, int>(edge[0], edge[1])); }
+      if (edge[2] < 0)
+      {
+        edges.push_back(std::pair<int, int>(edge[0], edge[1]));
+      }
     } // for edge
   }   // for face
 
   std::ofstream outfile;
   outfile.open(fileName);
 
-  if (!outfile.is_open())
+  if (not outfile.is_open())
   {
     log.LogAllError() << "In call to SurfaceMesh::ExtractOpenEdgesToObj. Failed"
                       << " to open file: " << std::string(fileName);
     Exit(EXIT_FAILURE);
   }
 
-  outfile << "# ChiTech open edges file\n";
+  outfile << "# OpenSn open edges file\n";
   outfile << "# Single surface mesh\n";
 
   for (auto vert_pair : edges)
@@ -169,7 +186,7 @@ SurfaceMesh::UpdateInternalConnectivity()
 
         for (size_t e2 = 0; e2 < 3; e2++)
         {
-          if ((curface_edge[0] == other_face.e_index[e2][1]) &&
+          if ((curface_edge[0] == other_face.e_index[e2][1]) and
               (curface_edge[1] == other_face.e_index[e2][0]))
           {
             curface_edge[2] = ofi; // cell index
@@ -185,7 +202,7 @@ SurfaceMesh::UpdateInternalConnectivity()
 
         for (size_t e2 = 0; e2 < 3; e2++)
         {
-          if ((curface_edge[0] == other_face.e_index[e2][1]) &&
+          if ((curface_edge[0] == other_face.e_index[e2][1]) and
               (curface_edge[1] == other_face.e_index[e2][0]))
           {
             curface_edge[2] = ofi; // cell index
@@ -212,7 +229,7 @@ SurfaceMesh::UpdateInternalConnectivity()
 
         for (size_t e2 = 0; e2 < other_face->edges.size(); e2++)
         {
-          if ((curface_edge[0] == other_face->edges[e2][1]) &&
+          if ((curface_edge[0] == other_face->edges[e2][1]) and
               (curface_edge[1] == other_face->edges[e2][0]))
           {
             curface_edge[2] = ofi; // cell index
@@ -228,7 +245,7 @@ SurfaceMesh::UpdateInternalConnectivity()
 
         for (size_t e2 = 0; e2 < other_face->edges.size(); e2++)
         {
-          if ((curface_edge[0] == other_face->edges[e2][1]) &&
+          if ((curface_edge[0] == other_face->edges[e2][1]) and
               (curface_edge[1] == other_face->edges[e2][0]))
           {
             curface_edge[2] = ofi; // cell index
@@ -247,7 +264,7 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
   // Opening the file
   std::ifstream file;
   file.open(fileName);
-  if (!file.is_open())
+  if (not file.is_open())
   {
     log.LogAllError() << "Failed to open file: " << fileName << " in call "
                       << "to ImportFromOBJFile \n";
@@ -285,7 +302,8 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
         {
           double numValue = std::stod(sub_word);
 
-          if (k == 1) newVertex.x = numValue + transform.x;
+          if (k == 1)
+            newVertex.x = numValue + transform.x;
           else if (k == 2)
             newVertex.y = numValue + transform.y;
           else if (k == 3)
@@ -299,7 +317,10 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
         }
 
         // Stop word extraction on line end
-        if (end_of_word == std::string::npos) { break; }
+        if (end_of_word == std::string::npos)
+        {
+          break;
+        }
       }
       this->vertices_.push_back(newVertex);
     }
@@ -320,9 +341,18 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
         {
           double numValue = std::stod(sub_word);
           //*newVertex->value[k-1] = numValue;
-          if (k == 1) { newVertex.x = numValue; }
-          else if (k == 2) { newVertex.y = numValue; }
-          else if (k == 3) { newVertex.z = numValue; }
+          if (k == 1)
+          {
+            newVertex.x = numValue;
+          }
+          else if (k == 2)
+          {
+            newVertex.y = numValue;
+          }
+          else if (k == 3)
+          {
+            newVertex.z = numValue;
+          }
         }
 
         // Catch conversion error
@@ -333,7 +363,10 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
         }
 
         // Stop word extraction on line end
-        if (end_of_word == std::string::npos) { break; }
+        if (end_of_word == std::string::npos)
+        {
+          break;
+        }
       }
       this->tex_vertices_.push_back(newVertex);
     }
@@ -354,9 +387,18 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
         {
           double numValue = std::stod(sub_word);
           //*newNormal->value[k-1] = numValue;
-          if (k == 1) { newNormal.x = numValue; }
-          else if (k == 2) { newNormal.y = numValue; }
-          else if (k == 3) { newNormal.z = numValue; }
+          if (k == 1)
+          {
+            newNormal.x = numValue;
+          }
+          else if (k == 2)
+          {
+            newNormal.y = numValue;
+          }
+          else if (k == 3)
+          {
+            newNormal.z = numValue;
+          }
         }
 
         // Catch conversion error
@@ -367,7 +409,10 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
         }
 
         // Stop word extraction on line end
-        if (end_of_word == std::string::npos) { break; }
+        if (end_of_word == std::string::npos)
+        {
+          break;
+        }
       }
       this->normals_.push_back(newNormal);
     }
@@ -376,7 +421,7 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
     if (first_word.compare("f") == 0)
     {
       int number_of_verts = std::count(file_line.begin(), file_line.end(), '/') / 2;
-      if ((number_of_verts == 3) && (!as_poly))
+      if ((number_of_verts == 3) and (not as_poly))
       {
         Face* newFace = new Face;
 
@@ -433,7 +478,10 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
           }
 
           // Stop word extraction on line end
-          if (end_of_word == std::string::npos) { break; }
+          if (end_of_word == std::string::npos)
+          {
+            break;
+          }
         }
 
         // Set edges
@@ -505,7 +553,10 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
           }
 
           // Stop word extraction on line end
-          if (end_of_word == std::string::npos) { break; }
+          if (end_of_word == std::string::npos)
+          {
+            break;
+          }
         }
 
         for (int v = 0; v < (newFace->v_indices.size()); v++)
@@ -517,7 +568,10 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
           side_indices[2] = -1;
           side_indices[3] = -1;
 
-          if ((v + 1) >= newFace->v_indices.size()) { side_indices[1] = newFace->v_indices[0]; }
+          if ((v + 1) >= newFace->v_indices.size())
+          {
+            side_indices[1] = newFace->v_indices[0];
+          }
 
           newFace->edges.push_back(side_indices);
         }
@@ -639,7 +693,7 @@ SurfaceMesh::ImportFromTriangleFiles(const char* fileName, bool as_poly = false)
   // Opening the node file
   std::ifstream file;
   file.open(node_filename);
-  if (!file.is_open())
+  if (not file.is_open())
   {
     log.LogAllError() << "Failed to open file: " << node_filename << " in call "
                       << "to ImportFromOBJFile \n";
@@ -664,7 +718,7 @@ SurfaceMesh::ImportFromTriangleFiles(const char* fileName, bool as_poly = false)
 
   // Opening the ele file
   file.open(tria_filename);
-  if (!file.is_open())
+  if (not file.is_open())
   {
     log.LogAllError() << "Failed to open file: " << tria_filename << " in call "
                       << "to ImportFromOBJFile \n";
@@ -841,7 +895,8 @@ SurfaceMesh::CreateFromDivisions(std::vector<double>& vertices_1d_x,
         side_indices[2] = -1;
         side_indices[3] = -1;
 
-        if ((v + 1) >= new_face->v_indices.size()) side_indices[1] = new_face->v_indices[0];
+        if ((v + 1) >= new_face->v_indices.size())
+          side_indices[1] = new_face->v_indices[0];
 
         new_face->edges.push_back(side_indices);
       } // for v
@@ -887,7 +942,7 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
   std::ifstream file;
   file.open(std::string(fileName));
 
-  if (!file.is_open())
+  if (not file.is_open())
   {
     log.LogAllError() << "Failed to open file: " << fileName << " in call "
                       << "to ImportFromMshFiles \n";
@@ -897,13 +952,14 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
   // Find section with node information and then read information
   while (std::getline(file, line))
   {
-    if (node_section_name.compare(line) == 0) break;
+    if (node_section_name.compare(line) == 0)
+      break;
   }
 
   std::getline(file, line);
   iss = std::istringstream(line);
   int num_nodes;
-  if (!(iss >> num_nodes))
+  if (not(iss >> num_nodes))
   {
     log.LogAllError() << "Failed while trying to read the number of nodes.\n";
     Exit(EXIT_FAILURE);
@@ -918,13 +974,13 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
 
     Vertex vertex;
     int vert_index;
-    if (!(iss >> vert_index))
+    if (not(iss >> vert_index))
     {
       log.LogAllError() << "Failed to read vertex index.\n";
       Exit(EXIT_FAILURE);
     }
 
-    if (!(iss >> vertex.x >> vertex.y >> vertex.z))
+    if (not(iss >> vertex.x >> vertex.y >> vertex.z))
     {
       log.LogAllError() << "Failed while reading the vertex coordinates.\n";
       Exit(EXIT_FAILURE);
@@ -937,13 +993,14 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
   file.seekg(0);
   while (std::getline(file, line))
   {
-    if (elements_section_name.compare(line) == 0) break;
+    if (elements_section_name.compare(line) == 0)
+      break;
   }
 
   std::getline(file, line);
   iss = std::istringstream(line);
   int num_elems;
-  if (!(iss >> num_elems))
+  if (not(iss >> num_elems))
   {
     log.LogAllError() << "Failed to read number of elements.\n";
     Exit(EXIT_FAILURE);
@@ -956,21 +1013,21 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
     std::getline(file, line);
     iss = std::istringstream(line);
 
-    if (!(iss >> element_index >> elem_type >> num_tags))
+    if (not(iss >> element_index >> elem_type >> num_tags))
     {
       log.LogAllError() << "Failed while reading element index, element "
                            "type, and number of tags.\n";
       Exit(EXIT_FAILURE);
     }
 
-    if (!(iss >> physical_reg))
+    if (not(iss >> physical_reg))
     {
       log.LogAllError() << "Failed while reading physical region.\n";
       Exit(EXIT_FAILURE);
     }
 
     for (int i = 1; i < num_tags; i++)
-      if (!(iss >> tag))
+      if (not(iss >> tag))
       {
         log.LogAllError() << "Failed when reading tags.\n";
         Exit(EXIT_FAILURE);
@@ -982,7 +1039,7 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
 
       int nodes[num_nodes];
       for (int i = 0; i < num_nodes; i++)
-        if (!(iss >> nodes[i]))
+        if (not(iss >> nodes[i]))
         {
           log.LogAllError() << "Failed when reading element node index.\n";
           Exit(EXIT_FAILURE);
@@ -998,7 +1055,7 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
 
       int nodes[num_nodes];
       for (int& node : nodes)
-        if (!(iss >> node))
+        if (not(iss >> node))
         {
           log.LogAllError() << "Failed when reading element node index.\n";
           Exit(EXIT_FAILURE);
@@ -1008,7 +1065,10 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
       for (int i = 0; i < num_nodes; i++)
         newFace->v_indices[i] = nodes[i] - 1;
     }
-    else { continue; }
+    else
+    {
+      continue;
+    }
 
     const size_t total_nodes = newFace->v_indices.size();
 
@@ -1017,7 +1077,8 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
       int* side_indices = new int[total_nodes];
       side_indices[0] = newFace->v_indices[e];
 
-      if (e < total_nodes - 1) side_indices[1] = newFace->v_indices[e + 1];
+      if (e < total_nodes - 1)
+        side_indices[1] = newFace->v_indices[e + 1];
       else
         side_indices[1] = newFace->v_indices[0];
 
@@ -1075,8 +1136,8 @@ SurfaceMesh::ExportToOBJFile(const char* fileName)
     return;
   }
 
-  fprintf(outputFile, "# Exported mesh file from tringulation script\n");
-  fprintf(outputFile, "o %s\n", "ChitechTriMesh");
+  fprintf(outputFile, "# Exported mesh file from triangulation script\n");
+  fprintf(outputFile, "o %s\n", "OpenSnTriMesh");
 
   std::vector<Vertex>::iterator cur_v;
   for (cur_v = this->vertices_.begin(); cur_v != this->vertices_.end(); cur_v++)
@@ -1089,7 +1150,7 @@ SurfaceMesh::ExportToOBJFile(const char* fileName)
     fprintf(outputFile, "l %d %d \n", lines_[ell].v_index[0] + 1, lines_[ell].v_index[1] + 1);
   }
 
-  if (!faces_.empty())
+  if (not faces_.empty())
   {
     Face first_face = this->faces_.front();
     fprintf(outputFile,
@@ -1109,7 +1170,7 @@ SurfaceMesh::ExportToOBJFile(const char* fileName)
               cur_face->v_index[2] + 1);
     }
   }
-  if (!poly_faces_.empty())
+  if (not poly_faces_.empty())
   {
     PolyFace* first_face = this->poly_faces_.front();
     fprintf(outputFile,
@@ -1278,9 +1339,11 @@ SurfaceMesh::GetMeshStats()
     } // for edge
 
     areas[c] = area;
-    if (area > max_area) max_area = area;
+    if (area > max_area)
+      max_area = area;
 
-    if (area <= 0.0) num_negative_areas += 1;
+    if (area <= 0.0)
+      num_negative_areas += 1;
   } // for cell
 
   // Sort the areas
@@ -1300,7 +1363,8 @@ SurfaceMesh::GetMeshStats()
     for (int i = 0; i < 10; i++)
     {
 
-      if (area <= histo_bins[i]) home_bin = i;
+      if (area <= histo_bins[i])
+        home_bin = i;
 
     } // check bins
 
@@ -1343,11 +1407,13 @@ SurfaceMesh::ComputeLoadBalancing(std::vector<double>& x_cuts, std::vector<doubl
     int ref_j = 0;
     for (size_t i = 0; i < I; ++i)
     {
-      if (poly_face->face_centroid.x >= x_cuts[i]) ref_i = i + 1;
+      if (poly_face->face_centroid.x >= x_cuts[i])
+        ref_i = i + 1;
     } // for i
     for (size_t j = 0; j < J; ++j)
     {
-      if (poly_face->face_centroid.y >= y_cuts[j]) ref_j = j + 1;
+      if (poly_face->face_centroid.y >= y_cuts[j])
+        ref_j = j + 1;
     } // for j
 
     IJ_bins[ref_i][ref_j] += 1;
@@ -1378,13 +1444,15 @@ SurfaceMesh::ComputeLoadBalancing(std::vector<double>& x_cuts, std::vector<doubl
   log.Log() << "Maximum faces per set: " << max_bin_size << " at (i,j)= ( " << i_max << " , "
             << j_max << " )";
 
-  if (i_max == I) log.Log() << "X greater than " << x_cuts[i_max - 1];
+  if (i_max == I)
+    log.Log() << "X greater than " << x_cuts[i_max - 1];
   else if (i_max == 0)
     log.Log() << "X less than " << x_cuts[0];
   else
     log.Log() << "X greater than " << x_cuts[i_max - 1] << " and less than " << x_cuts[i_max];
 
-  if (j_max == J) log.Log() << "Y greater than " << y_cuts[j_max - 1];
+  if (j_max == J)
+    log.Log() << "Y greater than " << y_cuts[j_max - 1];
   else if (j_max == 0)
     log.Log() << "Y less than " << y_cuts[0];
   else
@@ -1441,11 +1509,14 @@ SurfaceMesh::SplitByPatch(std::vector<SurfaceMesh*>& patches)
           break;
         }
       }
-      if (matchFound) { break; }
+      if (matchFound)
+      {
+        break;
+      }
     }
 
     // If no match found, create new list
-    if (!matchFound)
+    if (not matchFound)
     {
       printf("New list created\n");
       FaceList* new_list = new FaceList;
@@ -1512,17 +1583,29 @@ SurfaceMesh::SplitByPatch(std::vector<SurfaceMesh*>& patches)
                   break;
                 }
               }
-              if (updateMade) { break; }
+              if (updateMade)
+              {
+                break;
+              }
             }
-            if (updateMade) { break; }
+            if (updateMade)
+            {
+              break;
+            }
           }
-          if (updateMade) { break; }
+          if (updateMade)
+          {
+            break;
+          }
         }
 
-        if (updateMade) { break; }
+        if (updateMade)
+        {
+          break;
+        }
       }
 
-      if (!updateMade)
+      if (not updateMade)
       {
         FaceList* new_patch_list = new FaceList;
         inner_patch_list_collection.push_back(new_patch_list);

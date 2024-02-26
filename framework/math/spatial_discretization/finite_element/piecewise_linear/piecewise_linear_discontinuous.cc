@@ -4,7 +4,6 @@
 #include "framework/utils/timer.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-#include "framework/mpi/mpi.h"
 #include "framework/mpi/mpi_utils.h"
 
 namespace opensn
@@ -37,7 +36,8 @@ PieceWiseLinearDiscontinuous::New(const MeshContinuum& grid,
 
       ChiLogicalErrorIf(not fe_ptr, "Casting failure to FE");
 
-      if (fe_ptr->GetQuadratureOrder() != q_order) break;
+      if (fe_ptr->GetQuadratureOrder() != q_order)
+        break;
 
       auto sdm_ptr = std::dynamic_pointer_cast<PieceWiseLinearDiscontinuous>(fe_ptr);
 
@@ -76,21 +76,14 @@ PieceWiseLinearDiscontinuous::OrderNodes()
   }
 
   // Allgather node_counts
-  locJ_block_size_.assign(opensn::mpi.process_count, 0);
-  MPI_Allgather(&local_node_count,
-                1,
-                MPI_UNSIGNED_LONG_LONG,
-                locJ_block_size_.data(),
-                1,
-                MPI_UNSIGNED_LONG_LONG,
-                mpi.comm);
+  mpi_comm.all_gather(local_node_count, locJ_block_size_);
 
   // Assign
   // local_block_address
   uint64_t running_block_address = 0;
-  for (int locI = 0; locI < opensn::mpi.process_count; ++locI)
+  for (int locI = 0; locI < opensn::mpi_comm.size(); ++locI)
   {
-    if (locI == opensn::mpi.location_id)
+    if (locI == opensn::mpi_comm.rank())
       local_block_address_ = static_cast<int64_t>(running_block_address);
 
     running_block_address += locJ_block_size_[locI];
@@ -115,7 +108,7 @@ PieceWiseLinearDiscontinuous::OrderNodes()
 
   // AllToAll to get query cell-ids
   const std::map<int, std::vector<uint64_t>> query_ghost_cell_ids_consolidated =
-    MapAllToAll(ghost_cell_ids_consolidated, MPI_UNSIGNED_LONG_LONG);
+    MapAllToAll(ghost_cell_ids_consolidated);
 
   // Map all query cell-ids
   std::map<int, std::vector<uint64_t>> mapped_ghost_cell_ids_consolidated;
@@ -135,7 +128,7 @@ PieceWiseLinearDiscontinuous::OrderNodes()
 
   // Communicate back the mapping
   const std::map<int, std::vector<uint64_t>> global_id_mapping =
-    MapAllToAll(mapped_ghost_cell_ids_consolidated, MPI_UNSIGNED_LONG_LONG);
+    MapAllToAll(mapped_ghost_cell_ids_consolidated);
 
   // Process global id mapping
   for (const auto& [pid, mapping_list] : global_id_mapping)
@@ -264,7 +257,7 @@ PieceWiseLinearDiscontinuous::BuildSparsityPattern(std::vector<int64_t>& nodal_n
     }   // for j
   }
 
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
 }
 
 int64_t
@@ -279,7 +272,7 @@ PieceWiseLinearDiscontinuous::MapDOF(const Cell& cell,
   size_t num_unknowns = unknown_manager.GetTotalUnknownStructureSize();
   size_t block_id = unknown_manager.MapUnknown(unknown_id, component);
 
-  if (cell.partition_id_ == opensn::mpi.location_id)
+  if (cell.partition_id_ == opensn::mpi_comm.rank())
   {
     if (storage == UnknownStorageType::BLOCK)
     {
@@ -310,7 +303,7 @@ PieceWiseLinearDiscontinuous::MapDOF(const Cell& cell,
       ++index;
     }
 
-    if (!found)
+    if (not found)
     {
       log.LogAllError() << "SpatialDiscretization_PWL::MapDFEMDOF. Mapping failed for cell "
                         << "with global index " << cell.global_id_ << " and partition-ID "
@@ -348,7 +341,7 @@ PieceWiseLinearDiscontinuous::MapDOFLocal(const Cell& cell,
   size_t num_unknowns = unknown_manager.GetTotalUnknownStructureSize();
   size_t block_id = unknown_manager.MapUnknown(unknown_id, component);
 
-  if (cell.partition_id_ == opensn::mpi.location_id)
+  if (cell.partition_id_ == opensn::mpi_comm.rank())
   {
     if (storage == UnknownStorageType::BLOCK)
     {
@@ -378,7 +371,7 @@ PieceWiseLinearDiscontinuous::MapDOFLocal(const Cell& cell,
       ++index;
     }
 
-    if (!found)
+    if (not found)
     {
       log.LogAllError() << "SpatialDiscretization_PWL::MapDFEMDOF. Mapping failed for cell "
                         << "with global index " << cell.global_id_ << " and partition-ID "

@@ -3,7 +3,6 @@
 #include <iostream>
 #include <algorithm>
 #include "framework/mesh/surface_mesh/surface_mesh.h"
-#include "framework/mesh/mesh_handler/mesh_handler.h"
 #include "framework/runtime.h"
 
 #include "framework/logging/log.h"
@@ -12,16 +11,15 @@
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(chiSurfaceMeshCheckCycles);
-RegisterLuaFunctionAsIs(chiComputeLoadBalancing);
+RegisterLuaFunctionAsIs(SurfaceMeshCheckCycles);
+RegisterLuaFunctionAsIs(ComputeLoadBalancing);
 
 int
-chiSurfaceMeshCheckCycles(lua_State* L)
+SurfaceMeshCheckCycles(lua_State* L)
 {
   int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError("chiSurfaceMeshCheckCycles", 2, num_args);
-
-  auto& cur_hndlr = opensn::GetCurrentHandler();
+  if (num_args != 2)
+    LuaPostArgAmountError("SurfaceMeshCheckCycles", 2, num_args);
 
   int surf_handle = lua_tonumber(L, 1);
   int num_angles = lua_tonumber(L, 2);
@@ -34,10 +32,11 @@ chiSurfaceMeshCheckCycles(lua_State* L)
 }
 
 int
-chiComputeLoadBalancing(lua_State* L)
+ComputeLoadBalancing(lua_State* L)
 {
   int num_args = lua_gettop(L);
-  if (num_args != 3) LuaPostArgAmountError("chiComputeLoadBalancing", 3, num_args);
+  if (num_args != 3)
+    LuaPostArgAmountError("ComputeLoadBalancing", 3, num_args);
 
   // Get reference surface mesh
   int surf_handle = lua_tonumber(L, 1);
@@ -46,9 +45,9 @@ chiComputeLoadBalancing(lua_State* L)
     opensn::GetStackItem<SurfaceMesh>(opensn::surface_mesh_stack, surf_handle, __FUNCTION__);
 
   // Extract x-cuts
-  if (!lua_istable(L, 2))
+  if (not lua_istable(L, 2))
   {
-    opensn::log.LogAllError() << "In call to chiComputeLoadBalancing: "
+    opensn::log.LogAllError() << "In call to ComputeLoadBalancing: "
                               << " expected table for argument 2. Incompatible value supplied.";
     opensn::Exit(EXIT_FAILURE);
   }
@@ -65,9 +64,9 @@ chiComputeLoadBalancing(lua_State* L)
   }
 
   // Extract y-cuts
-  if (!lua_istable(L, 3))
+  if (not lua_istable(L, 3))
   {
-    opensn::log.LogAllError() << "In call to chiComputeLoadBalancing: "
+    opensn::log.LogAllError() << "In call to ComputeLoadBalancing: "
                               << " expected table for argument 3. Incompatible value supplied.";
     opensn::Exit(EXIT_FAILURE);
   }

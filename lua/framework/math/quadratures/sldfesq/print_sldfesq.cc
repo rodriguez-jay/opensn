@@ -6,19 +6,19 @@
 
 #include "framework/logging/log.h"
 
-#include "framework/mpi/mpi.h"
 #include "framework/console/console.h"
 #include "sldfe_lua.h"
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(chiPrintToPythonSLDFESQAngularQuadrature);
+RegisterLuaFunctionAsIs(PrintToPythonSLDFESQAngularQuadrature);
 
 int
-chiPrintToPythonSLDFESQAngularQuadrature(lua_State* L)
+PrintToPythonSLDFESQAngularQuadrature(lua_State* L)
 {
   int num_args = lua_gettop(L);
-  if (num_args != 2) LuaPostArgAmountError("chiPrintToPythonSLDFESQAngularQuadrature", 2, num_args);
+  if (num_args != 2)
+    LuaPostArgAmountError("PrintToPythonSLDFESQAngularQuadrature", 2, num_args);
 
   int handle = lua_tonumber(L, 1);
   const char* file_name = lua_tostring(L, 2);
@@ -30,7 +30,7 @@ chiPrintToPythonSLDFESQAngularQuadrature(lua_State* L)
     {
       auto sldfesq = std::dynamic_pointer_cast<SimplifiedLDFESQ::Quadrature>(ref_quadrature);
 
-      if (opensn::mpi.location_id == 0)
+      if (opensn::mpi_comm.rank() == 0)
       {
         sldfesq->output_filename_prefix_ = file_name;
         sldfesq->PrintQuadratureToFile();
@@ -38,20 +38,20 @@ chiPrintToPythonSLDFESQAngularQuadrature(lua_State* L)
     }
     else
     {
-      opensn::log.LogAllError() << "chiPrintToPythonSLDFESQAngularQuadrature: "
+      opensn::log.LogAllError() << "PrintToPythonSLDFESQAngularQuadrature: "
                                    "Invalid angular quadrature type.";
       opensn::Exit(EXIT_FAILURE);
     }
   }
   catch (const std::out_of_range& o)
   {
-    opensn::log.LogAllError() << "chiPrintToPythonSLDFESQAngularQuadrature: "
+    opensn::log.LogAllError() << "PrintToPythonSLDFESQAngularQuadrature: "
                                  "Invalid handle to angular quadrature.";
     opensn::Exit(EXIT_FAILURE);
   }
   catch (...)
   {
-    opensn::log.LogAllError() << "chiPrintToPythonSLDFESQAngularQuadrature: "
+    opensn::log.LogAllError() << "PrintToPythonSLDFESQAngularQuadrature: "
                                  "Call failed with unknown error.";
     opensn::Exit(EXIT_FAILURE);
   }

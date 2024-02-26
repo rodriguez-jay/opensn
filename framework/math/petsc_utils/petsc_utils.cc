@@ -11,7 +11,7 @@ Vec
 CreateVector(int64_t local_size, int64_t global_size)
 {
   Vec x;
-  VecCreate(PETSC_COMM_WORLD, &x);
+  VecCreate(opensn::mpi_comm, &x);
   VecSetType(x, VECMPI);
   VecSetSizes(x, local_size, global_size);
   VecSetOption(x, VEC_IGNORE_NEGATIVE_INDICES, PETSC_TRUE);
@@ -22,7 +22,7 @@ CreateVector(int64_t local_size, int64_t global_size)
 void
 CreateVector(Vec& x, int64_t local_size, int64_t global_size)
 {
-  VecCreate(PETSC_COMM_WORLD, &x);
+  VecCreate(opensn::mpi_comm, &x);
   VecSetType(x, VECMPI);
   VecSetSizes(x, local_size, global_size);
   VecSetOption(x, VEC_IGNORE_NEGATIVE_INDICES, PETSC_TRUE);
@@ -35,7 +35,7 @@ CreateVectorWithGhosts(int64_t local_size,
                        const std::vector<int64_t>& ghost_indices)
 {
   Vec x;
-  VecCreateGhost(PETSC_COMM_WORLD,
+  VecCreateGhost(opensn::mpi_comm,
                  local_size,
                  global_size,
                  nghosts,
@@ -51,7 +51,7 @@ Mat
 CreateSquareMatrix(int64_t local_size, int64_t global_size)
 {
   Mat A;
-  MatCreate(PETSC_COMM_WORLD, &A);
+  MatCreate(opensn::mpi_comm, &A);
   MatSetType(A, MATMPIAIJ);
   MatSetSizes(A, local_size, local_size, global_size, global_size);
 
@@ -65,7 +65,7 @@ CreateSquareMatrix(int64_t local_size, int64_t global_size)
 void
 CreateSquareMatrix(Mat& A, int64_t local_size, int64_t global_size)
 {
-  MatCreate(PETSC_COMM_WORLD, &A);
+  MatCreate(opensn::mpi_comm, &A);
   MatSetType(A, MATMPIAIJ);
   MatSetSizes(A, local_size, local_size, global_size, global_size);
 
@@ -103,7 +103,7 @@ CreateCommonKrylovSolverSetup(Mat ref_matrix,
 {
   PETScSolverSetup setup;
 
-  KSPCreate(PETSC_COMM_WORLD, &setup.ksp);
+  KSPCreate(opensn::mpi_comm, &setup.ksp);
   KSPSetOperators(setup.ksp, ref_matrix, ref_matrix);
   KSPSetType(setup.ksp, in_solver_type.c_str());
 
@@ -133,7 +133,8 @@ RelativeResidualConvergenceTest(
   KSPGetRhs(ksp, &Rhs);
   double rhs_norm;
   VecNorm(Rhs, NORM_2, &rhs_norm);
-  if (rhs_norm < 1.0e-12) rhs_norm = 1.0;
+  if (rhs_norm < 1.0e-12)
+    rhs_norm = 1.0;
 
   // Compute test criterion
   double tol;
@@ -142,7 +143,8 @@ RelativeResidualConvergenceTest(
 
   double relative_residual = rnorm / rhs_norm;
 
-  if (relative_residual < tol) *convergedReason = KSP_CONVERGED_RTOL;
+  if (relative_residual < tol)
+    *convergedReason = KSP_CONVERGED_RTOL;
 
   return KSP_CONVERGED_ITERATING;
 }
@@ -154,7 +156,8 @@ KSPMonitorRelativeToRHS(KSP ksp, PetscInt n, PetscReal rnorm, void*)
   KSPGetRhs(ksp, &Rhs);
   double rhs_norm;
   VecNorm(Rhs, NORM_2, &rhs_norm);
-  if (rhs_norm < 1.0e-12) rhs_norm = 1.0;
+  if (rhs_norm < 1.0e-12)
+    rhs_norm = 1.0;
 
   // Get solver name
   const char* ksp_name;
@@ -163,7 +166,8 @@ KSPMonitorRelativeToRHS(KSP ksp, PetscInt n, PetscReal rnorm, void*)
   // Default to this if ksp_name is NULL
   const char NONAME_SOLVER[] = "NoName-Solver\0";
 
-  if (ksp_name == nullptr) ksp_name = NONAME_SOLVER;
+  if (ksp_name == nullptr)
+    ksp_name = NONAME_SOLVER;
 
   // Print message
   std::stringstream buff;
@@ -185,7 +189,8 @@ KSPMonitorStraight(KSP ksp, PetscInt n, PetscReal rnorm, void*)
   // Default to this if ksp_name is NULL
   const char NONAME_SOLVER[] = "NoName-Solver\0";
 
-  if (ksp_name == nullptr) ksp_name = NONAME_SOLVER;
+  if (ksp_name == nullptr)
+    ksp_name = NONAME_SOLVER;
 
   // Print message
   std::stringstream buff;

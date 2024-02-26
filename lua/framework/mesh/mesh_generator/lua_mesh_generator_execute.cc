@@ -11,16 +11,17 @@ using namespace opensn;
 namespace opensnlua
 {
 
-int chiMeshGeneratorExecute(lua_State* L);
+int MeshGeneratorExecute(lua_State* L);
 
-RegisterLuaFunction(chiMeshGeneratorExecute, chi_mesh::MeshGenerator, Execute);
+RegisterLuaFunctionNamespace(MeshGeneratorExecute, mesh::MeshGenerator, Execute);
 
 int
-chiMeshGeneratorExecute(lua_State* L)
+MeshGeneratorExecute(lua_State* L)
 {
   const std::string fname = __FUNCTION__;
   const int num_args = lua_gettop(L);
-  if (num_args != 1) LuaPostArgAmountError(fname, 1, num_args);
+  if (num_args != 1)
+    LuaPostArgAmountError(fname, 1, num_args);
 
   LuaCheckNilValue(fname, L, 1);
   LuaCheckIntegerValue(fname, L, 1);

@@ -15,7 +15,7 @@ namespace opensn
 namespace lbs
 {
 
-OpenSnRegisterObject(lbs, DiscreteOrdinatesCurvilinearSolver);
+OpenSnRegisterObjectInNamespace(lbs, DiscreteOrdinatesCurvilinearSolver);
 
 InputParameters
 DiscreteOrdinatesCurvilinearSolver::GetInputParameters()
@@ -59,7 +59,7 @@ DiscreteOrdinatesCurvilinearSolver::PerformInputChecks()
   //  --------------------------------------------------------------------------
 
   //  coordinate system must be curvilinear
-  if (coord_system_type_ != CoordinateSystemType::CYLINDRICAL &&
+  if (coord_system_type_ != CoordinateSystemType::CYLINDRICAL and
       coord_system_type_ != CoordinateSystemType::SPHERICAL)
   {
     log.LogAllError() << "D_DO_RZ_SteadyState::SteadyStateSolver::PerformInputChecks : "
@@ -129,7 +129,7 @@ DiscreteOrdinatesCurvilinearSolver::PerformInputChecks()
         typedef CylindricalAngularQuadrature CylAngQuad;
         const auto curvilinear_angular_quad_ptr =
           std::dynamic_pointer_cast<CylAngQuad>(angular_quad_ptr);
-        if (!curvilinear_angular_quad_ptr)
+        if (curvilinear_angular_quad_ptr == nullptr)
         {
           log.LogAllError() << "D_DO_RZ_SteadyState::SteadyStateSolver::PerformInputChecks : "
                             << "invalid angular quadrature, static_cast<int>(type) = "
@@ -144,7 +144,7 @@ DiscreteOrdinatesCurvilinearSolver::PerformInputChecks()
         typedef SphericalAngularQuadrature SphAngQuad;
         const auto curvilinear_angular_quad_ptr =
           std::dynamic_pointer_cast<SphAngQuad>(angular_quad_ptr);
-        if (!curvilinear_angular_quad_ptr)
+        if (curvilinear_angular_quad_ptr == nullptr)
         {
           log.LogAllError() << "D_DO_RZ_SteadyState::SteadyStateSolver::PerformInputChecks : "
                             << "invalid angular quadrature, static_cast<int>(type) = "
@@ -209,7 +209,7 @@ DiscreteOrdinatesCurvilinearSolver::PerformInputChecks()
   {
     for (const auto& face : cell.faces_)
     {
-      if (!face.has_neighbor_)
+      if (not face.has_neighbor_)
       {
         bool face_orthogonal = false;
         for (size_t d = 0; d < unit_normal_vectors.size(); ++d)
@@ -231,7 +231,7 @@ DiscreteOrdinatesCurvilinearSolver::PerformInputChecks()
                                      "PerformInputChecks : "
                                   << "mesh contains boundary faces with outward-oriented unit "
                                   << "normal vector " << (-1 * unit_normal_vectors[d]).PrintS()
-                                  << "with vertices characterised by v(" << d << ") != 0.";
+                                  << " with vertices characterised by v(" << d << ") != 0.";
                 Exit(EXIT_FAILURE);
               }
             }
@@ -239,7 +239,7 @@ DiscreteOrdinatesCurvilinearSolver::PerformInputChecks()
             break;
           }
         }
-        if (!face_orthogonal)
+        if (not face_orthogonal)
         {
           log.LogAllError() << "D_DO_RZ_SteadyState::SteadyStateSolver::PerformInputChecks : "
                             << "mesh contains boundary faces not orthogonal with respect to "
@@ -342,7 +342,7 @@ DiscreteOrdinatesCurvilinearSolver::ComputeSecondaryUnitIntegrals()
     const auto& cell_mapping = sdm.GetCellMapping(cell);
     //    const size_t cell_num_faces = cell.faces.size();
     const size_t cell_num_nodes = cell_mapping.NumNodes();
-    const auto vol_qp_data = cell_mapping.MakeVolumetricQuadraturePointData();
+    const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
 
     MatDbl IntV_shapeI_shapeJ(cell_num_nodes, VecDbl(cell_num_nodes));
 
@@ -351,11 +351,11 @@ DiscreteOrdinatesCurvilinearSolver::ComputeSecondaryUnitIntegrals()
     {
       for (unsigned int j = 0; j < cell_num_nodes; ++j)
       {
-        for (const auto& qp : vol_qp_data.QuadraturePointIndices())
+        for (const auto& qp : fe_vol_data.QuadraturePointIndices())
         {
-          IntV_shapeI_shapeJ[i][j] += swf(vol_qp_data.QPointXYZ(qp)) *
-                                      vol_qp_data.ShapeValue(i, qp) *
-                                      vol_qp_data.ShapeValue(j, qp) * vol_qp_data.JxW(qp);
+          IntV_shapeI_shapeJ[i][j] += swf(fe_vol_data.QPointXYZ(qp)) *
+                                      fe_vol_data.ShapeValue(i, qp) *
+                                      fe_vol_data.ShapeValue(j, qp) * fe_vol_data.JxW(qp);
         } // for qp
       }   // for j
     }     // for i
@@ -376,7 +376,7 @@ DiscreteOrdinatesCurvilinearSolver::ComputeSecondaryUnitIntegrals()
   for (const auto& cell : grid_ptr_->local_cells)
     secondary_unit_cell_matrices_[cell.local_id_] = ComputeCellUnitIntegrals(cell);
 
-  opensn::mpi.Barrier();
+  opensn::mpi_comm.barrier();
   log.Log() << "Secondary Cell matrices computed.         Process memory = " << std::setprecision(3)
             << GetMemoryUsageInMB() << " MB";
 }
@@ -384,7 +384,7 @@ DiscreteOrdinatesCurvilinearSolver::ComputeSecondaryUnitIntegrals()
 std::shared_ptr<SweepChunk>
 DiscreteOrdinatesCurvilinearSolver::SetSweepChunk(lbs::LBSGroupset& groupset)
 {
-  auto sweep_chunk = std::make_shared<SweepChunkPWLRZ>(*grid_ptr_,
+  auto sweep_chunk = std::make_shared<SweepChunkPwlrz>(*grid_ptr_,
                                                        *discretization_,
                                                        unit_cell_matrices_,
                                                        secondary_unit_cell_matrices_,
