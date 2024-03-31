@@ -1,22 +1,22 @@
-#include "framework/lua.h"
-#include <iostream>
-
+#include "multi_group_xs_lua_utils.h"
 #include "framework/physics/physics_namespace.h"
 #include "framework/physics/physics_material/multi_group_xs/single_state_mgxs.h"
-
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
-#include "multi_group_xs_lua_utils.h"
 #include "framework/console/console.h"
+#include <iostream>
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(PhysicsTransportXSCreate);
-RegisterLuaFunctionAsIs(PhysicsTransportXSSet);
-RegisterLuaFunctionAsIs(PhysicsTransportXSMakeCombined);
-RegisterLuaFunctionAsIs(PhysicsTransportXSSetCombined);
-RegisterLuaFunctionAsIs(PhysicsTransportXSGet);
-RegisterLuaFunctionAsIs(PhysicsTransportXSExportToOpenSnFormat);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(PhysicsTransportXSCreate, xs, Create);
+RegisterLuaFunctionNamespace(PhysicsTransportXSSet, xs, Set);
+RegisterLuaFunctionNamespace(PhysicsTransportXSMakeCombined, xs, MakeCombined);
+RegisterLuaFunctionNamespace(PhysicsTransportXSSetCombined, xs, SetCombined);
+RegisterLuaFunctionNamespace(PhysicsTransportXSGet, xs, Get);
+RegisterLuaFunctionNamespace(PhysicsTransportXSExportToOpenSnFormat, xs, ExportToOpenSnFormat);
 
 RegisterLuaConstantAsIs(SINGLE_VALUE, Varying(0));
 RegisterLuaConstantAsIs(FROM_ARRAY, Varying(1));
@@ -329,9 +329,9 @@ PhysicsTransportXSMakeCombined(lua_State* L)
     lua_pushnumber(L, v + 1);
     lua_gettable(L, 1);
 
-    ChiInvalidArgumentIf(not lua_istable(L, -1),
-                         "The elements of the supplied Lua array must themselves also be "
-                         "Lua array containing a xs handle and scalar multiplier.");
+    OpenSnInvalidArgumentIf(not lua_istable(L, -1),
+                            "The elements of the supplied Lua array must themselves also be "
+                            "Lua array containing a xs handle and scalar multiplier.");
 
     // Process xs handle
     lua_pushinteger(L, 1);
@@ -401,9 +401,9 @@ PhysicsTransportXSSetCombined(lua_State* L)
     lua_pushnumber(L, v + 1);
     lua_gettable(L, 1);
 
-    ChiInvalidArgumentIf(not lua_istable(L, -1),
-                         "The elements of the supplied Lua array must themselves also be "
-                         "Lua array containing a xs handle and scalar multiplier.");
+    OpenSnInvalidArgumentIf(not lua_istable(L, -1),
+                            "The elements of the supplied Lua array must themselves also be "
+                            "Lua array containing a xs handle and scalar multiplier.");
 
     // Process xs handle
     lua_pushinteger(L, 1);
@@ -465,3 +465,5 @@ PhysicsTransportXSExportToOpenSnFormat(lua_State* L)
 
   return 0;
 }
+
+} // namespace opensnlua

@@ -8,7 +8,10 @@
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(GetFieldFunctionHandleByName);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(GetFieldFunctionHandleByName, fieldfunc, GetHandleByName);
 
 int
 GetFieldFunctionHandleByName(lua_State* L)
@@ -53,3 +56,5 @@ GetFieldFunctionHandleByName(lua_State* L)
   lua_pushinteger(L, static_cast<lua_Integer>(handles_that_matched.front()));
   return 1;
 }
+
+} // namespace opensnlua

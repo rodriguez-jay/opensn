@@ -10,9 +10,10 @@ namespace opensn
 InputParameters GetSyntax_ExecutePostProcessors();
 ParameterBlock ExecutePostProcessors(const InputParameters& params);
 
-RegisterWrapperFunction(ExecutePostProcessors,
-                        GetSyntax_ExecutePostProcessors,
-                        ExecutePostProcessors);
+RegisterWrapperFunctionNamespace(post,
+                                 Execute,
+                                 GetSyntax_ExecutePostProcessors,
+                                 ExecutePostProcessors);
 
 InputParameters
 GetSyntax_ExecutePostProcessors()
@@ -34,7 +35,7 @@ ExecutePostProcessors(const InputParameters& params)
 
   arg_array.RequireBlockTypeIs(ParameterBlockType::ARRAY);
 
-  ChiInvalidArgumentIf(arg_array.NumParameters() == 0, "Empty array passed.");
+  OpenSnInvalidArgumentIf(arg_array.NumParameters() == 0, "Empty array passed.");
   const auto& first_param = arg_array.GetParam(0);
   const auto first_param_type = first_param.Type();
 
@@ -57,9 +58,9 @@ ExecutePostProcessors(const InputParameters& params)
           break;
         }
 
-      ChiInvalidArgumentIf(not found,
-                           "Post processor with name \"" + name +
-                             "\" not found in the stack of post-processors");
+      OpenSnInvalidArgumentIf(not found,
+                              "Post processor with name \"" + name +
+                                "\" not found in the stack of post-processors");
     }
   }
   // List of handles supplied
@@ -75,8 +76,8 @@ ExecutePostProcessors(const InputParameters& params)
     }
   }
   else
-    ChiInvalidArgument("The array is of type ARRAY<" + ParameterBlockTypeName(first_param_type) +
-                       ">. Only ARRAY<STRING> or ARRAY<INTEGER> is allowed.");
+    OpenSnInvalidArgument("The array is of type ARRAY<" + ParameterBlockTypeName(first_param_type) +
+                          ">. Only ARRAY<STRING> or ARRAY<INTEGER> is allowed.");
 
   Event blank_event("ManualExecutation");
   for (auto& pp : pp_list)

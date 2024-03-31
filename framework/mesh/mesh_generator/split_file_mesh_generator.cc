@@ -41,7 +41,7 @@ SplitFileMeshGenerator::GetInputParameters()
     "Path of the directory to be created for containing the split meshes.");
 
   params.AddOptionalParameter(
-    "split_file_prefix", "split_mesh", "Prefix to use for all split mesh files");
+    "file_prefix", opensn::input_path.stem().string(), "Prefix to use for all split mesh files");
 
   params.AddOptionalParameter(
     "read_only", false, "Controls whether the split mesh is recreated or just read.");
@@ -59,7 +59,7 @@ SplitFileMeshGenerator::SplitFileMeshGenerator(const InputParameters& params)
   : MeshGenerator(params),
     num_parts_(params.GetParamValue<int>("num_partitions")),
     split_mesh_dir_path_(params.GetParamValue<std::string>("split_mesh_dir_path")),
-    split_file_prefix_(params.GetParamValue<std::string>("split_file_prefix")),
+    file_prefix_(params.GetParamValue<std::string>("file_prefix")),
     read_only_(params.GetParamValue<bool>("read_only")),
     verbosity_level_(params.GetParamValue<int>("verbosity_level"))
 {
@@ -124,14 +124,14 @@ SplitFileMeshGenerator::WriteSplitMesh(const std::vector<int64_t>& cell_pids,
   const std::filesystem::path dir_path = std::filesystem::absolute(split_mesh_dir_path_);
 
   const auto parent_path = dir_path.parent_path();
-  ChiInvalidArgumentIf(not std::filesystem::exists(parent_path),
-                       "Parent path " + parent_path.string() + " does not exist");
+  OpenSnInvalidArgumentIf(not std::filesystem::exists(parent_path),
+                          "Parent path " + parent_path.string() + " does not exist");
 
   bool root_dir_created = true;
   if (not std::filesystem::exists(dir_path))
     root_dir_created = std::filesystem::create_directories(dir_path);
 
-  ChiLogicalErrorIf(not root_dir_created, "Failed to create directory " + dir_path.string());
+  OpenSnLogicalErrorIf(not root_dir_created, "Failed to create directory " + dir_path.string());
 
   const auto& vertex_subs = umesh.GetVertextCellSubscriptions();
   const auto& raw_cells = umesh.GetRawCells();
@@ -148,11 +148,11 @@ SplitFileMeshGenerator::WriteSplitMesh(const std::vector<int64_t>& cell_pids,
   {
     t_write.TimeSectionBegin();
     const std::filesystem::path file_path =
-      dir_path.string() + "/" + split_file_prefix_ + "_" + std::to_string(pid) + ".cmesh";
+      dir_path.string() + "/" + file_prefix_ + "_" + std::to_string(pid) + ".cmesh";
 
     std::ofstream ofile(file_path.string(), std::ios_base::binary | std::ios_base::out);
 
-    ChiLogicalErrorIf(not ofile.is_open(), "Failed to open " + file_path.string());
+    OpenSnLogicalErrorIf(not ofile.is_open(), "Failed to open " + file_path.string());
 
     // Appropriate cells and vertices to the current part being writting
     t_sorting.TimeSectionBegin();
@@ -315,23 +315,23 @@ SplitFileMeshGenerator::ReadSplitMesh()
   const int pid = opensn::mpi_comm.rank();
   const std::filesystem::path dir_path = std::filesystem::absolute(split_mesh_dir_path_);
   const std::filesystem::path file_path =
-    dir_path.string() + "/" + split_file_prefix_ + "_" + std::to_string(pid) + ".cmesh";
+    dir_path.string() + "/" + file_prefix_ + "_" + std::to_string(pid) + ".cmesh";
 
   SplitMeshInfo info_block;
   auto& cells = info_block.cells_;
   auto& vertices = info_block.vertices_;
   std::ifstream ifile(file_path, std::ios_base::binary | std::ios_base::in);
 
-  ChiLogicalErrorIf(not ifile.is_open(), "Failed to open " + file_path.string());
+  OpenSnLogicalErrorIf(not ifile.is_open(), "Failed to open " + file_path.string());
 
   // Read mesh attributes and general info
   const size_t file_num_parts = ReadBinaryValue<int>(ifile);
 
-  ChiLogicalErrorIf(opensn::mpi_comm.size() != file_num_parts,
-                    "Split mesh files with prefix \"" + split_file_prefix_ +
-                      "\" has been created with " + std::to_string(file_num_parts) +
-                      " parts but is now being read with " +
-                      std::to_string(opensn::mpi_comm.size()) + " processes.");
+  OpenSnLogicalErrorIf(opensn::mpi_comm.size() != file_num_parts,
+                       "Split mesh files with prefix \"" + file_prefix_ +
+                         "\" has been created with " + std::to_string(file_num_parts) +
+                         " parts but is now being read with " +
+                         std::to_string(opensn::mpi_comm.size()) + " processes.");
 
   info_block.mesh_attributes_ = ReadBinaryValue<int>(ifile);
   info_block.ortho_Nx_ = ReadBinaryValue<size_t>(ifile);

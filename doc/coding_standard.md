@@ -105,6 +105,11 @@ private:
 };
 ```
 
+### Numbers
+
+- Decimal numbers are written with both whole and fraction part.
+  Examples: `1234.12`, `1.0`, `0.0`, `1.0e-15`.
+
 ### Boolean operators
 
 Boolean operators `or`, `and` and `not` should be used instead of `||`, `&&` and `!`.
@@ -133,6 +138,26 @@ For [doxygen](https://www.doxygen.nl/) style comments `/** */` should be used.
 void SomeMemberFunction()
 ```
 
+### Include directives
+
+Preprocessor `#include` directives should be ordered as follows:
+
+1. Header for this compilation unit (.h file that corresponds to .cc/.cpp file)
+1. Other OpenSn headers
+1. Non-standard, non-system libraries
+1. C++ headers
+1. C headers
+
+There should **not** be empty lines separating the groups.
+
+Example:
+```c++
+#include "modules/cfem_diffusion/cfem_diffusion_solver.h"
+#include "framework/data_types/varying.h"
+#include "petsc.h"
+#include <string>
+#include <map>
+```
 
 ## Command-line parameters
 

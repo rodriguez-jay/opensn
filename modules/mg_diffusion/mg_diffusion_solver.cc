@@ -19,8 +19,8 @@ namespace opensn
 namespace mg_diffusion
 {
 
-Solver::Solver(const std::string& in_solver_name)
-  : opensn::Solver(in_solver_name,
+Solver::Solver(const std::string& name)
+  : opensn::Solver(name,
                    {{"max_inner_iters", int64_t(500)},
                     {"residual_tolerance", 1.0e-2},
                     {"verbose_level", int64_t(0)},
@@ -536,7 +536,7 @@ Solver::Assemble_A_bext()
     const auto& sigma_r = xs->SigmaRemoval();
 
     const auto& qext = matid_to_src_map.at(cell.material_id_);
-    double collapsed_D = 0., collapsed_sig_a = 0.;
+    double collapsed_D = 0.0, collapsed_sig_a = 0.0;
     if (do_two_grid_)
     {
       const auto& xstg = map_mat_id_2_tginfo.at(cell.material_id_);
@@ -704,6 +704,7 @@ Solver::Execute()
                                                 TextName(),
                                                 KSPCG,
                                                 PCGAMG,
+                                                0.0,
                                                 basic_options_("residual_tolerance").FloatValue(),
                                                 basic_options_("max_inner_iters").IntegerValue());
 

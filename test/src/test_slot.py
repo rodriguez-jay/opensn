@@ -1,6 +1,6 @@
 import os
 import subprocess
-import time
+import re
 
 
 class TestSlot:
@@ -12,9 +12,6 @@ class TestSlot:
         self.test = test
         self.passed = False
         self.argv = argv
-
-        self.time_start = time.perf_counter()
-        self.time_end = self.time_start
         self.command: str = ""
 
         self._Run()
@@ -27,11 +24,10 @@ class TestSlot:
         if test.skip != "":
             return
 
-        cmd =  self.argv.mpi_cmd + " " + str(test.num_procs) + " "
+        cmd = self.argv.mpi_cmd + " " + str(test.num_procs) + " "
         cmd += self.argv.exe + " "
         cmd += test.filename + " "
         cmd += "--suppress-color "
-        cmd += "--suppress-beg-end-timelog "
         cmd += "master_export=false "
         for arg in test.args:
             if arg.find("\"") >= 0:
@@ -70,8 +66,6 @@ class TestSlot:
 
             out, err = self.process.communicate()
 
-            self.time_end = time.perf_counter()
-
             file = open(test.file_dir + f"out/{test.GetOutFilenamePrefix()}.out", "w")
             file.write(self.command + "\n")
             file.write(out + "\n")
@@ -108,7 +102,8 @@ class TestSlot:
         else:
             test.annotations.append("skipped")
 
-        test_path = os.path.relpath(test.file_dir + test.filename)
+        test_path = os.path.join(test.file_dir, test.filename)
+        test_file_name = os.path.relpath(test_path, self.argv.directory)
 
         if not os.path.isfile(test_path):
             test.annotations.append("lua file missing")
@@ -130,11 +125,21 @@ class TestSlot:
             message = f"\033[36m[{annotation}]\033[0m" + message
             pad += 5 + 4
 
-        width = 120 - len(prefix + test_path) + pad
+        width = 120 - len(prefix + test_file_name) + pad
         message = message.rjust(width, ".")
 
-        time_taken_message = " {:.2f}s".format(self.time_end - self.time_start)
+        opensn_elapsed_time_sec = 0.0
+        if os.path.exists(output_filename):
+          for line in open(output_filename, 'r'):
+            found = re.search("Elapsed execution time:", line)
+            if found:
+              values_slice = re.split(r'[,:]', line.strip())
+              opensn_elapsed_time_sec = float(values_slice[1])*3600 + float(values_slice[2])*60 + float(values_slice[3])
+              break
 
-        print(prefix + test_path + message + time_taken_message)
+        time_taken_message = " {:.1f}s".format(opensn_elapsed_time_sec)
+
+        print(prefix + " " + test_file_name + message + time_taken_message)
+
         if test.skip != "":
             print("Skip reason: " + test.skip)

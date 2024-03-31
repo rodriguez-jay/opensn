@@ -1,14 +1,16 @@
 #include "framework/lua.h"
-#include "framework/math/quadratures/legendre_poly/legendrepoly.h"
-
+#include "framework/math/quadratures/angular/legendre_poly/legendrepoly.h"
 #include "framework/console/console.h"
 #include "legendre_lua.h"
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(Legendre);
-RegisterLuaFunctionAsIs(LegendreDerivative);
-RegisterLuaFunctionAsIs(Ylm);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(Legendre, aquad, Legendre);
+RegisterLuaFunctionNamespace(LegendreDerivative, aquad, LegendreDerivative);
+RegisterLuaFunctionNamespace(Ylm, aquad, Ylm);
 
 int
 Legendre(lua_State* L)
@@ -17,7 +19,7 @@ Legendre(lua_State* L)
   int N = lua_tonumber(L, 1);
   double x = lua_tonumber(L, 2);
 
-  double retval = Legendre(N, x);
+  double retval = opensn::Legendre(N, x);
 
   lua_pushnumber(L, retval);
   return 1;
@@ -48,8 +50,10 @@ Ylm(lua_State* L)
   double theta = lua_tonumber(L, 3);
   double varphi = lua_tonumber(L, 4);
 
-  double retval = Ylm(ell, m, varphi, theta);
+  double retval = opensn::Ylm(ell, m, varphi, theta);
 
   lua_pushnumber(L, retval);
   return 1;
 }
+
+} // namespace opensnlua

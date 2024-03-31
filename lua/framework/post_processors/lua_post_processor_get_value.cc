@@ -11,9 +11,10 @@ namespace opensn
 InputParameters GetSyntax_PostProcessorGetValue();
 ParameterBlock PostProcessorGetValue(const InputParameters& params);
 
-RegisterWrapperFunction(PostProcessorGetValue,
-                        GetSyntax_PostProcessorGetValue,
-                        PostProcessorGetValue);
+RegisterWrapperFunctionNamespace(post,
+                                 GetValue,
+                                 GetSyntax_PostProcessorGetValue,
+                                 PostProcessorGetValue);
 
 InputParameters
 GetSyntax_PostProcessorGetValue()
@@ -43,7 +44,7 @@ PostProcessorGetValue(const InputParameters& params)
         return pp_ptr->GetValue();
 
     // If we haven't returned here
-    ChiInvalidArgument("Post-processor with name \"" + pp_name + "\" not found.");
+    OpenSnInvalidArgument("Post-processor with name \"" + pp_name + "\" not found.");
   }
   else if (param.Type() == ParameterBlockType::INTEGER)
   {
@@ -54,7 +55,7 @@ PostProcessorGetValue(const InputParameters& params)
     return pp.GetValue();
   }
   else
-    ChiInvalidArgument("Accepts only STRING or INTEGER for arg0.");
+    OpenSnInvalidArgument("Accepts only STRING or INTEGER for arg0.");
 
   return ParameterBlock{};
 }

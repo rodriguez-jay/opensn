@@ -9,7 +9,7 @@
         "key": "maxval(latest)",
         "wordnum" : 4,
         "gold": 2.666667,
-        "tol": 1e-10
+        "abs_tol": 1e-10
       }
     ]
   },
@@ -23,7 +23,7 @@
         "key": "avgval(latest)",
         "wordnum" : 4,
         "gold": 0.295902,
-        "tol": 1e-10
+        "abs_tol": 1e-10
       }
     ]
   },
@@ -37,7 +37,7 @@
         "key": "avgval(latest)",
         "wordnum" : 4,
         "gold": 0.241751,
-        "tol": 1e-10
+        "abs_tol": 1e-10
       }
     ]
   },
@@ -51,7 +51,7 @@
         "key": "maxval(latest)",
         "wordnum" : 4,
         "gold": 0.021921,
-        "tol": 1e-10
+        "abs_tol": 1e-10
       }
     ]
   },
@@ -64,8 +64,8 @@
         "type": "FloatCompare",
         "key": "maxval(latest)",
         "wordnum" : 4,
-        "gold": 1.000244,
-        "tol": 1e-10
+        "gold": 1.000257,
+        "abs_tol": 1e-10
       }
     ]
   }

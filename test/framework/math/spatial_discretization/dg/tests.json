@@ -4,7 +4,10 @@
   [
     { "type" :  "ErrorCode", "error_code" :  0},
     {
-      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.500684, "tol": 1e-05
+      "type" : "StrCompare", "key" : "Converged"
+    },
+    {
+      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.500684, "abs_tol": 1e-05
     }
   ]
   },
@@ -13,7 +16,10 @@
   [
     { "type" :  "ErrorCode", "error_code" :  0},
     {
-      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.295603, "tol": 1e-05
+      "type" : "StrCompare", "key" : "Converged"
+    },
+    {
+      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.295603, "abs_tol": 1e-05
     }
   ]
   },
@@ -22,7 +28,10 @@
   [
     { "type" :  "ErrorCode", "error_code" :  0},
     {
-      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.225199, "tol": 1e-05
+      "type" : "StrCompare", "key" : "Converged"
+    },
+    {
+      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.225199, "abs_tol": 1e-05
     }
   ]
   },
@@ -31,7 +40,10 @@
   [
     { "type" :  "ErrorCode", "error_code" :  0},
     {
-      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.296448, "tol": 1e-05
+      "type" : "StrCompare", "key" : "Converged"
+    },
+    {
+      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.296448, "abs_tol": 1e-05
     }
   ]
   },
@@ -40,7 +52,10 @@
   [
     { "type" :  "ErrorCode", "error_code" :  0},
     {
-      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.189989, "tol": 1e-05
+      "type" : "StrCompare", "key" : "Converged"
+    },
+    {
+      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.189989, "abs_tol": 1e-05
     }
   ]
   },
@@ -49,7 +64,10 @@
   [
     { "type" :  "ErrorCode", "error_code" :  0},
     {
-      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.220627, "tol": 1e-05
+      "type" : "StrCompare", "key" : "Converged"
+    },
+    {
+      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.220627, "abs_tol": 1e-05
     }
   ]
   },
@@ -58,7 +76,10 @@
   [
     { "type" :  "ErrorCode", "error_code" :  0},
     {
-      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.226529, "tol": 1e-05
+      "type" : "StrCompare", "key" : "Converged"
+    },
+    {
+      "type": "FloatCompare", "key": "[0]  Nodal max =", "wordnum": 5, "gold": 0.226529, "abs_tol": 1e-05
     }
   ]
   }

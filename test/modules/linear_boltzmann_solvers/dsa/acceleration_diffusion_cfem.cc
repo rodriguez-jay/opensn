@@ -1,8 +1,8 @@
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_continuous.h"
-#include "modules/linear_boltzmann_solvers/a_lbs_solver/acceleration/acceleration.h"
-#include "modules/linear_boltzmann_solvers/a_lbs_solver/acceleration/diffusion_pwlc_solver.h"
-#include "modules/linear_boltzmann_solvers/a_lbs_solver/lbs_structs.h"
+#include "modules/linear_boltzmann_solvers/lbs_solver/acceleration/acceleration.h"
+#include "modules/linear_boltzmann_solvers/lbs_solver/acceleration/diffusion_pwlc_solver.h"
+#include "modules/linear_boltzmann_solvers/lbs_solver/lbs_structs.h"
 #include "framework/field_functions/field_function_grid_based.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
@@ -149,7 +149,7 @@ acceleration_Diffusion_CFEM(const InputParameters&)
   // solver.options.ref_solution_lua_function = "MMS_phi";
   // solver.options.source_lua_function = "MMS_q";
   solver.options.verbose = true;
-  solver.options.residual_tolerance = 1.0e-10;
+  solver.options.residual_tolerance = 1.0e-12;
   solver.options.perform_symmetry_check = true;
 
   solver.Initialize();

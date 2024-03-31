@@ -1,17 +1,16 @@
 #include "framework/lua.h"
-
-#include "framework/runtime.h"
-
-#include "framework/math/quadratures/angular_product_quadrature.h"
-
-#include "framework/logging/log.h"
-
 #include "quadratures_lua.h"
+#include "framework/math/quadratures/angular/product_quadrature.h"
+#include "framework/logging/log.h"
 #include "framework/console/console.h"
+#include "framework/runtime.h"
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(GetProductQuadrature);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(GetProductQuadrature, aquad, GetProductQuadrature);
 
 int
 GetProductQuadrature(lua_State* L)
@@ -64,3 +63,5 @@ GetProductQuadrature(lua_State* L)
 
   return 1;
 }
+
+} // namespace opensnlua

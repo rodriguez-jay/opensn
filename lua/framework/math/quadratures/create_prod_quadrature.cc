@@ -1,19 +1,17 @@
 #include "framework/lua.h"
-
-#include "framework/runtime.h"
-
-#include "framework/math/quadratures/angular_product_quadrature.h"
-
-#include "framework/logging/log.h"
-
-#include <memory>
-
 #include "quadratures_lua.h"
+#include "framework/math/quadratures/angular/product_quadrature.h"
+#include "framework/logging/log.h"
 #include "framework/console/console.h"
+#include "framework/runtime.h"
+#include <memory>
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(CreateProductQuadrature);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(CreateProductQuadrature, aquad, CreateProductQuadrature);
 
 RegisterLuaConstantAsIs(GAUSS_LEGENDRE, Varying(1));
 RegisterLuaConstantAsIs(GAUSS_CHEBYSHEV, Varying(2));
@@ -196,3 +194,5 @@ CreateProductQuadrature(lua_State* L)
   }
   return 0;
 }
+
+} // namespace opensnlua

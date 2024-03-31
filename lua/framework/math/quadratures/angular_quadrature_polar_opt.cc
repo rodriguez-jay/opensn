@@ -1,16 +1,18 @@
 #include "framework/lua.h"
-
-#include "framework/math/quadratures/angular_quadrature_base.h"
-
-#include "framework/runtime.h"
-#include "framework/logging/log.h"
-
-#include "quadratures_lua.h"
+#include "framework/math/quadratures/angular/angular_quadrature.h"
 #include "framework/console/console.h"
+#include "framework/logging/log.h"
+#include "framework/runtime.h"
+#include "quadratures_lua.h"
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(OptimizeAngularQuadratureForPolarSymmetry);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(OptimizeAngularQuadratureForPolarSymmetry,
+                             aquad,
+                             OptimizeForPolarSymmetry);
 
 int
 OptimizeAngularQuadratureForPolarSymmetry(lua_State* L)
@@ -37,3 +39,5 @@ OptimizeAngularQuadratureForPolarSymmetry(lua_State* L)
 
   return 0;
 }
+
+} // namespace opensnlua

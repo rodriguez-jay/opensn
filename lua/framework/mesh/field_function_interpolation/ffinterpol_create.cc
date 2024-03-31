@@ -10,7 +10,10 @@
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(FFInterpolationCreate);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(FFInterpolationCreate, fieldfunc, FFInterpolationCreate);
 RegisterLuaConstantAsIs(SLICE, Varying(1));
 RegisterLuaConstantAsIs(LINE, Varying(2));
 RegisterLuaConstantAsIs(VOLUME, Varying(3));
@@ -68,3 +71,5 @@ FFInterpolationCreate(lua_State* L)
   }
   return 0;
 }
+
+} // namespace opensnlua

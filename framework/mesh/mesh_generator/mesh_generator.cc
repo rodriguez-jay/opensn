@@ -62,7 +62,7 @@ MeshGenerator::MeshGenerator(const InputParameters& params)
     auto& factory = ObjectFactory::GetInstance();
     auto valid_params = PETScGraphPartitioner::GetInputParameters();
     partitioner_handle =
-      factory.MakeRegisteredObjectOfType("PETScGraphPartitioner", ParameterBlock());
+      factory.MakeRegisteredObjectOfType("mesh::PETScGraphPartitioner", ParameterBlock());
   }
   partitioner_ = &GetStackItem<GraphPartitioner>(object_stack, partitioner_handle, __FUNCTION__);
 }
@@ -151,7 +151,7 @@ MeshGenerator::PartitionMesh(const UnpartitionedMesh& input_umesh, int num_parti
   const auto& raw_cells = input_umesh.GetRawCells();
   const size_t num_raw_cells = raw_cells.size();
 
-  ChiLogicalErrorIf(num_raw_cells == 0, "No cells in final input mesh");
+  OpenSnLogicalErrorIf(num_raw_cells == 0, "No cells in final input mesh");
 
   // Build cell graph and centroids
   typedef std::vector<uint64_t> CellGraphNode;

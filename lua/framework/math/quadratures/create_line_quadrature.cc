@@ -10,7 +10,10 @@
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(CreateLineQuadrature);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(CreateLineQuadrature, squad, CreateLineQuadrature);
 
 int
 CreateLineQuadrature(lua_State* L)
@@ -41,7 +44,8 @@ CreateLineQuadrature(lua_State* L)
   {
     opensn::log.Log() << "Creating Gauss-Legendre Quadrature\n";
 
-    const size_t handle = obj_factory.MakeRegisteredObjectOfType("QuadratureGaussLegendre", params);
+    const size_t handle =
+      obj_factory.MakeRegisteredObjectOfType("squad::QuadratureGaussLegendre", params);
 
     lua_pushinteger(L, static_cast<lua_Integer>(handle));
     return 1;
@@ -51,10 +55,12 @@ CreateLineQuadrature(lua_State* L)
     opensn::log.Log() << "Creating Gauss-Chebyshev Quadrature\n";
 
     const size_t handle =
-      obj_factory.MakeRegisteredObjectOfType("math::QuadratureGaussChebyshev", params);
+      obj_factory.MakeRegisteredObjectOfType("squad::QuadratureGaussChebyshev", params);
 
     lua_pushinteger(L, static_cast<lua_Integer>(handle));
     return 1;
   }
   return 0;
 }
+
+} // namespace opensnlua

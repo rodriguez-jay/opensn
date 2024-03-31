@@ -24,8 +24,6 @@ const std::string command_line_help_string_ =
   "     a=b                         Executes argument as a lua string. "
   "i.e. x=2 or y=[[\"string\"]]\n"
   "     --allow-petsc-error-handler Allows petsc error handler.\n"
-  "     --suppress-beg-end-timelog  Suppresses time logs at the \n"
-  "                                 beginning and end of execution.\n"
   "     --suppress-color            Suppresses the printing of color.\n"
   "                                 useful for unit tests requiring a diff.\n"
   "     --dump-object-registry      Dumps the object registry.\n"
@@ -59,6 +57,13 @@ LuaApp::Run(int argc, char** argv)
   opensn::Initialize();
   console.PostMPIInfo(opensn::mpi_comm.rank(), opensn::mpi_comm.size());
 
+  opensn::log.Log() << opensn::name << " version " << GetVersionStr();
+  opensn::log.Log() << Timer::GetLocalDateTimeString() << " Running " << opensn::name << " with "
+                    << opensn::mpi_comm.size() << " processes.";
+  opensn::log.Log() << opensn::name << " number of arguments supplied: " << argc - 1;
+  opensn::log.LogAll();
+  console.FlushConsole();
+
   int error_code = 0;
   ParseArguments(argc, argv);
   if (not termination_posted_)
@@ -71,6 +76,10 @@ LuaApp::Run(int argc, char** argv)
 
   opensn::Finalize();
   PetscFinalize();
+
+  opensn::log.Log() << "Elapsed execution time: " << program_timer.GetTimeString();
+  opensn::log.Log() << Timer::GetLocalDateTimeString() << " " << opensn::name
+                    << " finished execution.";
 
   return error_code;
 }
@@ -89,10 +98,6 @@ LuaApp::ParseArguments(int argc, char** argv)
     {
       opensn::log.Log() << command_line_help_string_;
       termination_posted_ = true;
-    }
-    else if (argument.find("--suppress-beg-end-timelog") != std::string::npos)
-    {
-      supress_beg_end_timelog_ = true;
     }
     else if (argument.find("--allow-petsc-error-handler") != std::string::npos)
     {
@@ -142,7 +147,7 @@ LuaApp::ParseArguments(int argc, char** argv)
     } //-v
     else if ((argument.find('=') == std::string::npos) and (not input_file_found))
     {
-      input_file_name_ = argument;
+      opensn::input_path = argument;
       input_file_found = true;
       sim_option_interactive_ = false;
     } // no =
@@ -162,27 +167,11 @@ LuaApp::ParseArguments(int argc, char** argv)
 int
 LuaApp::RunInteractive(int argc, char** argv)
 {
-  if (not supress_beg_end_timelog_)
-  {
-    opensn::log.Log() << Timer::GetLocalDateTimeString() << " Running " << opensn::name
-                      << " in interactive-mode with " << opensn::mpi_comm.size() << " processes.";
-
-    opensn::log.Log() << opensn::name << " version " << GetVersionStr();
-  }
-
-  opensn::log.Log() << opensn::name << " number of arguments supplied: " << argc - 1;
-
-  opensn::log.LogAll();
-
-  console.FlushConsole();
-
-  const auto& input_fname = input_file_name_;
-
-  if (not input_fname.empty())
+  if (std::filesystem::exists(input_path))
   {
     try
     {
-      console.ExecuteFile(input_fname, argc, argv);
+      console.ExecuteFile(opensn::input_path.string(), argc, argv);
     }
     catch (const std::exception& excp)
     {
@@ -190,15 +179,10 @@ LuaApp::RunInteractive(int argc, char** argv)
       // No quitting if file execution fails
     }
   }
+  else
+    opensn::log.Log0Error() << "Could not open file " << opensn::input_path.string() << ".";
 
   console.RunConsoleLoop();
-
-  if (not supress_beg_end_timelog_)
-  {
-    opensn::log.Log() << "Final program time " << program_timer.GetTimeString();
-    opensn::log.Log() << Timer::GetLocalDateTimeString() << " " << opensn::name
-                      << " finished execution.";
-  }
 
   return 0;
 }
@@ -206,16 +190,6 @@ LuaApp::RunInteractive(int argc, char** argv)
 int
 LuaApp::RunBatch(int argc, char** argv)
 {
-  if (not supress_beg_end_timelog_)
-  {
-    opensn::log.Log() << Timer::GetLocalDateTimeString() << " Running " << opensn::name
-                      << " in batch-mode with " << opensn::mpi_comm.size() << " processes.";
-
-    opensn::log.Log() << opensn::name << " version " << GetVersionStr();
-  }
-
-  opensn::log.Log() << opensn::name << " number of arguments supplied: " << argc - 1;
-
   if (argc <= 1)
     opensn::log.Log() << command_line_help_string_;
   console.FlushConsole();
@@ -228,18 +202,15 @@ LuaApp::RunBatch(int argc, char** argv)
       usleep(1000000);
       opensn::log.Log() << k;
     }
-
   mpi_comm.barrier();
 #endif
 
-  const auto& input_fname = input_file_name_;
   int error_code = 0;
-
-  if ((not input_fname.empty()) and (not termination_posted_))
+  if (std::filesystem::exists(input_path) and (not termination_posted_))
   {
     try
     {
-      error_code = console.ExecuteFile(input_fname, argc, argv);
+      error_code = console.ExecuteFile(opensn::input_path.string(), argc, argv);
     }
     catch (const std::exception& excp)
     {
@@ -247,12 +218,10 @@ LuaApp::RunBatch(int argc, char** argv)
       Exit(EXIT_FAILURE);
     }
   }
-
-  if (not supress_beg_end_timelog_)
+  else
   {
-    opensn::log.Log() << "\nFinal program time " << program_timer.GetTimeString();
-    opensn::log.Log() << Timer::GetLocalDateTimeString() << " " << opensn::name
-                      << " finished execution of " << input_file_name_;
+    opensn::log.Log0Error() << "Could not open file " << opensn::input_path.string() << ".";
+    Exit(EXIT_FAILURE);
   }
 
   return error_code;

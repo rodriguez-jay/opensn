@@ -1,15 +1,14 @@
 #include "framework/lua.h"
-
-#include "framework/runtime.h"
-
-#include "framework/math/quadratures/angular_quadrature_base.h"
-
+#include "framework/math/quadratures/angular/angular_quadrature.h"
 #include "framework/logging/log.h"
-
-#include "quadratures_lua.h"
 #include "framework/console/console.h"
+#include "framework/runtime.h"
+#include "quadratures_lua.h"
 
-RegisterLuaFunctionAsIs(CreateCustomAngularQuadrature);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(CreateCustomAngularQuadrature, aquad, CreateCustomAngularQuadrature);
 
 int
 CreateCustomAngularQuadrature(lua_State* L)
@@ -78,3 +77,5 @@ CreateCustomAngularQuadrature(lua_State* L)
 
   return 1;
 }
+
+} // namespace opensnlua

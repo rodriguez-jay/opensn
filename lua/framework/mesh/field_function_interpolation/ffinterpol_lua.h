@@ -2,6 +2,9 @@
 
 #include "framework/lua.h"
 
+namespace opensnlua
+{
+
 /** Creates a new field function interpolation.
  *
  * \param FFITypeIndex int Type of field function interpolation.
@@ -86,15 +89,15 @@ int FFInterpolationCreate(lua_State* L);
  * function IntegrateMaterialVolume(ff_value,mat_id)
  *     return xwing
  * end
- * ffi2 = FFInterpolationCreate(VOLUME)
+ * ffi2 = fieldfunc.FFInterpolationCreate(VOLUME)
  * curffi = ffi2
- * FFInterpolationSetProperty(curffi,OPERATION,OP_SUM_LUA,"IntegrateMaterialVolume")
- * FFInterpolationSetProperty(curffi,LOGICAL_VOLUME,vol0)
- * FFInterpolationSetProperty(curffi,ADD_FIELDFUNCTION,fftemp)
+ * fieldfunc.SetProperty(curffi,OPERATION,OP_SUM_LUA,"IntegrateMaterialVolume")
+ * fieldfunc.SetProperty(curffi,LOGICAL_VOLUME,vol0)
+ * fieldfunc.SetProperty(curffi,ADD_FIELDFUNCTION,fftemp)
  *
- * FFInterpolationInitialize(curffi)
- * FFInterpolationExecute(curffi)
- * print(FFInterpolationGetValue(curffi))
+ * fieldfunc.Initialize(curffi)
+ * fieldfunc.Execute(curffi)
+ * print(fieldfunc.GetValue(curffi))
  * \endcode
  *
  * The code above will return 2.0 times the volume of cells included in the logical
@@ -151,3 +154,5 @@ int FFInterpolationExportPython(lua_State* L);
  * \author Jan
  */
 int FFInterpolationGetValue(lua_State* L);
+
+} // namespace opensnlua

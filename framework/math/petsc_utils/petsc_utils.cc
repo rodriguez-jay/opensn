@@ -94,59 +94,33 @@ InitMatrixSparsity(Mat& A, int64_t nodal_nnz_in_diag, int64_t nodal_nnz_off_diag
 }
 
 PETScSolverSetup
-CreateCommonKrylovSolverSetup(Mat ref_matrix,
-                              const std::string& in_solver_name,
-                              const std::string& in_solver_type,
-                              const std::string& in_preconditioner_type,
-                              double in_relative_residual_tolerance,
-                              int64_t in_maximum_iterations)
+CreateCommonKrylovSolverSetup(Mat matrix,
+                              const std::string& solver_name,
+                              const std::string& solver_type,
+                              const std::string& preconditioner_type,
+                              double rel_tol,
+                              double abs_tol,
+                              int64_t maximum_iterations)
 {
   PETScSolverSetup setup;
 
   KSPCreate(opensn::mpi_comm, &setup.ksp);
-  KSPSetOperators(setup.ksp, ref_matrix, ref_matrix);
-  KSPSetType(setup.ksp, in_solver_type.c_str());
+  KSPSetOperators(setup.ksp, matrix, matrix);
+  KSPSetType(setup.ksp, solver_type.c_str());
 
-  KSPSetOptionsPrefix(setup.ksp, in_solver_name.c_str());
+  KSPSetOptionsPrefix(setup.ksp, solver_name.c_str());
 
   KSPGetPC(setup.ksp, &setup.pc);
-  PCSetType(setup.pc, in_preconditioner_type.c_str());
+  PCSetType(setup.pc, preconditioner_type.c_str());
 
-  KSPSetTolerances(
-    setup.ksp, 1.e-50, in_relative_residual_tolerance, 1.0e50, in_maximum_iterations);
+  KSPSetTolerances(setup.ksp, rel_tol, abs_tol, 1.0e50, maximum_iterations);
   KSPSetInitialGuessNonzero(setup.ksp, PETSC_TRUE);
 
-  KSPSetConvergenceTest(setup.ksp, &RelativeResidualConvergenceTest, nullptr, nullptr);
   KSPSetFromOptions(setup.ksp);
 
   KSPMonitorSet(setup.ksp, &KSPMonitorRelativeToRHS, nullptr, nullptr);
 
   return setup;
-}
-
-PetscErrorCode
-RelativeResidualConvergenceTest(
-  KSP ksp, PetscInt, PetscReal rnorm, KSPConvergedReason* convergedReason, void*)
-{
-  // Compute rhs norm
-  Vec Rhs;
-  KSPGetRhs(ksp, &Rhs);
-  double rhs_norm;
-  VecNorm(Rhs, NORM_2, &rhs_norm);
-  if (rhs_norm < 1.0e-12)
-    rhs_norm = 1.0;
-
-  // Compute test criterion
-  double tol;
-  int64_t maxIts;
-  KSPGetTolerances(ksp, nullptr, &tol, nullptr, &maxIts);
-
-  double relative_residual = rnorm / rhs_norm;
-
-  if (relative_residual < tol)
-    *convergedReason = KSP_CONVERGED_RTOL;
-
-  return KSP_CONVERGED_ITERATING;
 }
 
 PetscErrorCode
@@ -179,29 +153,6 @@ KSPMonitorRelativeToRHS(KSP ksp, PetscInt n, PetscReal rnorm, void*)
   return 0;
 }
 
-PetscErrorCode
-KSPMonitorStraight(KSP ksp, PetscInt n, PetscReal rnorm, void*)
-{
-  // Get solver name
-  const char* ksp_name;
-  KSPGetOptionsPrefix(ksp, &ksp_name);
-
-  // Default to this if ksp_name is NULL
-  const char NONAME_SOLVER[] = "NoName-Solver\0";
-
-  if (ksp_name == nullptr)
-    ksp_name = NONAME_SOLVER;
-
-  // Print message
-  std::stringstream buff;
-  buff << ksp_name << " iteration " << std::setw(4) << n << " - Residual " << std::scientific
-       << std::setprecision(7) << rnorm << std::endl;
-
-  log.Log() << buff.str();
-
-  return 0;
-}
-
 void
 CopyVecToSTLvector(Vec x, std::vector<double>& data, size_t N, bool resize_STL)
 {
@@ -211,9 +162,9 @@ CopyVecToSTLvector(Vec x, std::vector<double>& data, size_t N, bool resize_STL)
     data.assign(N, 0.0);
   }
   else
-    ChiLogicalErrorIf(data.size() < N,
-                      "data.size() < N, " + std::to_string(data.size()) + " < " +
-                        std::to_string(N));
+    OpenSnLogicalErrorIf(data.size() < N,
+                         "data.size() < N, " + std::to_string(data.size()) + " < " +
+                           std::to_string(N));
 
   const double* x_ref;
   VecGetArrayRead(x, &x_ref);
@@ -232,9 +183,9 @@ CopyVecToSTLvectorWithGhosts(Vec x, std::vector<double>& data, size_t N, bool re
     data.assign(N, 0.0);
   }
   else
-    ChiLogicalErrorIf(data.size() != N,
-                      "data.size() != N, " + std::to_string(data.size()) + " < " +
-                        std::to_string(N));
+    OpenSnLogicalErrorIf(data.size() != N,
+                         "data.size() != N, " + std::to_string(data.size()) + " < " +
+                           std::to_string(N));
 
   auto info = GetGhostVectorLocalViewRead(x);
   const double* x_ref = info.x_localized_raw;

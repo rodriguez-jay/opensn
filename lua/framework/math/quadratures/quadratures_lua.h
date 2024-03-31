@@ -1,5 +1,8 @@
 #pragma once
 
+namespace opensnlua
+{
+
 /** Creates an angular quadrature.
  *
  * \param azimuthal_angles array A lua table with N entries each being an azimuthal
@@ -135,11 +138,13 @@ int GetProductQuadrature(lua_State* L);
  *  ###Example:
  *  Example:
  * \code
- * pquad = CreateProductQuadrature(GAUSS_LEGENDRE_CHEBYSHEV,2, 1)
- * OptimizeAngularQuadratureForPolarSymmetry(pqaud, 4.0*math.pi)
+ * pquad = aquad.CreateProductQuadrature(GAUSS_LEGENDRE_CHEBYSHEV,2, 1)
+ * aquad.OptimizeForPolarSymmetry(pquad, 4.0*math.pi)
  * \endcode
  *
  * \ingroup LuaQuadrature
  * \author Jan
  */
 int OptimizeAngularQuadratureForPolarSymmetry(lua_State* L);
+
+} // namespace opensnlua

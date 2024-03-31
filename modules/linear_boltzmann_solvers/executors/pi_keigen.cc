@@ -1,6 +1,6 @@
 #include "modules/linear_boltzmann_solvers/executors/pi_keigen.h"
 #include "framework/object_factory.h"
-#include "modules/linear_boltzmann_solvers/a_lbs_solver/iterative_methods/ags_linear_solver.h"
+#include "modules/linear_boltzmann_solvers/lbs_solver/iterative_methods/ags_linear_solver.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
 #include "framework/logging/log_exceptions.h"
@@ -69,7 +69,7 @@ XXPowerIterationKEigen::Initialize()
     auto context = wgs_solver->GetContext();
     auto wgs_context = std::dynamic_pointer_cast<lbs::WGSContext>(context);
 
-    ChiLogicalErrorIf(not wgs_context, ": Cast failed");
+    OpenSnLogicalErrorIf(not wgs_context, ": Cast failed");
 
     wgs_context->lhs_src_scope_.Unset(APPLY_WGS_FISSION_SOURCES); // lhs_scope
     wgs_context->rhs_src_scope_.Unset(APPLY_AGS_FISSION_SOURCES); // rhs_scope
@@ -80,7 +80,7 @@ XXPowerIterationKEigen::Initialize()
   front_wgs_solver_ = lbs_solver_.GetWGSSolvers().at(front_gs_.id_);
   front_wgs_context_ = std::dynamic_pointer_cast<lbs::WGSContext>(front_wgs_solver_->GetContext());
 
-  ChiLogicalErrorIf(not front_wgs_context_, ": Casting failure");
+  OpenSnLogicalErrorIf(not front_wgs_context_, ": Casting failure");
 
   if (reinit_phi_1_)
     lbs_solver_.SetPhiVectorScalarValues(phi_old_local_, 1.0);
@@ -163,8 +163,11 @@ XXPowerIterationKEigen::SetLBSFissionSource(const VecDbl& input, const bool addi
 {
   if (not additive)
     Set(q_moments_local_, 0.0);
-  active_set_source_function_(
-    front_gs_, q_moments_local_, input, APPLY_AGS_FISSION_SOURCES | APPLY_WGS_FISSION_SOURCES);
+  active_set_source_function_(front_gs_,
+                              q_moments_local_,
+                              input,
+                              lbs_solver_.DensitiesLocal(),
+                              APPLY_AGS_FISSION_SOURCES | APPLY_WGS_FISSION_SOURCES);
 }
 
 void
@@ -177,7 +180,8 @@ XXPowerIterationKEigen::SetLBSScatterSource(const VecDbl& input,
   SourceFlags source_flags = APPLY_AGS_SCATTER_SOURCES | APPLY_WGS_SCATTER_SOURCES;
   if (suppress_wg_scat)
     source_flags |= SUPPRESS_WG_SCATTER;
-  active_set_source_function_(front_gs_, q_moments_local_, input, source_flags);
+  active_set_source_function_(
+    front_gs_, q_moments_local_, input, lbs_solver_.DensitiesLocal(), source_flags);
 }
 
 } // namespace lbs

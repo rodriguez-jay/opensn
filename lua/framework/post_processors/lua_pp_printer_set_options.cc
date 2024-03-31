@@ -18,9 +18,10 @@ ParameterBlock PostProcessorPrinterSetOptions(const InputParameters& params);
 
 OpenSnRegisterSyntaxBlock(PostProcessorPrinterOptions, PostProcessorPrinterOptions);
 
-RegisterWrapperFunction(PostProcessorPrinterSetOptions,
-                        GetSyntax_PPPrinterSetOptions,
-                        PostProcessorPrinterSetOptions);
+RegisterWrapperFunctionNamespace(post,
+                                 SetPrinterOptions,
+                                 GetSyntax_PPPrinterSetOptions,
+                                 PostProcessorPrinterSetOptions);
 
 InputParameters
 PostProcessorPrinterOptions()
@@ -122,8 +123,8 @@ PostProcessorPrinterSetOptions(const InputParameters& params)
         else if (option == "horizontal")
           printer.SetScalarPPTableFormat(ScalarPPTableFormat::HORIZONTAL);
         else
-          ChiInvalidArgument("Unsupported format \"" + option +
-                             "\" specified for option \"scalar_pp_table_format\"");
+          OpenSnInvalidArgument("Unsupported format \"" + option +
+                                "\" specified for option \"scalar_pp_table_format\"");
 
         log.Log() << "PostProcessorPrinter scalar_pp_table_format set to " << option;
         break;
@@ -159,7 +160,7 @@ PostProcessorPrinterSetOptions(const InputParameters& params)
         printer.SetCSVFilename(param.GetValue<std::string>());
         break;
       default:
-        ChiInvalidArgument("Invalid option \"" + param.Name() + "\"");
+        OpenSnInvalidArgument("Invalid option \"" + param.Name() + "\"");
     } // switch
   }
   return ParameterBlock{};

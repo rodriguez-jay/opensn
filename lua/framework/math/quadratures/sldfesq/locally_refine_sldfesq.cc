@@ -1,16 +1,16 @@
 #include "framework/lua.h"
-
-#include "framework/runtime.h"
-
-#include "framework/math/quadratures/sldfesq/sldfe_sq.h"
-
-#include "framework/logging/log.h"
+#include "framework/math/quadratures/angular/sldfe_sq_quadrature.h"
 #include "framework/console/console.h"
+#include "framework/logging/log.h"
+#include "framework/runtime.h"
 #include "sldfe_lua.h"
 
 using namespace opensn;
 
-RegisterLuaFunctionAsIs(LocallyRefineSLDFESQAngularQuadrature);
+namespace opensnlua
+{
+
+RegisterLuaFunctionNamespace(LocallyRefineSLDFESQAngularQuadrature, aquad, LocallyRefineSLDFESQ);
 
 int
 LocallyRefineSLDFESQAngularQuadrature(lua_State* L)
@@ -83,3 +83,5 @@ LocallyRefineSLDFESQAngularQuadrature(lua_State* L)
 
   return 0;
 }
+
+} // namespace opensnlua
