@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/spds/cbc_spds.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/graphs/directed_graph.h"
 #include "framework/logging/log.h"
 #include "framework/utils/timer.h"
 #include "framework/runtime.h"
+#include "caliper/cali.h"
 
 namespace opensn
 {
@@ -16,6 +20,8 @@ CBC_SPDS::CBC_SPDS(const Vector3& omega,
                    bool verbose)
   : SPDS(omega, grid, verbose)
 {
+  CALI_CXX_MARK_SCOPE("CBC_SPDS::CBC_SPDS");
+
   log.Log0Verbose1() << program_timer.GetTimeString()
                      << " Building sweep ordering for Omega = " << omega.PrintS();
 

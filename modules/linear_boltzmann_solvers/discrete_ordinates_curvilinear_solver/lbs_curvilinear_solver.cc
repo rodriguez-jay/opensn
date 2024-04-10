@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_curvilinear_solver/lbs_curvilinear_solver.h"
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_curvilinear_solver/sweep_chunks/lbs_curvilinear_sweep_chunk_pwl.h"
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_discontinuous.h"
@@ -5,7 +8,6 @@
 #include "framework/math/quadratures/angular/spherical_quadrature.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/logging/log.h"
-#include "framework/memory_usage.h"
 #include "framework/object_factory.h"
 #include "framework/runtime.h"
 #include <iomanip>
@@ -377,8 +379,7 @@ DiscreteOrdinatesCurvilinearSolver::ComputeSecondaryUnitIntegrals()
     secondary_unit_cell_matrices_[cell.local_id_] = ComputeCellUnitIntegrals(cell);
 
   opensn::mpi_comm.barrier();
-  log.Log() << "Secondary Cell matrices computed.         Process memory = " << std::setprecision(3)
-            << GetMemoryUsageInMB() << " MB";
+  log.Log() << "Secondary Cell matrices computed.";
 }
 
 std::shared_ptr<SweepChunk>

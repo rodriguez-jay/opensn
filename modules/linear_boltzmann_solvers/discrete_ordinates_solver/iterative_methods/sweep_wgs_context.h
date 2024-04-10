@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/scheduler/sweep_scheduler.h"
@@ -14,6 +17,7 @@ struct SweepWGSContext : public WGSContext
 {
   std::shared_ptr<SweepChunk> sweep_chunk_;
   SweepScheduler sweep_scheduler_;
+  std::vector<double> sweep_times_;
 
   DiscreteOrdinatesSolver& lbs_ss_solver_;
 

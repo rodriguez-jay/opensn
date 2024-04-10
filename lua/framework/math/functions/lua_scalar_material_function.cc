@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "lua/framework/math/functions/lua_scalar_material_function.h"
 #include "framework/lua.h"
 #include "framework/runtime.h"
@@ -29,20 +32,7 @@ double
 LuaScalarMaterialFunction::Evaluate(double val, int mat_id) const
 {
   lua_State* L = console.GetConsoleState();
-  double ret_val = 0.0;
-
-  lua_getglobal(L, lua_function_name_.c_str());
-  lua_pushnumber(L, val);
-  lua_pushnumber(L, mat_id);
-
-  // 2 arguments, 1 result, 0=original error object
-  if (lua_pcall(L, 2, 1, 0) == 0)
-  {
-    ret_val = lua_tonumber(L, -1);
-  }
-  lua_pop(L, 1);
-
-  return ret_val;
+  return LuaCall<double>(L, lua_function_name_, val, mat_id);
 }
 
 } // namespace opensnlua

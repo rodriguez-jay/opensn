@@ -1,8 +1,10 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/executors/lbs_steady_state.h"
-
-#include "framework/object_factory.h"
-
 #include "modules/linear_boltzmann_solvers/lbs_solver/iterative_methods/ags_linear_solver.h"
+#include "framework/object_factory.h"
+#include "caliper/cali.h"
 
 namespace opensn
 {
@@ -38,12 +40,16 @@ SteadyStateSolver::SteadyStateSolver(const InputParameters& params)
 void
 SteadyStateSolver::Initialize()
 {
+  CALI_CXX_MARK_SCOPE("SteadyStateSolver::Initialize");
+
   lbs_solver_.Initialize();
 }
 
 void
 SteadyStateSolver::Execute()
 {
+  CALI_CXX_MARK_SCOPE("SteadyStateSolver::Execute");
+
   auto& ags_solver = *lbs_solver_.GetPrimaryAGSSolver();
 
   ags_solver.Setup();

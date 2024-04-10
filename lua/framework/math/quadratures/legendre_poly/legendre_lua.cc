@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "framework/lua.h"
 #include "framework/math/quadratures/angular/legendre_poly/legendrepoly.h"
 #include "framework/console/console.h"
@@ -15,45 +18,33 @@ RegisterLuaFunctionNamespace(Ylm, aquad, Ylm);
 int
 Legendre(lua_State* L)
 {
-  // Retrieve arguments
-  int N = lua_tonumber(L, 1);
-  double x = lua_tonumber(L, 2);
-
+  LuaCheckArgs<int, double>(L, "aquad.Legendre");
+  auto N = LuaArg<int>(L, 1);
+  auto x = LuaArg<double>(L, 2);
   double retval = opensn::Legendre(N, x);
-
-  lua_pushnumber(L, retval);
-  return 1;
+  return LuaReturn(L, retval);
 }
 
 int
 LegendreDerivative(lua_State* L)
 {
-  // Retrieve arguments
-  int N = lua_tonumber(L, 1);
-  double x = lua_tonumber(L, 2);
-
+  LuaCheckArgs<int, double>(L, "aquad.LegendreDerivative");
+  auto N = LuaArg<int>(L, 1);
+  auto x = LuaArg<double>(L, 2);
   double retval = dLegendredx(N, x);
-
-  lua_pushnumber(L, retval);
-  return 1;
+  return LuaReturn(L, retval);
 }
 
 int
 Ylm(lua_State* L)
 {
-  int num_args = lua_gettop(L);
-  if (num_args != 4)
-    LuaPostArgAmountError("Ylm", 4, num_args);
-
-  int ell = lua_tonumber(L, 1);
-  int m = lua_tonumber(L, 2);
-  double theta = lua_tonumber(L, 3);
-  double varphi = lua_tonumber(L, 4);
-
+  LuaCheckArgs<int, int, double, double>(L, "aquad.Ylm");
+  auto ell = LuaArg<int>(L, 1);
+  auto m = LuaArg<int>(L, 2);
+  auto theta = LuaArg<double>(L, 3);
+  auto varphi = LuaArg<double>(L, 4);
   double retval = opensn::Ylm(ell, m, varphi, theta);
-
-  lua_pushnumber(L, retval);
-  return 1;
+  return LuaReturn(L, retval);
 }
 
 } // namespace opensnlua

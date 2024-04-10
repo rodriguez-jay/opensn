@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "framework/interfaces/plugin.h"
 
 #include "framework/object_factory.h"
@@ -55,7 +58,7 @@ Plugin::Plugin(const InputParameters& params)
   opensn::log.Log0Verbose1() << "Loading plugin \"" << plugin_path_ << "\"";
   RegistryStatuses registry_statuses = GetStatusOfRegistries();
 
-  AssertReadibleFile(plugin_path_);
+  AssertReadableFile(plugin_path_);
   library_handle_ = dlopen(plugin_path_.c_str(), RTLD_LAZY);
 
   OpenSnLogicalErrorIf(not library_handle_, "Failure loading \"" + plugin_path_ + "\"");

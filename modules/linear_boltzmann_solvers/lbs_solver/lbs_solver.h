@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/boundary/sweep_boundary.h"
@@ -39,11 +42,6 @@ public:
   LBSSolver& operator=(const LBSSolver&) = delete;
 
   virtual ~LBSSolver() = default;
-
-  /**
-   * Returns the source event tag used for logging the time it takes to set source moments.
-   */
-  size_t GetSourceEventTag() const;
 
   /**
    * Returns the time at which the last restart was written.
@@ -526,7 +524,6 @@ protected:
   /**Initializes the Within-Group DSA solver. */
   void InitTGDSA(LBSGroupset& groupset);
 
-  size_t source_event_tag_ = 0;
   double last_restart_write_ = 0.0;
 
   lbs::Options options_;

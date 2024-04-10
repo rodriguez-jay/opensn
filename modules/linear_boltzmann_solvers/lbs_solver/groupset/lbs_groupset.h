@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/angle_aggregation/angle_aggregation.h"
@@ -43,7 +46,6 @@ public:
   int gmres_restart_intvl_ = 30;
 
   bool allow_cycles_ = false;
-  bool log_sweep_events_ = false;
 
   bool apply_wgdsa_ = false;
   bool apply_tgdsa_ = false;

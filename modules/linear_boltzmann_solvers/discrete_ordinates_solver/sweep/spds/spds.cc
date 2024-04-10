@@ -1,8 +1,12 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/spds/spds.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/logging/log.h"
 #include "framework/utils/timer.h"
 #include "framework/runtime.h"
+#include "caliper/cali.h"
 #include <algorithm>
 
 namespace opensn
@@ -13,6 +17,8 @@ namespace lbs
 int
 SPDS::MapLocJToPrelocI(int locJ) const
 {
+  CALI_CXX_MARK_SCOPE("SPDS::MapLocJToPrelocI");
+
   for (int i = 0; i < location_dependencies_.size(); i++)
   {
     if (location_dependencies_[i] == locJ)
@@ -37,6 +43,8 @@ SPDS::MapLocJToPrelocI(int locJ) const
 int
 SPDS::MapLocJToDeplocI(int locJ) const
 {
+  CALI_CXX_MARK_SCOPE("SPDS::MapLocJToDeploc");
+
   for (int i = 0; i < location_successors_.size(); i++)
   {
     if (location_successors_[i] == locJ)
@@ -56,6 +64,8 @@ SPDS::PopulateCellRelationships(const Vector3& omega,
                                 std::set<int>& location_successors,
                                 std::vector<std::set<std::pair<int, double>>>& cell_successors)
 {
+  CALI_CXX_MARK_SCOPE("SPDS::PopulateCellRelationships");
+
   constexpr double tolerance = 1.0e-16;
 
   constexpr auto FOPARALLEL = FaceOrientation::PARALLEL;

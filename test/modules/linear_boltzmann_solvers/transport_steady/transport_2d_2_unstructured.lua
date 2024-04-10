@@ -66,7 +66,7 @@ mat.SetProperty(materials[2], ISOTROPIC_MG_SOURCE, FROM_ARRAY, src)
 
 --############################################### Setup Physics
 pquad0 = aquad.CreateProductQuadrature(GAUSS_LEGENDRE_CHEBYSHEV, 8, 4)
-aquad.OptimizeForPolarSymmetry(pquad, 4.0*math.pi)
+aquad.OptimizeForPolarSymmetry(pquad0, 4.0*math.pi)
 
 lbs_block =
 {
@@ -128,7 +128,7 @@ fflist,count = lbs.GetScalarFieldFunctionList(phys1)
 
 --############################################### Slice plot
 slice2 = fieldfunc.FFInterpolationCreate(SLICE)
-fieldfunc.SetProperty(slice2,SLICE_POINT,0.0,0.0,0.025)
+fieldfunc.SetProperty(slice2,SLICE_POINT,{x = 0.0, y = 0.0, z = 0.025})
 fieldfunc.SetProperty(slice2,ADD_FIELDFUNCTION,fflist[1])
 
 fieldfunc.Initialize(slice2)

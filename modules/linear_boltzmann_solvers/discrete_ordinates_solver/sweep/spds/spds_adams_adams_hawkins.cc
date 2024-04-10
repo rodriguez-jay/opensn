@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/spds/spds_adams_adams_hawkins.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/graphs/directed_graph.h"
 #include "framework/logging/log.h"
 #include "framework/utils/timer.h"
 #include "framework/runtime.h"
+#include "caliper/cali.h"
 #include <algorithm>
 
 namespace opensn
@@ -17,6 +21,8 @@ SPDS_AdamsAdamsHawkins::SPDS_AdamsAdamsHawkins(const Vector3& omega,
                                                bool verbose)
   : SPDS(omega, grid, verbose)
 {
+  CALI_CXX_MARK_SCOPE("SPDS_AdamsAdamsHawkins::SPDS_AdamsAdamsHawkins");
+
   log.Log0Verbose1() << program_timer.GetTimeString()
                      << " Building sweep ordering for Omega = " << omega.PrintS();
 
@@ -110,6 +116,7 @@ void
 SPDS_AdamsAdamsHawkins::BuildTaskDependencyGraph(
   const std::vector<std::vector<int>>& global_dependencies, bool cycle_allowance_flag)
 {
+  CALI_CXX_MARK_SCOPE("SPDS_AdamsAdamsHawkins::BuildTaskDependencyGraph");
 
   std::vector<std::pair<int, int>> edges_to_remove;
   std::vector<int> raw_edges_to_remove;

@@ -1,8 +1,10 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_adjoint_solver/lbs_adj_solver.h"
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_adjoint_solver/lbs_adjoint.h"
 #include "modules/linear_boltzmann_solvers/lbs_solver/iterative_methods/ags_linear_solver.h"
 #include "modules/linear_boltzmann_solvers/lbs_solver/source_functions/source_function.h"
-
 #include "framework/physics/physics_material/multi_group_xs/adjoint_mgxs.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/mesh/logical_volume/logical_volume.h"
@@ -79,8 +81,6 @@ DiscreteOrdinatesAdjointSolver::Initialize()
     InitTGDSA(groupset);
   }
   InitializeSolverSchemes();
-
-  source_event_tag_ = log.GetRepeatingEventTag("Set Source");
 }
 
 void

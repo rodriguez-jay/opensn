@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "framework/lua.h"
 #include "framework/data_types/varying.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
@@ -62,7 +65,7 @@ MeshSetupOrthogonalBoundaries(lua_State* L)
   opensn::mpi_comm.barrier();
   opensn::log.Log() << program_timer.GetTimeString() << " Done setting orthogonal boundaries.";
 
-  return 0;
+  return LuaReturn(L);
 }
 
 } // namespace opensnlua

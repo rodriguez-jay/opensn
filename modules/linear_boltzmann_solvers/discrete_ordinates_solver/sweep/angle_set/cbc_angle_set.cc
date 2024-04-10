@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/angle_set/cbc_angle_set.h"
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/communicators/cbc_async_comm.h"
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/spds/cbc_spds.h"
@@ -6,6 +9,7 @@
 #include "framework/math/math_range.h"
 #include "framework/logging/log.h"
 #include "framework/runtime.h"
+#include "caliper/cali.h"
 
 namespace opensn
 {
@@ -33,10 +37,10 @@ CBC_AngleSet::GetCommunicator()
 }
 
 AngleSetStatus
-CBC_AngleSet::AngleSetAdvance(SweepChunk& sweep_chunk,
-                              const std::vector<size_t>& timing_tags,
-                              AngleSetStatus permission)
+CBC_AngleSet::AngleSetAdvance(SweepChunk& sweep_chunk, AngleSetStatus permission)
 {
+  CALI_CXX_MARK_SCOPE("CBC_AngleSet::AngleSetAdvance");
+
   typedef AngleSetStatus Status;
 
   if (executed_)
@@ -70,13 +74,11 @@ CBC_AngleSet::AngleSetAdvance(SweepChunk& sweep_chunk,
         all_tasks_completed = false;
       if (cell_task.num_dependencies_ == 0 and not cell_task.completed_)
       {
-        log.LogEvent(timing_tags[0], Logger::EventType::EVENT_BEGIN);
         sweep_chunk.SetCell(cell_task.cell_ptr_, *this);
         sweep_chunk.Sweep(*this);
 
         for (uint64_t local_task_num : cell_task.successors_)
           --current_task_list_[local_task_num].num_dependencies_;
-        log.LogEvent(timing_tags[0], Logger::EventType::EVENT_END);
 
         cell_task.completed_ = true;
         a_task_executed = true;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "framework/console/console.h"
 
 #include "framework/lua.h"
@@ -17,17 +20,14 @@ RegisterLuaFunctionAsIs(Sleep);
 int
 Sleep(lua_State* L)
 {
-  const std::string fname = __FUNCTION__;
-  const int num_args = lua_gettop(L);
-  if (num_args != 1)
-    LuaPostArgAmountError(fname, 1, num_args);
+  const std::string fname = "Sleep";
+  LuaCheckArgs<int64_t>(L, fname);
 
-  LuaCheckIntegerValue(fname, L, 1);
-  const int64_t time_to_sleep = lua_tointeger(L, 1);
+  const auto time_to_sleep = LuaArg<int64_t>(L, 1);
 
   opensn::Sleep(std::chrono::milliseconds(time_to_sleep));
 
-  return 0;
+  return LuaReturn(L);
 }
 
 } // namespace opensnlua

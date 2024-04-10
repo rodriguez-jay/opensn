@@ -1,8 +1,12 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/boundary/arbitrary_boundary.h"
 #include "framework/math/quadratures/angular/angular_quadrature.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/logging/log.h"
 #include "framework/runtime.h"
+#include "caliper/cali.h"
 
 namespace opensn
 {
@@ -32,6 +36,8 @@ ArbitraryBoundary::PsiIncoming(uint64_t cell_local_id,
 void
 ArbitraryBoundary::Setup(const MeshContinuum& grid, const AngularQuadrature& quadrature)
 {
+  CALI_CXX_MARK_SCOPE("ArbitraryBoundary::Setup");
+
   const size_t num_local_cells = grid.local_cells.size();
   local_cell_data_.clear();
   local_cell_data_.reserve(num_local_cells);

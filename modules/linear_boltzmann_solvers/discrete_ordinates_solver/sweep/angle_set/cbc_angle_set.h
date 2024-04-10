@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/angle_set/angle_set.h"
@@ -36,9 +39,7 @@ public:
 
   void SetMaxBufferMessages(int new_max) override {}
 
-  AngleSetStatus AngleSetAdvance(SweepChunk& sweep_chunk,
-                                 const std::vector<size_t>& timing_tags,
-                                 AngleSetStatus permission) override;
+  AngleSetStatus AngleSetAdvance(SweepChunk& sweep_chunk, AngleSetStatus permission) override;
 
   AngleSetStatus FlushSendBuffers() override
   {

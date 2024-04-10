@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include <iostream>
@@ -21,7 +24,7 @@ public:
   {
   }
 
-  /** Flushes the broken-up/headered stream to the output.*/
+  /** Flushes stream.*/
   virtual ~LogStream();
 
   LogStream(const LogStream& other)

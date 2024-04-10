@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "framework/console/console.h"
 
 #include "framework/lua.h"
@@ -25,8 +28,7 @@ ProgramTime(lua_State* L)
 
   opensn::mpi_comm.broadcast(time, 0);
 
-  lua_pushnumber(L, time);
-  return 1;
+  return LuaReturn(L, time);
 }
 
 } // namespace opensnlua

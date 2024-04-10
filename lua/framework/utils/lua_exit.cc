@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "framework/console/console.h"
 
 #include "framework/lua.h"
@@ -18,17 +21,9 @@ RegisterLuaFunctionAsIs(Exit);
 int
 Exit(lua_State* L)
 {
-  const int num_args = lua_gettop(L);
-
-  int return_code = EXIT_SUCCESS;
-  if (num_args >= 1)
-  {
-    LuaCheckIntegerValue(__FUNCTION__, L, 1);
-    return_code = lua_tointeger(L, 1);
-  }
-
+  auto return_code = LuaArgOptional<int>(L, 1, EXIT_SUCCESS);
   opensn::Exit(return_code);
-  return 0;
+  return LuaReturn(L);
 }
 
 } // namespace opensnlua

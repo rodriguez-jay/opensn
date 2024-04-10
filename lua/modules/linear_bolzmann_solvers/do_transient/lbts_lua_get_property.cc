@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_transient_solver/lbts_transient_solver.h"
 
 #if 0
@@ -43,7 +46,6 @@ LBTSGetProperty(lua_State* L)
   if (num_args < 2) LuaPostArgAmountError(fname, 2, num_args);
 
   // Get the solver
-  LuaCheckNilValue(fname, L, 1);
   const int solver_handle = lua_tointeger(L, 1);
 
   auto& solver =

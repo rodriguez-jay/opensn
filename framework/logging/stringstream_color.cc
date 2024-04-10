@@ -1,5 +1,7 @@
-#include "framework/logging/stringstream_color.h"
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
 
+#include "framework/logging/stringstream_color.h"
 #include "framework/runtime.h"
 
 namespace opensn

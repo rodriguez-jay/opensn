@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "lua/framework/lua.h"
 
 #include "framework/logging/log.h"
@@ -87,45 +90,4 @@ LuaSourceInfo(lua_State* L, const char* func_name)
   ret_str << func_name << " " << err_info.source << " line " << err_info.currentline;
 
   return ret_str.str();
-}
-
-void
-LuaPopulateVectorFrom1DArray(const std::string& func_name,
-                             lua_State* L,
-                             int table_arg_index,
-                             std::vector<double>& vec)
-{
-  LuaCheckTableValue(func_name, L, table_arg_index);
-
-  // Get the table as map
-  std::map<int, double> vec_map;
-  lua_pushnil(L);
-  while (lua_next(L, table_arg_index) != 0)
-  {
-    if (not lua_isinteger(L, -2))
-      goto invalid_table;
-    if (not lua_isnumber(L, -1))
-      goto invalid_table;
-    int key = lua_tonumber(L, -2);
-    double val = lua_tonumber(L, -1);
-
-    vec_map[key] = val;
-
-    lua_pop(L, 1);
-  }
-
-  // Populate vector
-  {
-    const size_t vec_size = vec_map.size();
-    vec.clear();
-    vec.resize(vec_size, 0.0);
-
-    for (auto v_i : vec_map)
-      vec.at(v_i.first - 1) = v_i.second;
-
-    return;
-  }
-
-invalid_table:
-  throw std::invalid_argument("Invalid table used in call to " + func_name);
 }

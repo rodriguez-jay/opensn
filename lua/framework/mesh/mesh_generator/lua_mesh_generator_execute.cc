@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "framework/lua.h"
 
 #include "framework/mesh/mesh_generator/mesh_generator.h"
@@ -18,20 +21,14 @@ RegisterLuaFunctionNamespace(MeshGeneratorExecute, mesh::MeshGenerator, Execute)
 int
 MeshGeneratorExecute(lua_State* L)
 {
-  const std::string fname = __FUNCTION__;
-  const int num_args = lua_gettop(L);
-  if (num_args != 1)
-    LuaPostArgAmountError(fname, 1, num_args);
+  const std::string fname = "mesh.MeshGenerator.Execute";
+  LuaCheckArgs<size_t>(L, fname);
 
-  LuaCheckNilValue(fname, L, 1);
-  LuaCheckIntegerValue(fname, L, 1);
-
-  const size_t handle = lua_tointeger(L, 1);
-
+  auto handle = LuaArg<size_t>(L, 1);
   auto& generator = opensn::GetStackItem<MeshGenerator>(opensn::object_stack, handle, fname);
   generator.Execute();
 
-  return 0;
+  return LuaReturn(L);
 }
 
 } // namespace opensnlua

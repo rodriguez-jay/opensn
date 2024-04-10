@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "framework/lua.h"
 #include "framework/math/quadratures/angular/angular_quadrature.h"
 #include "framework/console/console.h"
@@ -17,16 +20,11 @@ RegisterLuaFunctionNamespace(OptimizeAngularQuadratureForPolarSymmetry,
 int
 OptimizeAngularQuadratureForPolarSymmetry(lua_State* L)
 {
-  const std::string fname = __FUNCTION__;
-  const int num_args = lua_gettop(L);
+  const std::string fname = "aquad.OptimizeForPolarSymmetry";
+  LuaCheckArgs<int>(L, fname);
 
-  if (num_args < 1)
-    LuaPostArgAmountError(fname, 1, num_args);
-
-  const int handle = lua_tointeger(L, 1);
-  double normalization = -1.0;
-  if (num_args == 2)
-    normalization = lua_tonumber(L, 2);
+  const auto handle = LuaArg<int>(L, 1);
+  auto normalization = LuaArgOptional<double>(L, 2, -1.0);
 
   auto& quadrature =
     opensn::GetStackItem<AngularQuadrature>(opensn::angular_quadrature_stack, handle, fname);
@@ -37,7 +35,7 @@ OptimizeAngularQuadratureForPolarSymmetry(lua_State* L)
 
   quadrature.OptimizeForPolarSymmetry(normalization);
 
-  return 0;
+  return LuaReturn(L);
 }
 
 } // namespace opensnlua

@@ -1,6 +1,12 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #pragma once
 
 #include "framework/lua.h"
+
+namespace opensnlua
+{
 
 /**
  * Sets all cell-material id's to the supplied value.
@@ -43,3 +49,5 @@ int MeshSetBoundaryIDFromLuaFunction(lua_State* L);
  * Set specified boundary IDs using a LogicalVolume
  */
 int MeshSetBoundaryIDFromLogicalVolume(lua_State* L);
+
+} // namespace opensnlua

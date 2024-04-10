@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2024 The OpenSn Authors <https://open-sn.github.io/opensn/>
+// SPDX-License-Identifier: MIT
+
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/fluds/cbc_fluds.h"
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/sweep/spds/spds.h"
 #include "framework/math/spatial_discretization/spatial_discretization.h"
@@ -38,7 +41,6 @@ const double*
 CBC_FLUDS::GetLocalCellUpwindPsi(const std::vector<double>& psi_data_block, const Cell& cell)
 {
   const auto dof_map = sdm_.MapDOFLocal(cell, 0, psi_uk_man_, 0, 0);
-
   return &psi_data_block[dof_map];
 }
 
@@ -54,7 +56,6 @@ CBC_FLUDS::GetNonLocalUpwindPsi(const std::vector<double>& psi_data,
                                 unsigned int angle_set_index)
 {
   const size_t dof_map = face_node_mapped * num_groups_and_angles_ + angle_set_index * num_groups_;
-
   return &psi_data[dof_map];
 }
 
