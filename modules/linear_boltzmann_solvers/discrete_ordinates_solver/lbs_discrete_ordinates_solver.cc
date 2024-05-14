@@ -534,7 +534,7 @@ DiscreteOrdinatesSolver::ReorientAdjointSolution()
         for (int jdir = 0; jdir < num_gs_angles; ++jdir)
         {
           // Angles are opposite if their sum is zero
-          const auto sum = grid_ptr_->Attributes() & DIMENSION_1
+          const auto sum = grid_ptr_->Dimension() == 1
                              ? Vector3(0.0, 0.0, omegas[idir].z + omegas[jdir].z)
                              : omegas[idir] + omegas[jdir];
           const bool opposite = sum.NormSquare() < 1.0e-8;
@@ -735,14 +735,14 @@ DiscreteOrdinatesSolver::ComputeBalance()
   double globl_gain = globl_balance_table.at(5);
 
   log.Log() << "Balance table:\n"
-            << std::setprecision(5) << std::scientific
-            << " Absorption rate              = " << globl_absorption << "\n"
-            << " Production rate              = " << globl_production << "\n"
-            << " In-flow rate                 = " << globl_in_flow << "\n"
-            << " Out-flow rate                = " << globl_out_flow << "\n"
-            << " Net Gain (In-flow + sources) = " << globl_gain << "\n"
-            << " Net Balance                  = " << globl_balance << "\n"
-            << " (Net Balance)/(Net Gain)     = " << globl_balance / globl_gain << "\n";
+            << std::setprecision(6) << std::scientific
+            << " Absorption rate             = " << globl_absorption << "\n"
+            << " Production rate             = " << globl_production << "\n"
+            << " In-flow rate                = " << globl_in_flow << "\n"
+            << " Out-flow rate               = " << globl_out_flow << "\n"
+            << " Gain (In-flow + Production) = " << globl_gain << "\n"
+            << " Balance (Gain - Loss)       = " << globl_balance << "\n"
+            << " Balance/Gain, in %          = " << globl_balance / globl_gain * 100. << "\n";
 
   log.Log() << "\n********** Done computing balance\n";
 
@@ -1042,10 +1042,10 @@ DiscreteOrdinatesSolver::AssociateSOsAndDirections(const MeshContinuum& grid,
     {
       // Check geometry types
       const auto grid_attribs = grid.Attributes();
-      if (not(grid_attribs & ORTHOGONAL or grid_attribs & DIMENSION_2 or grid_attribs & EXTRUDED))
+      if (not(grid_attribs & ORTHOGONAL or grid.Dimension() == 2 or grid_attribs & EXTRUDED))
         throw std::logic_error(
           fname + ": The simulation is using polar angle aggregation for which only certain "
-                  "geometry types are supported, i.e., ORTHOGONAL, DIMENSION_2 or 3D EXTRUDED.");
+                  "geometry types are supported, i.e., ORTHOGONAL, 2D or 3D EXTRUDED.");
 
       // Check quadrature type
       const auto quad_type = quadrature.type_;

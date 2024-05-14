@@ -70,8 +70,8 @@ MeshGenerator::MeshGenerator(const InputParameters& params)
   partitioner_ = &GetStackItem<GraphPartitioner>(object_stack, partitioner_handle, __FUNCTION__);
 }
 
-std::unique_ptr<UnpartitionedMesh>
-MeshGenerator::GenerateUnpartitionedMesh(std::unique_ptr<UnpartitionedMesh> input_umesh)
+std::shared_ptr<UnpartitionedMesh>
+MeshGenerator::GenerateUnpartitionedMesh(std::shared_ptr<UnpartitionedMesh> input_umesh)
 {
   return input_umesh;
 }
@@ -81,34 +81,47 @@ MeshGenerator::Execute()
 {
   // Execute all input generators
   // Note these could be empty
-  std::unique_ptr<UnpartitionedMesh> current_umesh = nullptr;
+  std::shared_ptr<UnpartitionedMesh> current_umesh = nullptr;
   for (auto mesh_generator_ptr : inputs_)
   {
-    auto new_umesh = mesh_generator_ptr->GenerateUnpartitionedMesh(std::move(current_umesh));
-    current_umesh = std::move(new_umesh);
+    auto new_umesh = mesh_generator_ptr->GenerateUnpartitionedMesh(current_umesh);
+    current_umesh = new_umesh;
   }
 
   // Generate final umesh and convert it
-  current_umesh = GenerateUnpartitionedMesh(std::move(current_umesh));
+  current_umesh = GenerateUnpartitionedMesh(current_umesh);
 
+  auto num_partitions = opensn::mpi_comm.size();
   std::vector<int64_t> cell_pids;
   if (opensn::mpi_comm.rank() == 0)
-    cell_pids = PartitionMesh(*current_umesh, opensn::mpi_comm.size());
-
+    cell_pids = PartitionMesh(*current_umesh, num_partitions);
   BroadcastPIDs(cell_pids, 0, mpi_comm);
+
+  std::vector<size_t> partI_num_cells(num_partitions, 0);
+  for (int64_t pid : cell_pids)
+    partI_num_cells[pid] += 1;
+
+  size_t max_num_cells = partI_num_cells.front();
+  size_t min_num_cells = partI_num_cells.front();
+  size_t avg_num_cells = 0;
+  for (size_t count : partI_num_cells)
+  {
+    max_num_cells = std::max(max_num_cells, count);
+    min_num_cells = std::min(min_num_cells, count);
+    avg_num_cells += count;
+  }
+  avg_num_cells /= num_partitions;
+
+  if (opensn::mpi_comm.rank() == 0)
+    log.Log() << "Number of cells per partition (max,min,avg) = " << max_num_cells << ","
+              << min_num_cells << "," << avg_num_cells;
+  if (min_num_cells == 0)
+    throw std::runtime_error("Partitioning failed. At least one partition contains no cells.");
 
   auto grid_ptr = SetupMesh(std::move(current_umesh), cell_pids);
   mesh_stack.push_back(grid_ptr);
 
   opensn::mpi_comm.barrier();
-}
-
-void
-MeshGenerator::SetGridAttributes(MeshContinuum& grid,
-                                 MeshAttributes new_attribs,
-                                 std::array<size_t, 3> ortho_cells_per_dimension)
-{
-  grid.SetAttributes(new_attribs, ortho_cells_per_dimension);
 }
 
 void
@@ -151,7 +164,7 @@ MeshGenerator::ComputeAndPrintStats(const MeshContinuum& grid)
 std::vector<int64_t>
 MeshGenerator::PartitionMesh(const UnpartitionedMesh& input_umesh, int num_partitions)
 {
-  const auto& raw_cells = input_umesh.GetRawCells();
+  const auto& raw_cells = input_umesh.RawCells();
   const size_t num_raw_cells = raw_cells.size();
 
   OpenSnLogicalErrorIf(num_raw_cells == 0, "No cells in final input mesh");
@@ -177,46 +190,28 @@ MeshGenerator::PartitionMesh(const UnpartitionedMesh& input_umesh, int num_parti
     }
   }
 
-  // Note A: We do not add the diagonal here. If we do it, ParMETIS seems
+  // Note A: We do not add the diagonal here. If we do, ParMETIS seems
   // to produce sub-optimal partitions
 
   // Execute partitioner
   std::vector<int64_t> cell_pids =
     partitioner_->Partition(cell_graph, cell_centroids, num_partitions);
 
-  std::vector<size_t> partI_num_cells(num_partitions, 0);
-  for (int64_t pid : cell_pids)
-    partI_num_cells[pid] += 1;
-
-  size_t max_num_cells = partI_num_cells.front();
-  size_t min_num_cells = partI_num_cells.front();
-  size_t avg_num_cells = 0;
-  for (size_t count : partI_num_cells)
-  {
-    max_num_cells = std::max(max_num_cells, count);
-    min_num_cells = std::min(min_num_cells, count);
-    avg_num_cells += count;
-  }
-  avg_num_cells /= num_partitions;
-
-  log.Log() << "Partitioner num_cells allocated max,min,avg = " << max_num_cells << ","
-            << min_num_cells << "," << avg_num_cells;
-
   return cell_pids;
 }
 
 std::shared_ptr<MeshContinuum>
-MeshGenerator::SetupMesh(std::unique_ptr<UnpartitionedMesh> input_umesh_ptr,
+MeshGenerator::SetupMesh(std::shared_ptr<UnpartitionedMesh> input_umesh,
                          const std::vector<int64_t>& cell_pids)
 {
   // Convert mesh
   auto grid_ptr = MeshContinuum::New();
 
-  grid_ptr->GetBoundaryIDMap() = input_umesh_ptr->GetMeshOptions().boundary_id_map;
+  grid_ptr->GetBoundaryIDMap() = input_umesh->BoundaryIDMap();
 
-  auto& vertex_subs = input_umesh_ptr->GetVertextCellSubscriptions();
+  auto& vertex_subs = input_umesh->GetVertextCellSubscriptions();
   size_t cell_globl_id = 0;
-  for (auto& raw_cell : input_umesh_ptr->GetRawCells())
+  for (auto& raw_cell : input_umesh->RawCells())
   {
     if (CellHasLocalScope(
           opensn::mpi_comm.rank(), *raw_cell, cell_globl_id, vertex_subs, cell_pids))
@@ -224,10 +219,10 @@ MeshGenerator::SetupMesh(std::unique_ptr<UnpartitionedMesh> input_umesh_ptr,
       auto cell = SetupCell(*raw_cell,
                             cell_globl_id,
                             cell_pids[cell_globl_id],
-                            STLVertexListHelper(input_umesh_ptr->GetVertices()));
+                            STLVertexListHelper(input_umesh->Vertices()));
 
       for (uint64_t vid : cell->vertex_ids_)
-        grid_ptr->vertices.Insert(vid, input_umesh_ptr->GetVertices()[vid]);
+        grid_ptr->vertices.Insert(vid, input_umesh->Vertices()[vid]);
 
       grid_ptr->cells.push_back(std::move(cell));
     }
@@ -238,13 +233,11 @@ MeshGenerator::SetupMesh(std::unique_ptr<UnpartitionedMesh> input_umesh_ptr,
     ++cell_globl_id;
   } // for raw_cell
 
-  SetGridAttributes(*grid_ptr,
-                    input_umesh_ptr->GetMeshAttributes(),
-                    {input_umesh_ptr->GetMeshOptions().ortho_Nx,
-                     input_umesh_ptr->GetMeshOptions().ortho_Ny,
-                     input_umesh_ptr->GetMeshOptions().ortho_Nz});
+  grid_ptr->SetDimension(input_umesh->Dimension());
+  grid_ptr->SetAttributes(input_umesh->Attributes());
+  grid_ptr->SetOrthoAttributes(input_umesh->OrthoAttributes());
 
-  grid_ptr->SetGlobalVertexCount(input_umesh_ptr->GetVertices().size());
+  grid_ptr->SetGlobalVertexCount(input_umesh->Vertices().size());
 
   ComputeAndPrintStats(*grid_ptr);
 

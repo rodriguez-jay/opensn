@@ -263,15 +263,16 @@ SurfaceMesh::UpdateInternalConnectivity()
 int
 SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const Vector3& transform)
 {
+  const std::string fname = "SurfaceMesh::ImportFromOBJFile";
 
   // Opening the file
   std::ifstream file;
   file.open(fileName);
   if (not file.is_open())
   {
-    log.LogAllError() << "Failed to open file: " << fileName << " in call "
-                      << "to ImportFromOBJFile \n";
-    Exit(EXIT_FAILURE);
+    std::ostringstream oss;
+    oss << fname << ": Failed to open file: " << fileName;
+    throw std::runtime_error(oss.str());
   }
   log.Log() << "Loading surface mesh with transform " << transform.PrintStr();
 
@@ -567,14 +568,12 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
           int* side_indices = new int[4];
 
           side_indices[0] = newFace->v_indices[v];
-          side_indices[1] = newFace->v_indices[v + 1];
+          if ((v + 1) >= newFace->v_indices.size())
+            side_indices[1] = newFace->v_indices[0];
+          else
+            side_indices[1] = newFace->v_indices[v + 1];
           side_indices[2] = -1;
           side_indices[3] = -1;
-
-          if ((v + 1) >= newFace->v_indices.size())
-          {
-            side_indices[1] = newFace->v_indices[0];
-          }
 
           newFace->edges.push_back(side_indices);
         }
@@ -690,6 +689,8 @@ SurfaceMesh::ImportFromOBJFile(const std::string& fileName, bool as_poly, const 
 int
 SurfaceMesh::ImportFromTriangleFiles(const char* fileName, bool as_poly = false)
 {
+  const std::string fname = "SurfaceMesh::ImportFromTriangleFiles";
+
   std::string node_filename = std::string(fileName) + std::string(".1.node");
   std::string tria_filename = std::string(fileName) + std::string(".1.ele");
 
@@ -698,9 +699,9 @@ SurfaceMesh::ImportFromTriangleFiles(const char* fileName, bool as_poly = false)
   file.open(node_filename);
   if (not file.is_open())
   {
-    log.LogAllError() << "Failed to open file: " << node_filename << " in call "
-                      << "to ImportFromOBJFile \n";
-    Exit(EXIT_FAILURE);
+    std::ostringstream oss;
+    oss << fname << ": Failed to open file: " << node_filename;
+    throw std::runtime_error(oss.str());
   }
 
   int num_verts;
@@ -723,9 +724,9 @@ SurfaceMesh::ImportFromTriangleFiles(const char* fileName, bool as_poly = false)
   file.open(tria_filename);
   if (not file.is_open())
   {
-    log.LogAllError() << "Failed to open file: " << tria_filename << " in call "
-                      << "to ImportFromOBJFile \n";
-    Exit(EXIT_FAILURE);
+    std::ostringstream oss;
+    oss << fname << ": Failed to open file: " << tria_filename;
+    throw std::runtime_error(oss.str());
   }
 
   int num_tris;
@@ -936,6 +937,8 @@ SurfaceMesh::CreateFromDivisions(std::vector<double>& vertices_1d_x,
 int
 SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
 {
+  const std::string fname = "SurfaceMesh::ImportFromMshFiles";
+
   const std::string node_section_name = "$Nodes";
   const std::string elements_section_name = "$Elements";
 
@@ -947,9 +950,9 @@ SurfaceMesh::ImportFromMshFiles(const char* fileName, bool as_poly = false)
 
   if (not file.is_open())
   {
-    log.LogAllError() << "Failed to open file: " << fileName << " in call "
-                      << "to ImportFromMshFiles \n";
-    Exit(EXIT_FAILURE);
+    std::ostringstream oss;
+    oss << fname << ": Failed to open file: " << fileName;
+    throw std::runtime_error(oss.str());
   }
 
   // Find section with node information and then read information

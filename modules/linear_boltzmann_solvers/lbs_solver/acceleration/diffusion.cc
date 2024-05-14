@@ -5,7 +5,6 @@
 #include "framework/math/spatial_discretization/spatial_discretization.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/math/petsc_utils/petsc_utils.h"
-#include "framework/physics/physics_namespace.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
 
@@ -171,9 +170,9 @@ DiffusionSolver::Initialize()
                                          "pc_hypre_boomeramg_coarsen_type HMIS",
                                          "pc_hypre_boomeramg_interp_type ext+i"};
 
-  if (grid_.Attributes() & DIMENSION_2)
+  if (grid_.Dimension() == 2)
     pc_options.emplace_back("pc_hypre_boomeramg_strong_threshold 0.6");
-  if (grid_.Attributes() & DIMENSION_3)
+  else if (grid_.Dimension() == 3)
     pc_options.emplace_back("pc_hypre_boomeramg_strong_threshold 0.8");
 
   for (const auto& option : pc_options)

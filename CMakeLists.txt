@@ -7,6 +7,7 @@ project(opensn
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 
 include(CMakePackageConfigHelpers)
@@ -36,6 +37,7 @@ option(OPENSN_WITH_LUA "Build with lua support" ON)
 
 # dependencies
 find_package(MPI REQUIRED)
+find_package(HDF5 REQUIRED COMPONENTS C HL)
 
 if(OPENSN_WITH_LUA)
     find_package(Lua 5.3 REQUIRED)
@@ -113,6 +115,8 @@ elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
     list(APPEND OPENSN_CXX_FLAGS "-Wno-unused-variable")
     list(APPEND OPENSN_CXX_FLAGS "-Wno-sign-compare")
     list(APPEND OPENSN_CXX_FLAGS "-Wno-psabi")
+elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Intel")
+    list(APPEND OPENSN_CXX_FLAGS "-fp-model=precise")
 else()
     message(WARNING "Untested compiler : ${CMAKE_CXX_COMPILER_ID}")
 endif()
@@ -133,9 +137,10 @@ target_include_directories(libopensn
     ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/external
     PUBLIC
-    ${LUA_INCLUDE_DIR}
-    ${PETSC_INCLUDE_DIR}
-    ${caliper_INCLUDE_DIR}
+    $<BUILD_INTERFACE:${LUA_INCLUDE_DIR}>
+    $<BUILD_INTERFACE:${HDF5_INCLUDE_DIRS}>
+    $<BUILD_INTERFACE:${caliper_INCLUDE_DIR}>
+    $<BUILD_INTERFACE:${PETSC_INCLUDE_DIR}>
 )
 
 target_link_libraries(libopensn
@@ -143,6 +148,7 @@ target_link_libraries(libopensn
     ${PETSC_LIBRARY}
     ${VTK_LIBRARIES}
     caliper
+    ${HDF5_LIBRARIES}
     MPI::MPI_CXX
 )
 if(OPENSN_WITH_LUA)

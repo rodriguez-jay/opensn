@@ -24,7 +24,7 @@ The lua input performs this following checks:
 + `check_num_procs==nil` will be true when running serially without MPI
 + `number_of_processes ~= num_procs` will be true when the number of MPI processes requested is not equal to the preset value of `4`.
 
-To run the code, simply type: `mpiexec -n 4 path/to/opensn  input_filename.lua`
+To run the code, simply type: `mpiexec -n 4 path/to/opensn -i input_filename.lua`
 
 For more runtime options, type `path/to/opensn -h` for help.
 --]]
@@ -81,13 +81,13 @@ mesh.MeshGenerator.Execute(meshgen)
 
 --[[ @doc
 ### Material IDs
-We create a right parallelepiped logical volume that contains the entire mesh and we assign a 0 for material ID
-to all cells found inside the logical volume. Logical volumes are quite powerful, see subsequent tutorials on
-post-processing.
+When using the in-house `OrthogonalMeshGenerator`, no material IDs are assigned. The user needs to
+assign material IDs to all cells. Here, we have a homogeneous domain, so we assign a material ID
+with value 0 for each cell in the spatial domain.
 --]]
 -- Set Material IDs
-vol0 = logvol.RPPLogicalVolume.Create({infx=true, infy=true, infz=true})
-mesh.SetMaterialIDFromLogicalVolume(vol0,0)
+mesh.SetUniformMaterialID(0)
+
 
 --[[ @doc
 ## Materials
@@ -98,9 +98,6 @@ We create a material and add two properties to it:
 -- Add materials
 materials = {}
 materials[1] = mat.AddMaterial("Material_A");
-
-mat.AddProperty(materials[1],TRANSPORT_XSECTIONS)
-mat.AddProperty(materials[1],ISOTROPIC_MG_SOURCE)
 
 --[[ @doc
 ## Cross Sections

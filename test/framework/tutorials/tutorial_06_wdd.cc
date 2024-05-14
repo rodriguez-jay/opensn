@@ -1,5 +1,5 @@
 #include "framework/math/spatial_discretization/finite_volume/finite_volume.h"
-#include "framework/physics/physics_material/multi_group_xs/single_state_mgxs.h"
+#include "framework/materials/multi_group_xs/multi_group_xs.h"
 #include "framework/math/quadratures/angular/product_quadrature.h"
 #include "framework/field_functions/field_function_grid_based.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
@@ -26,13 +26,13 @@ std::vector<double> SetSource(const MeshContinuum& grid,
                               const UnknownManager& phi_uk_man,
                               const std::vector<double>& q_source,
                               const std::vector<double>& phi_old,
-                              const SingleStateMGXS& xs,
+                              const MultiGroupXS& xs,
                               const std::vector<YlmIndices>& m_ell_em_map);
 
 /**WDD Sweep. */
 ParameterBlock SimTest06_WDD(const InputParameters&);
 
-RegisterWrapperFunctionNamespace(unit_testsB, SimTest06_WDD, nullptr, SimTest06_WDD);
+RegisterWrapperFunctionInNamespace(unit_testsB, SimTest06_WDD, nullptr, SimTest06_WDD);
 
 ParameterBlock
 SimTest06_WDD(const InputParameters&)
@@ -59,17 +59,7 @@ SimTest06_WDD(const InputParameters&)
   const auto Ny = static_cast<int64_t>(ijk_info[1]);
   const auto Nz = static_cast<int64_t>(ijk_info[2]);
 
-  const auto Dim1 = DIMENSION_1;
-  const auto Dim2 = DIMENSION_2;
-  const auto Dim3 = DIMENSION_3;
-
-  int dimension = 0;
-  if (grid.Attributes() & Dim1)
-    dimension = 1;
-  if (grid.Attributes() & Dim2)
-    dimension = 2;
-  if (grid.Attributes() & Dim3)
-    dimension = 3;
+  auto dimension = grid.Dimension();
 
   // Make SDM
   std::shared_ptr<SpatialDiscretization> sdm_ptr = FiniteVolume::New(grid);
@@ -132,8 +122,8 @@ SimTest06_WDD(const InputParameters&)
   opensn::log.Log() << "End ukmanagers." << std::endl;
 
   // Make XSs
-  SingleStateMGXS xs;
-  xs.MakeFromOpenSnXSFile("xs_graphite_pure.xs");
+  MultiGroupXS xs;
+  xs.Initialize("xs_graphite_pure.xs");
 
   // Initializes vectors
   std::vector<double> phi_old(num_local_phi_dofs, 0.0);
@@ -187,7 +177,7 @@ SimTest06_WDD(const InputParameters&)
                      &psi_ds_z](const std::array<int64_t, 3>& ijk,
                                 const Vec3& omega,
                                 const size_t d,
-                                const SingleStateMGXS& cell_xs)
+                                const MultiGroupXS& cell_xs)
   {
     const auto cell_global_id = ijk_mapping.MapNDtoLin(ijk[1], ijk[0], ijk[2]);
     const auto& cell = grid.cells[cell_global_id];
@@ -402,7 +392,7 @@ SetSource(const MeshContinuum& grid,
           const UnknownManager& phi_uk_man,
           const std::vector<double>& q_source,
           const std::vector<double>& phi_old,
-          const SingleStateMGXS& xs,
+          const MultiGroupXS& xs,
           const std::vector<YlmIndices>& m_ell_em_map)
 {
   const size_t num_local_phi_dofs = sdm.GetNumLocalDOFs(phi_uk_man);

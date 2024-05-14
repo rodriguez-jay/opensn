@@ -12,8 +12,8 @@
 #include "modules/linear_boltzmann_solvers/lbs_solver/groupset/lbs_groupset.h"
 #include "modules/linear_boltzmann_solvers/lbs_solver/point_source/point_source.h"
 #include "framework/math/spatial_discretization/finite_element/piecewise_linear/piecewise_linear_discontinuous.h"
-#include "framework/physics/physics_material/multi_group_xs/adjoint_mgxs.h"
-#include "framework/physics/physics_material/physics_material.h"
+#include "framework/materials/multi_group_xs/multi_group_xs.h"
+#include "framework/materials/material.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/math/time_integrations/time_integration.h"
 #include "framework/field_functions/field_function_grid_based.h"
@@ -225,7 +225,7 @@ LBSSolver::GetMatID2XSMap() const
   return matid_to_xs_map_;
 }
 
-const std::map<int, std::shared_ptr<IsotropicMultiGrpSource>>&
+const std::map<int, std::shared_ptr<IsotropicMultiGroupSource>>&
 LBSSolver::GetMatID2IsoSrcMap() const
 {
   return matid_to_src_map_;
@@ -708,6 +708,10 @@ LBSSolver::SetOptions(const InputParameters& params)
         bndry_params.AssignParameters(spec.GetParam(b));
         SetBoundaryOptions(bndry_params);
       }
+
+      // If a discretization exists, initialize the boundaries.
+      if (discretization_)
+        InitializeBoundaries();
     }
 
     else if (spec.Name() == "point_sources")
@@ -718,7 +722,7 @@ LBSSolver::SetOptions(const InputParameters& params)
         point_sources_.push_back(
           GetStackItem<PointSource>(object_stack, sub_param.GetValue<size_t>(), __FUNCTION__));
 
-        // If the discretization is defined, initialization is possible
+        // If a discretization exists, the point source can be initialized.
         if (discretization_)
           point_sources_.back().Initialize(*this);
       }
@@ -732,7 +736,7 @@ LBSSolver::SetOptions(const InputParameters& params)
         distributed_sources_.push_back(GetStackItem<DistributedSource>(
           object_stack, sub_param.GetValue<size_t>(), __FUNCTION__));
 
-        // If the discretization is defined, initialization is possible
+        // If the discretization exists, the distributed source can be initialized.
         if (discretization_)
           distributed_sources_.back().Initialize(*this);
       }
@@ -857,12 +861,12 @@ LBSSolver::PerformInputChecks()
   }
 
   // Determine geometry type
-  const auto grid_attribs = grid_ptr_->Attributes();
-  if (grid_attribs & DIMENSION_1)
+  const auto dim = grid_ptr_->Dimension();
+  if (dim == 1)
     options_.geometry_type = GeometryType::ONED_SLAB;
-  else if (grid_attribs & DIMENSION_2)
+  else if (dim == 2)
     options_.geometry_type = GeometryType::TWOD_CARTESIAN;
-  else if (grid_attribs & DIMENSION_3)
+  else if (dim == 3)
     options_.geometry_type = GeometryType::THREED_CARTESIAN;
   else
     OpenSnLogicalError("Cannot deduce geometry type from mesh.");
@@ -933,8 +937,6 @@ LBSSolver::InitializeMaterials()
     if (cell.material_id_ < 0)
       ++invalid_mat_cell_count;
   }
-
-  log.Log() << "Invalid cell materials " << invalid_mat_cell_count;
   OpenSnLogicalErrorIf(invalid_mat_cell_count > 0,
                        std::to_string(invalid_mat_cell_count) +
                          " cells encountered with an invalid material id.");
@@ -954,26 +956,25 @@ LBSSolver::InitializeMaterials()
 
     // Extract properties
     bool found_transport_xs = false;
-    for (const auto& property : current_material->properties_)
+    for (const auto& property : current_material->properties)
     {
       if (property->Type() == PropertyType::TRANSPORT_XSECTIONS)
       {
-        // If forward mode, use the existing xs on stack.
-        // If adjoint mode, create adjoint xs.
         auto xs = std::static_pointer_cast<MultiGroupXS>(property);
-        matid_to_xs_map_[mat_id] = not options_.adjoint ? xs : std::make_shared<AdjointMGXS>(*xs);
+        xs->SetAdjointMode(options_.adjoint);
+        matid_to_xs_map_[mat_id] = xs;
         found_transport_xs = true;
-      } // transport xs
+      }
 
       if (property->Type() == PropertyType::ISOTROPIC_MG_SOURCE)
       {
-        const auto& src = std::static_pointer_cast<IsotropicMultiGrpSource>(property);
+        const auto& src = std::static_pointer_cast<IsotropicMultiGroupSource>(property);
 
         // Check for a valid source
-        if (src->source_value_g_.size() < groups_.size())
+        if (src->source_value_g.size() < groups_.size())
         {
-          log.LogAllWarning() << __FUNCTION__ << ": IsotropicMultiGrpSource specified in "
-                              << "material \"" << current_material->name_ << "\" has fewer "
+          log.LogAllWarning() << __FUNCTION__ << ": IsotropicMultiGroupSource specified in "
+                              << "material \"" << current_material->name << "\" has fewer "
                               << "energy groups than called for in the simulation. "
                               << "Source will be ignored.";
         }
@@ -987,12 +988,12 @@ LBSSolver::InitializeMaterials()
 
     // Check valid property
     OpenSnLogicalErrorIf(not found_transport_xs,
-                         "Material \"" + current_material->name_ + "\" does not contain " +
+                         "Material \"" + current_material->name + "\" does not contain " +
                            "transport cross sections.");
 
     // Check number of groups legal
     OpenSnLogicalErrorIf(matid_to_xs_map_[mat_id]->NumGroups() < groups_.size(),
-                         "Material \"" + current_material->name_ + "\" has fewer groups (" +
+                         "Material \"" + current_material->name + "\" has fewer groups (" +
                            std::to_string(matid_to_xs_map_[mat_id]->NumGroups()) + ") than " +
                            "the simulation (" + std::to_string(groups_.size()) + "). " +
                            "A material must have at least as many groups as the simulation.");
@@ -1000,7 +1001,7 @@ LBSSolver::InitializeMaterials()
     // Check number of moments
     if (matid_to_xs_map_[mat_id]->ScatteringOrder() < options_.scattering_order)
     {
-      log.Log0Warning() << __FUNCTION__ << ": Material \"" << current_material->name_
+      log.Log0Warning() << __FUNCTION__ << ": Material \"" << current_material->name
                         << "\" has a lower scattering order ("
                         << matid_to_xs_map_[mat_id]->ScatteringOrder() << ") "
                         << "than the simulation (" << options_.scattering_order << ").";
@@ -1033,7 +1034,7 @@ LBSSolver::InitializeMaterials()
     for (const auto& [mat_id, xs] : matid_to_xs_map_)
     {
       OpenSnLogicalErrorIf(xs->IsFissionable() and num_precursors_ == 0,
-                           "Incompatible cross section data encountered for material ID " +
+                           "Incompatible cross-section data encountered for material ID " +
                              std::to_string(mat_id) + ". When delayed neutron data is present " +
                              "for one fissionable matrial, it must be present for all fissionable "
                              "materials.");
@@ -1867,8 +1868,8 @@ lbs::LBSSolver::InitTGDSA(LBSGroupset& groupset)
     }
 
     // Make xs map
-    typedef lbs::Multigroup_D_and_sigR MGXS;
-    typedef std::map<int, MGXS> MatID2MGDXSMap;
+    typedef lbs::Multigroup_D_and_sigR MultiGroupXS;
+    typedef std::map<int, MultiGroupXS> MatID2MGDXSMap;
     MatID2MGDXSMap matid_2_mgxs_map;
     for (const auto& matid_xs_pair : matid_to_xs_map_)
     {
@@ -1877,7 +1878,7 @@ lbs::LBSSolver::InitTGDSA(LBSGroupset& groupset)
       const auto& tg_info = groupset.tg_acceleration_info_.map_mat_id_2_tginfo.at(mat_id);
 
       matid_2_mgxs_map.insert(
-        std::make_pair(mat_id, MGXS{{tg_info.collapsed_D}, {tg_info.collapsed_sig_a}}));
+        std::make_pair(mat_id, MultiGroupXS{{tg_info.collapsed_D}, {tg_info.collapsed_sig_a}}));
     }
 
     // Create solver

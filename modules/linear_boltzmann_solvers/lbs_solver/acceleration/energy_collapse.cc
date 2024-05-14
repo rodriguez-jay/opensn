@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 #include "modules/linear_boltzmann_solvers/lbs_solver/acceleration/acceleration.h"
-
-#include "framework/physics/physics_material/multi_group_xs/multi_group_xs.h"
-
-#include "framework/runtime.h"
+#include "framework/materials/multi_group_xs/multi_group_xs.h"
 #include "framework/logging/log.h"
+#include "framework/runtime.h"
 
 namespace opensn
 {
@@ -56,9 +54,9 @@ MakeTwoGridCollapsedInfo(const MultiGroupXS& xs, EnergyCollapseScheme scheme)
   } // for g
 
   // Correction for zero xs groups
-  // Some cross-sections developed from monte-carlo
+  // Some cross sections developed from monte-carlo
   // methods can result in some of the groups
-  // having zero cross-sections. In that case
+  // having zero cross sections. In that case
   // it will screw up the power iteration
   // initial guess of 1.0. Here we reset them
   for (int g = 0; g < num_groups; g++)
