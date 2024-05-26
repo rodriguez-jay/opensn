@@ -25,8 +25,8 @@ lbs_block =
   },
   options =
   {
-    boundary_conditions = { { name = "xmin", type = "reflecting"},
-                            { name = "ymin", type = "reflecting"} },
+    boundary_conditions = { { name = "xmax", type = "reflecting"},
+                            { name = "ymax", type = "reflecting"} },
     scattering_order = 2,
 
     use_precursors = false,
@@ -53,8 +53,8 @@ phys1 = lbs.DiscreteOrdinatesSolver.Create(lbs_block)
 --lbs.SetOptions(phys1, lbs_options)
 
 
---k_solver0 = lbs.XXPowerIterationKEigen.Create({ lbs_solver_handle = phys1, })
-k_solver0 = lbs.XXPowerIterationKEigenSCDSA.Create
+--k_solver0 = lbs.PowerIterationKEigen.Create({ lbs_solver_handle = phys1, })
+k_solver0 = lbs.PowerIterationKEigenSCDSA.Create
 ({
   lbs_solver_handle = phys1,
   diff_accel_sdm = "pwld",

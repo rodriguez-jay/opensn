@@ -83,13 +83,13 @@ end
 bsrc[1] = 1.0/4.0/math.pi;
 lbs_options =
 {
-  boundary_conditions = { { name = "xmin", type = "isotropic",
+  boundary_conditions = { { name = "xmax", type = "isotropic",
                             group_strength=bsrc}},
   scattering_order = 1,
 }
 if (reflecting) then
   table.insert(lbs_options.boundary_conditions,
-    {name = "zmax", type = "reflecting"})
+    {name = "zmin", type = "reflecting"})
 end
 
 phys1 = lbs.DiscreteOrdinatesSolver.Create(lbs_block)
@@ -115,7 +115,7 @@ fflist,count = lbs.GetScalarFieldFunctionList(phys1)
 --    --fieldfunc.SetProperty(slices[k],SLICE_BINORM,{x = 0.0, y = 0.0, z = 1.0})
 --    fieldfunc.Initialize(slices[k])
 --    fieldfunc.Execute(slices[k])
---    fieldfunc.ExportPython(slices[k])
+--    fieldfunc.ExportToPython(slices[k])
 --end
 
 --############################################### Volume integrations

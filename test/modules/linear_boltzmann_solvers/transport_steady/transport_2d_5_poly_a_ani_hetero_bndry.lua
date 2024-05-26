@@ -117,7 +117,7 @@ lbs_options =
   boundary_conditions =
   {
     {
-      name = "xmin",
+      name = "xmax",
       type = "incident_anisotropic_heterogeneous",
       function_name = "luaBoundaryFunctionA"
     }
@@ -174,7 +174,7 @@ log.Log(LOG_0,string.format("Max-value1=%.5f", maxval))
 
 --############################################### Exports
 if master_export == nil then
-  fieldfunc.ExportPython(slice2)
+  fieldfunc.ExportToPython(slice2)
 end
 
 --############################################### Plots

@@ -98,7 +98,7 @@ lbs_options =
   boundary_conditions =
   {
     {
-      name = "xmin",
+      name = "xmax",
       type = "isotropic",
       group_strength = bsrc
     }
@@ -155,7 +155,7 @@ log.Log(LOG_0,string.format("Max-value2=%.5e", maxval))
 
 --############################################### Exports
 if master_export == nil then
-  fieldfunc.ExportPython(slice2)
+  fieldfunc.ExportToPython(slice2)
 end
 
 --############################################### Plots

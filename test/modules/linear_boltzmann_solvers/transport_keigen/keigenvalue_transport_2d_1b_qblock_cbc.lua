@@ -25,8 +25,8 @@ lbs_block =
     },
     options =
     {
-        boundary_conditions = { { name = "xmin", type = "reflecting"},
-                                { name = "ymin", type = "reflecting"} },
+        boundary_conditions = { { name = "xmax", type = "reflecting"},
+                                { name = "ymax", type = "reflecting"} },
         scattering_order = 2,
 
         use_precursors = false,
@@ -42,7 +42,7 @@ lbs_block =
 phys1 = lbs.DiscreteOrdinatesSolver.Create(lbs_block)
 
 
-k_solver0 = lbs.XXNonLinearKEigen.Create({ lbs_solver_handle = phys1, })
+k_solver0 = lbs.NonLinearKEigen.Create({ lbs_solver_handle = phys1, })
 solver.Initialize(k_solver0)
 solver.Execute(k_solver0)
 
