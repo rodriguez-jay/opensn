@@ -138,11 +138,9 @@ SimTest91_PWLD(const InputParameters&)
   }
 
   // Precompute cell matrices
-  typedef Vector3 Vec3;
-  typedef std::vector<Vec3> VecVec3;
+  typedef std::vector<Vector3> VecVec3;
   typedef std::vector<VecVec3> MatVec3;
-  typedef std::vector<double> VecDbl;
-  typedef std::vector<VecDbl> MatDbl;
+  typedef std::vector<std::vector<double>> MatDbl;
   typedef std::vector<MatDbl> VecMatDbl;
 
   std::vector<MatVec3> cell_Gmatrices;
@@ -155,8 +153,8 @@ SimTest91_PWLD(const InputParameters&)
     const size_t num_nodes = cell_mapping.NumNodes();
     const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
 
-    MatVec3 IntV_shapeI_gradshapeJ(num_nodes, VecVec3(num_nodes, Vec3(0, 0, 0)));
-    MatDbl IntV_shapeI_shapeJ(num_nodes, VecDbl(num_nodes, 0.0));
+    MatVec3 IntV_shapeI_gradshapeJ(num_nodes, VecVec3(num_nodes, Vector3(0, 0, 0)));
+    MatDbl IntV_shapeI_shapeJ(num_nodes, std::vector<double>(num_nodes, 0.0));
 
     for (unsigned int i = 0; i < num_nodes; ++i)
       for (unsigned int j = 0; j < num_nodes; ++j)
@@ -177,7 +175,7 @@ SimTest91_PWLD(const InputParameters&)
     for (size_t f = 0; f < num_faces; ++f)
     {
       const auto fe_srf_data = cell_mapping.MakeSurfaceFiniteElementData(f);
-      MatDbl IntS_shapeI_shapeJ(num_nodes, VecDbl(num_nodes, 0.0));
+      MatDbl IntS_shapeI_shapeJ(num_nodes, std::vector<double>(num_nodes, 0.0));
       for (unsigned int i = 0; i < num_nodes; ++i)
         for (unsigned int j = 0; j < num_nodes; ++j)
           for (const auto& qp : fe_srf_data.QuadraturePointIndices())
@@ -213,7 +211,7 @@ SimTest91_PWLD(const InputParameters&)
                      &cell_Mmatrices,
                      &cell_faceMmatrices,
                      &cell_adj_mapping](const std::array<int64_t, 3>& ijk,
-                                        const Vec3& omega,
+                                        const Vector3& omega,
                                         const size_t d,
                                         const MultiGroupXS& cell_xs)
   {
@@ -229,8 +227,8 @@ SimTest91_PWLD(const InputParameters&)
     const auto& G = cell_Gmatrices[cell_local_id];
     const auto& M = cell_Mmatrices[cell_local_id];
 
-    MatDbl A(num_nodes, VecDbl(num_nodes, 0.0));
-    MatDbl b(num_groups, VecDbl(num_nodes, 0.0));
+    MatDbl A(num_nodes, std::vector<double>(num_nodes, 0.0));
+    MatDbl b(num_groups, std::vector<double>(num_nodes, 0.0));
 
     // Gradient matrix
     for (size_t i = 0; i < num_nodes; ++i)
@@ -277,7 +275,7 @@ SimTest91_PWLD(const InputParameters&)
     for (size_t g = 0; g < num_groups; ++g)
     {
       auto Atemp = A;
-      VecDbl source(num_nodes, 0.0);
+      std::vector<double> source(num_nodes, 0.0);
       // Nodal source moments
       for (size_t i = 0; i < num_nodes; ++i)
       {

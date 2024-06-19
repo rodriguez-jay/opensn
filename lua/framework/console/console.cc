@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 #include "lua/framework/console/console.h"
-#include "lua/modules/modules_lua.h"
-#include "framework/lua.h"
+#include "lua/modules/modules.h"
+#include "lua/framework/lua.h"
 #include "config.h"
 #include "framework/object_factory.h"
 #include "framework/runtime.h"

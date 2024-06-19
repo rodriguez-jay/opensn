@@ -73,11 +73,10 @@ SimTest93_RayTracing(const InputParameters&)
   std::vector<double> phi_tally(num_fem_local_dofs, 0.0);
 
   // Define particle data structure
-  typedef Vector3 Vec3;
   struct Particle
   {
-    Vec3 position = {0.0, 0.0, 0.0};
-    Vec3 direction = {0.0, 0.0, 0.0};
+    Vector3 position = {0.0, 0.0, 0.0};
+    Vector3 direction = {0.0, 0.0, 0.0};
     int energy_group = 0;
     double weight = 1.0;
 
@@ -88,7 +87,7 @@ SimTest93_RayTracing(const InputParameters&)
 
   // Define source position
   //                                              and find cell containing it
-  const Vec3 source_pos = {0.0, 0.0, 0.0};
+  const Vector3 source_pos = {0.0, 0.0, 0.0};
 
   Cell const* source_cell_ptr = nullptr;
 
@@ -117,9 +116,9 @@ SimTest93_RayTracing(const InputParameters&)
   auto ContributePWLDTally =
     [&sdm, &grid, &phi_tally, &phi_uk_man, &sigma_t, &num_moments, &m_to_ell_em_map](
       const Cell& cell,
-      const Vec3& positionA,
-      const Vec3& positionB,
-      const Vec3& omega,
+      const Vector3& positionA,
+      const Vector3& positionB,
+      const Vector3& omega,
       const int g,
       double weight)
   {
@@ -233,7 +232,7 @@ SimTest93_RayTracing(const InputParameters&)
       // Perform the trace to the next surface
       auto destination_info = ray_tracer.TraceRay(cell, particle.position, particle.direction);
 
-      const Vec3& end_of_track_position = destination_info.pos_f;
+      const Vector3& end_of_track_position = destination_info.pos_f;
 
       // Make tally contribution
       ContributePWLDTally(cell,
@@ -279,7 +278,7 @@ SimTest93_RayTracing(const InputParameters&)
     const auto& fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
     const size_t num_nodes = cell_mapping.NumNodes();
 
-    MatDbl M(num_nodes, VecDbl(num_nodes, 0.0));
+    MatDbl M(num_nodes, std::vector<double>(num_nodes, 0.0));
     for (auto qp : fe_vol_data.QuadraturePointIndices())
       for (size_t i = 0; i < num_nodes; ++i)
         for (size_t j = 0; j < num_nodes; ++j)
@@ -289,7 +288,7 @@ SimTest93_RayTracing(const InputParameters&)
     auto M_inv = Inverse(M);
 
     // Apply projection
-    VecDbl T(num_nodes, 0.0);
+    std::vector<double> T(num_nodes, 0.0);
     for (size_t m = 0; m < num_moments; ++m)
       for (size_t g = 0; g < num_groups; ++g)
       {
