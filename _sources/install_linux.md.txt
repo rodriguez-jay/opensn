@@ -1,4 +1,4 @@
-# Installing on Linux Machines
+# Install on Linux Machines
 
 The following instructions were tested on Ubuntu 22.04.4 LTS. Other Linux
 distributions might require some minor tweaking.
@@ -108,18 +108,19 @@ tar -zxf VTK-9.3.0.tar.gz
 cd VTK-9.3.0
 mkdir build
 cd build
-cmake -DCMAKE_INSTALL_PREFIX=/path/to/dependencies/directory  + \
--DBUILD_SHARED_LIBS:BOOL=ON  + \
--DVTK_Group_MPI:BOOL=ON  + \
--DVTK_GROUP_ENABLE_Qt=NO  + \
--DVTK_GROUP_ENABLE_Rendering=NO  + \
--DVTK_GROUP_ENABLE_Imaging=NO  + \
--DVTK_GROUP_ENABLE_StandAlone=WANT  + \
--DVTK_GROUP_ENABLE_Web=NO  + \
--DVTK_BUILD_TESTING:BOOL=OFF  + \
--DCMAKE_BUILD_TYPE=Release  + \
--DCMAKE_CXX_FLAGS=-std=c++11  + \
- ../
+cmake -DCMAKE_INSTALL_PREFIX=/path/to/dependencies/directory \
+-DBUILD_SHARED_LIBS:BOOL=ON \
+-DVTK_Group_MPI:BOOL=ON \
+-DVTK_GROUP_ENABLE_Qt=NO \
+-DVTK_GROUP_ENABLE_Rendering=NO \
+-DVTK_GROUP_ENABLE_Imaging=NO \
+-DVTK_GROUP_ENABLE_StandAlone=WANT \
+-DVTK_GROUP_ENABLE_Web=NO \
+-DVTK_MODULE_USE_EXTERNAL_VTK_hdf5=ON \
+-DVTK_BUILD_TESTING:BOOL=OFF \
+-DCMAKE_BUILD_TYPE=Release \
+-DCMAKE_CXX_FLAGS=-std=c++11 \
+../
 ```
 
 After `cmake` has completed configuring the build, run:
@@ -211,7 +212,7 @@ directory and run `cmake` to generate the build files and `make` to compile
     $ mkdir build
     $ cd build
     $ cmake ..
-    $ make -j
+    $ make -j<N>
 ```
 
 To configure **OpenSn** for building the documentation, in addition to the
@@ -221,7 +222,7 @@ To configure **OpenSn** for building the documentation, in addition to the
     $ mkdir build
     $ cd build
     $ cmake -DOPENSN_WITH_DOCS=ON ..
-    $ make -j
+    $ make -j<N>
 ```
 
 For more information on building the documentation, see **Step 10** below.
