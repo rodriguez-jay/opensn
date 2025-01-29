@@ -295,12 +295,16 @@ DiscreteOrdinatesSolver::ComputeBalance()
   }
 
   // Compute absorption, material-source and in-flow
+  double temp_out_flow = 0.0;
+
   double local_out_flow = 0.0;
   double local_in_flow = 0.0;
   double local_absorption = 0.0;
   double local_production = 0.0;
   for (const auto& cell : grid_ptr_->local_cells)
   {
+    // std::cout << cell.local_id << std::endl;
+
     const auto& cell_mapping = discretization_->GetCellMapping(cell);
     const auto& transport_view = cell_transport_views_[cell.local_id];
     const auto& fe_intgrl_values = unit_cell_matrices_[cell.local_id];
@@ -318,6 +322,8 @@ DiscreteOrdinatesSolver::ComputeBalance()
 
       if (not face.has_neighbor) // Boundary face
       {
+        std::cout << cell.local_id << std::endl;
+        std::cout << cell.global_id << std::endl;
         const auto& bndry = sweep_boundaries_[face.neighbor_id];
 
         if (bndry->IsReflecting())
@@ -334,6 +340,33 @@ DiscreteOrdinatesSolver::ComputeBalance()
               const auto& omega = groupset.quadrature->omegas[n];
               const double wt = groupset.quadrature->weights[n];
               const double mu = omega.Dot(face.normal);
+
+
+              // Test grabbing from both directions
+              // for (int fi = 0; fi < face.vertex_ids.size(); ++fi)
+              // {
+              //   const int i = cell_mapping.MapFaceNode(f, fi);
+              //   const auto& IntFi_shapeI = IntS_shapeI[f](i);
+
+              //   for (const auto& group : groupset.groups)
+              //   {
+              //     if (mu < 0.0)
+              //     {
+              //       std::cout << wt << " " << mu << std::endl;
+              //       const int g = group.id;
+              //       const double psi = *bndry->PsiIncoming(cell.local_id, f, fi, n, g, 0);
+              //       std::cout << psi << std::endl;
+              //       local_in_flow -= mu * wt * psi * IntFi_shapeI;
+              //     }
+              //     else
+              //     {
+              //       std::cout << wt << " " << mu << std::endl;
+              //       const double psi = *bndry->PsiOutgoing(cell.local_id, f, fi, n, 0);
+              //       std::cout << psi << std::endl;
+              //       temp_out_flow += mu * wt * psi * IntFi_shapeI;
+              //     }
+              //   } // for group
+              // }   // for fi
 
               if (mu < 0.0)
               {
@@ -1056,6 +1089,8 @@ std::shared_ptr<SweepChunk>
 DiscreteOrdinatesSolver::SetSweepChunk(LBSGroupset& groupset)
 {
   CALI_CXX_MARK_SCOPE("DiscreteOrdinatesSolver::SetSweepChunk");
+
+  std::cout << sweep_type_ << std::endl;
 
   if (sweep_type_ == "AAH")
   {
