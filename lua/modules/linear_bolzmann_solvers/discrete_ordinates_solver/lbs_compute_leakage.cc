@@ -38,13 +38,25 @@ ComputeLeakage(lua_State* L)
   else
     bndry_ids = solver.Grid().GetDomainUniqueBoundaryIDs();
 
+  // std::cout << supported_boundary_ids.at(bndry_ids) << std::endl;
+
+  // std::string bnd_name;
+  for (auto& bid : bndry_ids)
+  {
+    std::cout << bid << std::endl;
+    auto bnd_name = supported_boundary_ids.at(bid);
+    std::cout << bnd_name << std::endl;
+  }
+
   // Compute the leakage
   const auto leakage = solver.ComputeLeakage(bndry_ids);
+  exit(0);
 
   std::map<std::string, std::vector<double>> ret_val;
   for (const auto& [bid, vals] : leakage)
   {
     auto bnd_name = supported_boundary_ids.at(bid);
+    std::cout << bnd_name << std::endl;
     ret_val.insert(std::pair<std::string, std::vector<double>>(bnd_name, vals));
   }
   return LuaReturn(L, ret_val);
