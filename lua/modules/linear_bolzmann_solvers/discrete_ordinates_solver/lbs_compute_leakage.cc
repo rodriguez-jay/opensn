@@ -50,7 +50,6 @@ ComputeLeakage(lua_State* L)
 
   // Compute the leakage
   const auto leakage = solver.ComputeLeakage(bndry_ids);
-  exit(0);
 
   std::map<std::string, std::vector<double>> ret_val;
   for (const auto& [bid, vals] : leakage)

@@ -303,8 +303,6 @@ DiscreteOrdinatesSolver::ComputeBalance()
   double local_production = 0.0;
   for (const auto& cell : grid_ptr_->local_cells)
   {
-    // std::cout << cell.local_id << std::endl;
-
     const auto& cell_mapping = discretization_->GetCellMapping(cell);
     const auto& transport_view = cell_transport_views_[cell.local_id];
     const auto& fe_intgrl_values = unit_cell_matrices_[cell.local_id];
@@ -322,8 +320,6 @@ DiscreteOrdinatesSolver::ComputeBalance()
 
       if (not face.has_neighbor) // Boundary face
       {
-        std::cout << cell.local_id << std::endl;
-        std::cout << cell.global_id << std::endl;
         const auto& bndry = sweep_boundaries_[face.neighbor_id];
 
         if (bndry->IsReflecting())
@@ -536,13 +532,13 @@ DiscreteOrdinatesSolver::ComputeLeakage(const std::vector<uint64_t>& boundary_id
   for (const auto& bid : boundary_ids)
     local_leakage[bid].assign(num_groups_, 0.0);
 
-  // Write boundary information to text file
-  std::ofstream bndry_data("bndry_flux.txt");
-  if (!bndry_data.is_open()) 
-  {
-        std::cerr << "Error: Could not open the file!" << std::endl;
-        exit(0);
-  }
+  // // Write boundary information to text file
+  // std::ofstream bndry_data("bndry_flux.txt");
+  // if (!bndry_data.is_open()) 
+  // {
+  //       std::cerr << "Error: Could not open the file!" << std::endl;
+  //       exit(0);
+  // }
 
   // Go through groupsets
   for (unsigned int gs = 0; gs < groupsets_.size(); ++gs)
@@ -564,7 +560,7 @@ DiscreteOrdinatesSolver::ComputeLeakage(const std::vector<uint64_t>& boundary_id
     for (const auto& cell : grid_ptr_->local_cells)
     {
       const auto& cell_mapping = discretization_->GetCellMapping(cell);
-      const auto& node_locations = cell_mapping.GetNodeLocations();
+      // const auto& node_locations = cell_mapping.GetNodeLocations();
       const auto& fe_values = unit_cell_matrices_.at(cell.local_id);
 
       unsigned int f = 0;
@@ -580,10 +576,10 @@ DiscreteOrdinatesSolver::ComputeLeakage(const std::vector<uint64_t>& boundary_id
           for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
           {
             const auto i = cell_mapping.MapFaceNode(f, fi);
-            const auto& node_vec = node_locations[i];
+            // const auto& node_vec = node_locations[i];
 
-            bndry_data << "Node: " << i << std::endl;
-            bndry_data << "Pos: " << node_vec[0] << " " << node_vec[1] << " " << node_vec[2] << std::endl;
+            // bndry_data << "Node: " << i << std::endl;
+            // bndry_data << "Pos: " << node_vec[0] << " " << node_vec[1] << " " << node_vec[2] << std::endl;
 
             for (unsigned int n = 0; n < num_gs_angles; ++n)
             {
@@ -591,23 +587,23 @@ DiscreteOrdinatesSolver::ComputeLeakage(const std::vector<uint64_t>& boundary_id
               const auto& weight = quadrature->weights[n];
               const auto mu = omega.Dot(face.normal);
               
-              bndry_data << mu << " " << weight << int_f_shape_i(i) << std::endl;
+              // bndry_data << "Mu: " << mu << " w: " << weight << " Ylm: " << int_f_shape_i(i) << std::endl;
               
-              // if (mu <= 0.0)
-                // continue;
+              if (mu <= 0.0)
+                continue;
 
               const auto coeff = weight * mu * int_f_shape_i(i);
-              std::cout << coeff << std::endl;
               for (unsigned int gsg = 0; gsg < num_gs_groups; ++gsg)
               {
                 const auto g = first_gs_group + gsg;
                 const auto imap = discretization_->MapDOFLocal(cell, i, psi_uk_man, n, gsg);
 
-                bndry_data << "Phi(g=" << g << "): " << psi_gs[imap] << std::endl;
+                // bndry_data << "Phi(g=" << g << "): " << psi_gs[imap] << std::endl;
 
-                std::cout << imap << std::endl;
-                if (mu > 0.0)
-                  bndry_leakage[g] += coeff * psi_gs[imap];
+                // if (mu > 0.0)
+                //   bndry_leakage[g] += coeff * psi_gs[imap];
+
+                bndry_leakage[g] += coeff * psi_gs[imap];
               } // for groupset group gsg
             }   // for angle n
           }     // for face index fi
@@ -616,7 +612,7 @@ DiscreteOrdinatesSolver::ComputeLeakage(const std::vector<uint64_t>& boundary_id
       } // for face
     }   // for cell
   }     // for groupset gs
-  exit(0);
+  // bndry_data.close();
 
   // Serialize the data
   std::vector<double> local_data;
