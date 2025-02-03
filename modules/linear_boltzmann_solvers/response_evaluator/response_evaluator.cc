@@ -297,6 +297,15 @@ ResponseEvaluator::ClearForwardSources()
   boundary_sources_.clear();
 }
 
+/**
+ * @brief Evaluates a response function and returns a quantity of interest (QoI).
+ *
+ * This function processes the given input buffer and computes the corresponding 
+ * response value, which represents a quantity of interest (QoI).
+ *
+ * @param buffer A string containing input data necessary for the response evaluation.
+ * @return The computed quantity of interest as a double.
+ */
 double
 ResponseEvaluator::EvaluateResponse(const std::string& buffer) const
 {
