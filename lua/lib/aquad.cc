@@ -6,6 +6,11 @@
 #include "framework/logging/log.h"
 #include "framework/math/quadratures/gausslegendre_quadrature.h"
 #include "framework/math/quadratures/gausschebyshev_quadrature.h"
+
+// New
+#include "framework/math/quadratures/angular/sldfe_sq_quadrature.h"
+//
+
 #include "framework/math/quadratures/angular/cylindrical_quadrature.h"
 #include <cstddef>
 #include <memory>
@@ -37,6 +42,27 @@ AQuadCreateProductQuadrature(ProductQuadratureType type, int n, int m)
   opensn::Exit(EXIT_FAILURE);
   return nullptr;
 }
+
+///////
+// NEW
+///////
+void
+AQuadCreateSLDFESQAngularQuadrature(int level)
+{
+  bool verbose = false;
+  auto sldfesq = std::make_shared<GenerateInitialRefinement>(level);
+
+  // auto sldfesq = std::make_shared<SimplifiedLDFESQ::Quadrature>();
+  // sldfesq->GenerateInitialRefinement(level);
+
+  // const auto sldfesq.GenerateInitialRefinement(level);
+
+  opensn::log.LogAllError() << "CreateSLDFESQAngularQuadrature : "
+                            << "Unsupported quadrature level supplied, type="
+                            << (int)(level);
+  opensn::Exit(EXIT_FAILURE);
+}
+//////
 
 std::shared_ptr<opensn::ProductQuadrature>
 AQuadCreateCylindricalProductQuadrature(ProductQuadratureType type, int Np, int Na)
