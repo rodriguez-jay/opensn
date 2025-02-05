@@ -32,6 +32,7 @@ AQuadCreateProductQuadrature(ProductQuadratureType type, int n, int m)
   else if (type == ProductQuadratureType::GAUSS_LEGENDRE_CHEBYSHEV)
   {
     bool verbose = false;
+    std::cout << "here" << std::endl;
     auto new_quad = std::make_shared<AngularQuadratureProdGLC>(n, m, verbose);
     return new_quad;
   }
@@ -46,21 +47,22 @@ AQuadCreateProductQuadrature(ProductQuadratureType type, int n, int m)
 ///////
 // NEW
 ///////
-void
+std::shared_ptr<opensn::AngularQuadrature>
 AQuadCreateSLDFESQAngularQuadrature(int level)
 {
   bool verbose = false;
-  auto sldfesq = std::make_shared<GenerateInitialRefinement>(level);
+  // auto sldfesq = std::make_shared<GenerateInitialRefinement>(level);
 
-  // auto sldfesq = std::make_shared<SimplifiedLDFESQ::Quadrature>();
+  auto sldfesq = std::make_shared<SimplifiedLDFESQ::Quadrature>();
   // sldfesq->GenerateInitialRefinement(level);
 
-  // const auto sldfesq.GenerateInitialRefinement(level);
+  auto sldfesq->GenerateInitialRefinement(level);
 
   opensn::log.LogAllError() << "CreateSLDFESQAngularQuadrature : "
                             << "Unsupported quadrature level supplied, type="
                             << (int)(level);
   opensn::Exit(EXIT_FAILURE);
+  return nullptr;
 }
 //////
 

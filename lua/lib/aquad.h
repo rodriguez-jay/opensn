@@ -13,6 +13,9 @@ std::shared_ptr<opensn::ProductQuadrature>
 AQuadCreateProductQuadrature(opensn::ProductQuadratureType type, int n, int m);
 
 std::shared_ptr<opensn::ProductQuadrature>
+AQuadCreateSLDFESQAngularQuadrature(int level);
+
+std::shared_ptr<opensn::ProductQuadrature>
 AQuadCreateCylindricalProductQuadrature(opensn::ProductQuadratureType type, int n, int m);
 
 void AQuadOptimizeForPolarSymmetry(std::shared_ptr<opensn::AngularQuadrature> aquad,

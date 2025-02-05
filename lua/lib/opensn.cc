@@ -5,7 +5,7 @@
 #include "framework/materials/material_property.h"
 #include "framework/math/quadratures/angular/product_quadrature.h"
 // New
-#include "framework/math/quadratures/angular/sldfe_sq__quadrature.h"
+#include "framework/math/quadratures/angular/sldfe_sq_quadrature.h"
 //
 #include "framework/mesh/mesh_vector.h"
 #include "framework/parameters/input_parameters.h"
