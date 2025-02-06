@@ -187,11 +187,11 @@ static bool reg = opensnlua::Console::Bind(
       .addFunction("LegendreDerivative", &dLegendredx)
       .addFunction("Ylm", &Ylm)
       .addFunction("CreateProductQuadrature", &AQuadCreateProductQuadrature)
-      // NEW
-      .addFunction("CreateSLDFESQuadrature", &AQuadCreateSLDFESQAngularQuadrature)
-      //
       .addFunction("CreateCylindricalProductQuadrature", &AQuadCreateCylindricalProductQuadrature)
       .addFunction("OptimizeForPolarSymmetry", &AQuadOptimizeForPolarSymmetry)
+      // NEW
+      .addFunction("CreateSLDFESQuadrature", &AQuadCreateSLDFESQAngularQuadrature)
+      // .addFunction("LocallyRefineSLDFESQ", &AQuadLocallyRefineSLDFE)
       //
       .beginClass<AngularQuadrature>("AngularQuadrature")
       .endClass()
