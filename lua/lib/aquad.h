@@ -19,12 +19,12 @@ AQuadCreateCylindricalProductQuadrature(opensn::ProductQuadratureType type, int 
 void AQuadOptimizeForPolarSymmetry(std::shared_ptr<opensn::AngularQuadrature> aquad,
                                    double normalization);
 
-std::shared_ptr<opensn::ProductQuadrature>
+std::shared_ptr<opensn::AngularQuadrature>
 AQuadCreateSLDFESQAngularQuadrature(int level);
 
-// void AQuadLocallyRefineSLDFE(std::shared_ptr<opensn::ProductQuadrature> aquad, 
-//                              const Vector3& ref_dir,
-//                              const double cone_size,
-//                              const bool dir_as_plane_normal);
+void AQuadLocallyRefineSLDFESQ(std::shared_ptr<opensn::AngularQuadrature> aquad, 
+                             const opensn::Vector3& ref_dir,
+                             const double cone_size,
+                             const bool dir_as_plane_normal);
 
 } // namespace opensnlua
