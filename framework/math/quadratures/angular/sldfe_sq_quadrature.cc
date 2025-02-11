@@ -835,7 +835,7 @@ SimplifiedLDFESQ::Quadrature::PrintQuadratureToFile(const std::string& file_base
       for (const auto& vert : sq.vertices_xyz)
       {
         for (int d = 0; d <= 10; ++d)
-          cell_file << vi++ << " "; 
+          cell_file << vi++ << " ";
       }
       cell_file << "\n";
     }
