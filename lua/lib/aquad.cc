@@ -6,11 +6,7 @@
 #include "framework/logging/log.h"
 #include "framework/math/quadratures/gausslegendre_quadrature.h"
 #include "framework/math/quadratures/gausschebyshev_quadrature.h"
-
-// New
 #include "framework/math/quadratures/angular/sldfe_sq_quadrature.h"
-//
-
 #include "framework/math/quadratures/angular/cylindrical_quadrature.h"
 #include <cstddef>
 #include <memory>
@@ -32,7 +28,6 @@ AQuadCreateProductQuadrature(ProductQuadratureType type, int n, int m)
   else if (type == ProductQuadratureType::GAUSS_LEGENDRE_CHEBYSHEV)
   {
     bool verbose = false;
-    std::cout << "here" << std::endl;
     auto new_quad = std::make_shared<AngularQuadratureProdGLC>(n, m, verbose);
     return new_quad;
   }
@@ -88,61 +83,28 @@ AQuadOptimizeForPolarSymmetry(std::shared_ptr<AngularQuadrature> aquad, double n
   aquad->OptimizeForPolarSymmetry(normalization);
 }
 
-///////
-// NEW
-///////
-std::shared_ptr<opensn::AngularQuadrature>
+std::shared_ptr<SimplifiedLDFESQ::Quadrature>
 AQuadCreateSLDFESQAngularQuadrature(int level)
 {
   auto sldfesq = std::make_shared<SimplifiedLDFESQ::Quadrature>();
   sldfesq->GenerateInitialRefinement(level);
-
   return sldfesq;
 }
 
 void
-AQuadLocallyRefineSLDFESQ(std::shared_ptr<ProductQuadrature> aquad, 
-                          const Vector3& ref_dir,
+AQuadLocallyRefineSLDFESQ(std::shared_ptr<SimplifiedLDFESQ::Quadrature> sldfesq,
+                          const opensn::Vector3& ref_dir,
                           const double cone_size,
                           const bool dir_as_plane_normal)
 {
-  auto sldfesq = std::make_shared<SimplifiedLDFESQ::Quadrature>();
-  sldfesq->LocallyRefine(ref_dir, cone_size, ref_dir_as_plane_normal);
-
-  // Maybe add a type? 
-  // try
-  // {
-  //   auto ref_quadrature = opensn::angular_quadrature_stack.at(handle);
-  //   if (ref_quadrature->type == AngularQuadratureType::SLDFESQ)
-  //   {
-  //     // auto sldfesq = std::dynamic_pointer_cast<SimplifiedLDFESQ::Quadrature>(ref_quadrature);
-  //     auto sldfesq = std::make_shared<SimplifiedLDFESQ::Quadrature>();
-  //     sldfesq->LocallyRefine(ref_dir, cone_size, ref_dir_as_plane_normal);
-  //   }
-  //   else
-  //   {
-  //     opensn::log.LogAllError() << "LocallyRefineSLDFESQAngularQuadrature: "
-  //                                  "Invalid angular quadrature type.";
-  //     opensn::Exit(EXIT_FAILURE);
-  //   }
-  // }
-  // catch (const std::out_of_range& o)
-  // {
-  //   opensn::log.LogAllError() << "LocallyRefineSLDFESQAngularQuadrature: "
-  //                                "Invalid handle to angular quadrature.";
-  //   opensn::Exit(EXIT_FAILURE);
-  // }
-  // catch (...)
-  // {
-  //   opensn::log.LogAllError() << "LocallyRefineSLDFESQAngularQuadrature: "
-  //                                "Call failed with unknown error.";
-  //   opensn::Exit(EXIT_FAILURE);
-  // }
+  sldfesq->LocallyRefine(ref_dir, cone_size, dir_as_plane_normal);
 }
 
-//////
-
-
-
+void
+AQuadPrintQuadratureToFile(std::shared_ptr<SimplifiedLDFESQ::Quadrature> sldfesq,
+                           const std::string& file_base)
+{
+  sldfesq->PrintQuadratureToFile(file_base);
+}
 
 } // namespace opensnlua
