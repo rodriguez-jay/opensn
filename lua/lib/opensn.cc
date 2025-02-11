@@ -204,7 +204,6 @@ static bool reg = opensnlua::Console::Bind(
       .endClass()
       .beginClass<std::shared_ptr<AngularQuadratureProdGL>>("AngularQuadratureProdGLPtr")
       .endClass()
-      // 
       .deriveClass<SimplifiedLDFESQ::Quadrature, AngularQuadrature>("SLDFESQuadrature")
       .endClass()
       .beginClass<std::shared_ptr<SimplifiedLDFESQ::Quadrature>>("SLDFESQuadraturePtr")

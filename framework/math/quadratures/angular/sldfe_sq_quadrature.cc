@@ -807,7 +807,7 @@ SimplifiedLDFESQ::Quadrature::PrintQuadratureToFile(const std::string& file_base
   log.Log() << "Printing SLDFE-Quadrature to file.";
 
   std::ofstream vert_file, cell_file, points_file, python_file;
-  vert_file.open(file_base+ "verts.txt");
+  vert_file.open(file_base + "verts.txt");
   {
     for (const auto& sq : deployed_SQs)
       for (int v = 0; v < 4; ++v)
@@ -833,8 +833,10 @@ SimplifiedLDFESQ::Quadrature::PrintQuadratureToFile(const std::string& file_base
     for (const auto& sq : deployed_SQs)
     {
       for (const auto& vert : sq.vertices_xyz)
+      {
         for (int d = 0; d <= 10; ++d)
           cell_file << vi++ << " "; 
+      }
       cell_file << "\n";
     }
   }

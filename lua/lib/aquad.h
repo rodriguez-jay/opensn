@@ -13,7 +13,6 @@ namespace opensnlua
 std::shared_ptr<opensn::ProductQuadrature>
 AQuadCreateProductQuadrature(opensn::ProductQuadratureType type, int n, int m);
 
-
 std::shared_ptr<opensn::ProductQuadrature>
 AQuadCreateCylindricalProductQuadrature(opensn::ProductQuadratureType type, int n, int m);
 
