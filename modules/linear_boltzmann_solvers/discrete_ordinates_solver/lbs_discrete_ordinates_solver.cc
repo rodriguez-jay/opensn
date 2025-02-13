@@ -549,6 +549,8 @@ DiscreteOrdinatesSolver::ComputeLeakage(const std::vector<uint64_t>& boundary_id
 
     const auto num_gs_angles = quadrature->omegas.size();
     const auto num_gs_groups = groupset.groups.size();
+
+    // Why do we use this? 
     const auto first_gs_group = groupset.groups.front().id;
 
     // std::cout << num_gs_angles << std::endl;

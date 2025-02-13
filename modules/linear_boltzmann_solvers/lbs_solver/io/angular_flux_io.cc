@@ -13,6 +13,7 @@ void
 LBSSolverIO::WriteAngularFluxes(
   LBSSolver& lbs_solver,
   const std::string& file_base,
+  std::optional<std::vector<uint64_t>> bndry_ids,
   std::optional<const std::reference_wrapper<std::vector<std::vector<double>>>> opt_src)
 {
   // Open the HDF5 file
@@ -36,6 +37,18 @@ LBSSolverIO::WriteAngularFluxes(
   auto num_groupsets = groupsets.size();
 
   H5CreateAttribute(file_id, "num_groupsets", num_groupsets);
+
+  // Check the boundary IDs
+  if (bndry_ids)
+  {
+    const auto unique_bids = grid.GetDomainUniqueBoundaryIDs();
+    for (const auto& bid : bndry_ids)
+    {
+      const auto it = std::find(unique_bids.begin(), unique_bids.end(), bid);
+      OpenSnInvalidArgumentIf(it == unique_bids.end(),
+                              "Boundary ID " + std::to_string(bid) + "not found on grid.");
+    }
+  }
 
   // Store Mesh Information
   std::vector<uint64_t> cell_ids, num_cell_nodes;
@@ -71,6 +84,7 @@ LBSSolverIO::WriteAngularFluxes(
   H5WriteDataset1D(file_id, "mesh/nodes_y", nodes_y);
   H5WriteDataset1D(file_id, "mesh/nodes_z", nodes_z);
 
+  // To do: Double check the loop of g and gset
   // Go through each groupset
   for (const auto& groupset : groupsets)
   {
@@ -87,9 +101,9 @@ LBSSolverIO::WriteAngularFluxes(
     H5CreateAttribute(file_id, group_name + "/num_directions", num_gs_dirs);
     H5CreateAttribute(file_id, group_name + "/num_groups", num_gs_groups);
 
-    // Write the groupset angular flux data
     std::vector<double> values;
     for (const auto& cell : grid.local_cells)
+      // Write the groupset angular flux data
       for (uint64_t i = 0; i < discretization.GetCellNumNodes(cell); ++i)
         for (uint64_t n = 0; n < num_gs_dirs; ++n)
           for (uint64_t g = 0; g < num_gs_groups; ++g)
@@ -97,7 +111,58 @@ LBSSolverIO::WriteAngularFluxes(
             const auto dof_map = discretization.MapDOFLocal(cell, i, uk_man, n, g);
             values.push_back(src[groupset_id][dof_map]);
           }
-    H5WriteDataset1D(file_id, group_name + "/values", values);
+      H5WriteDataset1D(file_id, group_name + "/values", values);
+
+      // Write the groupset surface angular flux data
+      if (bndry_ids) 
+      {
+        std::vector<double> surf_flux;
+        std::vector<double> mu;
+        std::vector<double> coeff;
+
+        // const auto& cell_mapping = discretization_->GetCellMapping(cell);
+        const auto& cell_mapping = discretization.GetCellMapping(cell);
+        const auto& fe_values = unit_cell_matrices_.at(cell.local_id);
+
+        unsigned int f = 0;
+        for (const auto& face : cell.faces)
+        {
+          // If face is on the specified boundary
+          const auto it = std::find(bndry_ids.begin(), bndry_ids.end(), face.neighbor_id);
+          if (not face.has_neighbor and it != bndry_ids.end())
+          {
+            // To do: Get the id name!
+            const auto& int_f_shape_i = fe_values.intS_shapeI[f];
+            const auto num_face_nodes = cell_mapping.NumFaceNodes(f);
+            for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
+            {
+              const auto i = cell_mapping.MapFaceNode(f, fi);
+              // Maybe change to (dir : num_gs_dirs)?
+              for (unsigned int n = 0; n < num_gs_dirs; ++n)
+              {
+                const auto& omega_n = quadrature->omegas[n];
+                const auto& weight_n = quadrature->weights[n];
+                const auto mu_n = omega_n.Dot(face.normal);
+
+                if (mu_n <= 0.0)
+                  continue;
+
+                mu.push_back(mu_n)
+                coeff.push_back(weight_n * mu_n * int_f_shape_i(i));
+                for (uint64_t g = 0; g < num_gs_groups; ++g)
+                {
+                  const auto dof_map = discretization.MapDOFLocal(cell, i, uk_man, n, g);
+                  surf_flux.push_back(src[groupset_id][dof_map]);
+                }
+              }
+            }
+          }
+          ++f;
+        }
+        H5WriteDataset1D(file_id, group_name + "/surf_flux", surf_flux);
+        H5WriteDataset1D(file_id, group_name + "/mu", mu);
+        H5WriteDataset1D(file_id, group_name + "/coeff", coeff);
+      }
   }
   H5Fclose(file_id);
 }

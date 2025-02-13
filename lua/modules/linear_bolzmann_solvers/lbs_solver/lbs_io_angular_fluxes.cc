@@ -7,6 +7,7 @@
 #include "modules/linear_boltzmann_solvers/lbs_solver/lbs_solver.h"
 #include "modules/linear_boltzmann_solvers/lbs_solver/groupset/lbs_groupset.h"
 #include "modules/linear_boltzmann_solvers/lbs_solver/io/lbs_solver_io.h"
+#include "modules/linear_boltzmann_solvers/discrete_ordinates_solver/lbs_discrete_ordinates_solver.h"
 #include "framework/runtime.h"
 #include "framework/logging/log.h"
 
@@ -69,7 +70,28 @@ LBSWriteAngularFluxes(lua_State* L)
   // Get pointer to solver
   auto& lbs_solver =
     opensn::GetStackItem<opensn::LBSSolver>(opensn::object_stack, solver_handle, fname);
-  LBSSolverIO::WriteAngularFluxes(lbs_solver, file_base);
+
+  // Get boundary IDs given boundary names are provided
+  if (LuaNumArgs(L) > 2)
+  {
+    std::vector<uint64_t> bndry_ids;
+
+    // Get the supported boundaries
+    const auto supported_boundary_names = opensn::DiscreteOrdinatesSolver::supported_boundary_names;
+    const auto supported_boundary_ids = opensn::DiscreteOrdinatesSolver::supported_boundary_ids;
+    
+    auto bnd_names = LuaArg<std::vector<std::string>>(L, 3);
+    for (auto& name : bnd_names)
+      bndry_ids.push_back(supported_boundary_names.at(name));
+
+    for (auto& bid : bndry_ids)
+    {
+      auto bnd_name = supported_boundary_ids.at(bid);
+    }
+    LBSSolverIO::WriteAngularFluxes(lbs_solver, file_base, bndry_ids);
+  }
+  else
+    LBSSolverIO::WriteAngularFluxes(lbs_solver, file_base);
 
   return LuaReturn(L);
 }
