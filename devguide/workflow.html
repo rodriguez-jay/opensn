@@ -1,24 +1,25 @@
 
 
 <!DOCTYPE html>
-<html class="writer-html5" lang="en" data-content_root="./">
+<html class="writer-html5" lang="en" data-content_root="../">
 <head>
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Developer Workflow &mdash; OpenSn  documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
-      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../_static/css/theme.css?v=e59714d7" />
 
   
-      <script src="_static/jquery.js?v=5d32c60e"></script>
-      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=5929fcd5"></script>
-      <script src="_static/doctools.js?v=9bcbadda"></script>
-      <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-    <script src="_static/js/theme.js"></script>
-    <link rel="index" title="Index" href="genindex.html" />
-    <link rel="search" title="Search" href="search.html" />
+      <script src="../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Binding C++ classes to Lua" href="lua_bindings.html" />
     <link rel="prev" title="Coding Standards" href="coding_standard.html" /> 
 </head>
 
@@ -30,11 +31,11 @@
 
           
           
-          <a href="index.html" class="icon icon-home">
+          <a href="../index.html" class="icon icon-home">
             OpenSn
           </a>
 <div role="search">
-  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
     <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
     <input type="hidden" name="check_keywords" value="yes" />
     <input type="hidden" name="area" value="default" />
@@ -42,16 +43,21 @@
 </div>
         </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
               <ul class="current">
-<li class="toctree-l1"><a class="reference internal" href="getting_started.html">Quick Install Guide</a></li>
-<li class="toctree-l1"><a class="reference internal" href="theory/index.html">Theory Manual</a></li>
-<li class="toctree-l1"><a class="reference internal" href="tutorials/index.html">Tutorials</a></li>
-<li class="toctree-l1"><a class="reference internal" href="coding_standard.html">Coding Standards</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Developer Workflow</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#create-a-branch">Create a Branch</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#create-a-commit">Create a Commit</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#sending-a-pull-request">Sending a Pull Request</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#fixing-your-branch">Fixing your branch</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#updating-your-branch">Updating Your Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../getting_started.html">Quick Install Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../theory/index.html">Theory Manual</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../tutorials/index.html">Tutorials</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Developer’s Guide</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="coding_standard.html">Coding Standards</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Developer Workflow</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#create-a-branch">Create a Branch</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#create-a-commit">Create a Commit</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sending-a-pull-request">Sending a Pull Request</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fixing-your-branch">Fixing your branch</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#updating-your-branch">Updating Your Branch</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#squashing-commits">Squashing Commits</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="lua_bindings.html">Binding C++ classes to Lua</a></li>
 </ul>
 </li>
 </ul>
@@ -62,14 +68,15 @@
 
     <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
           <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
-          <a href="index.html">OpenSn</a>
+          <a href="../index.html">OpenSn</a>
       </nav>
 
       <div class="wy-nav-content">
         <div class="rst-content">
           <div role="navigation" aria-label="Page navigation">
   <ul class="wy-breadcrumbs">
-      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li><a href="../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="index.html">Developer’s Guide</a></li>
       <li class="breadcrumb-item active">Developer Workflow</li>
       <li class="wy-breadcrumbs-aside">
       </li>
@@ -97,6 +104,10 @@ Also set up an <code class="docutils literal notranslate"><span class="pre">upst
 <p>OpenSn development uses pull request workflow which is common on GitHub.
 This means all development is done on so-called feature branches.
 Do <strong>not</strong> develop on the <code class="docutils literal notranslate"><span class="pre">main</span></code> branch, you will most likely create problems for yourself down the road.</p>
+<div class="admonition-attention admonition">
+<p class="admonition-title">Attention</p>
+<p>Do <strong>NOT</strong> merge <code class="docutils literal notranslate"><span class="pre">main</span></code> into your feature branch.</p>
+</div>
 <section id="create-a-branch">
 <h2>Create a Branch<a class="headerlink" href="#create-a-branch" title="Link to this heading"></a></h2>
 <p>First, make sure you do not have any local changes:</p>
@@ -293,7 +304,31 @@ $<span class="w"> </span>git<span class="w"> </span>rebase<span class="w"> </spa
 </pre></div>
 </div>
 <p>Note: You will most likely run into conflicts that you will have to resolve.</p>
-<p>Do <strong>NOT</strong> merge <code class="docutils literal notranslate"><span class="pre">main</span></code> into your feature branch.</p>
+</section>
+<section id="squashing-commits">
+<h2>Squashing Commits<a class="headerlink" href="#squashing-commits" title="Link to this heading"></a></h2>
+<p>If you are told to squash your commits, do:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>git<span class="w"> </span>rebase<span class="w"> </span>-i<span class="w"> </span>main
+</pre></div>
+</div>
+<p>This will open an editor with a list of commits.
+Change <code class="docutils literal notranslate"><span class="pre">pick</span></code> to <code class="docutils literal notranslate"><span class="pre">f</span></code> for all but the first commit. It should look like this:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>pick<span class="w"> </span>&lt;sha1&gt;<span class="w"> </span>Short<span class="w"> </span>description
+f<span class="w"> </span>&lt;sha1&gt;<span class="w"> </span>Some<span class="w"> </span>description
+f<span class="w"> </span>&lt;sha1&gt;<span class="w"> </span>Some<span class="w"> </span>other<span class="w"> </span>description
+</pre></div>
+</div>
+<p>Save the file and quit the editor.
+Git will squash all commits into one.</p>
+<p>You can edit the commit message if you want to by using <code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">commit</span> <span class="pre">--amend</span></code>.
+Then push the changes to your fork:</p>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>git<span class="w"> </span>push<span class="w"> </span>-f
+</pre></div>
+</div>
+<div class="admonition-attention admonition">
+<p class="admonition-title">Attention</p>
+<p>This assumes you followed this guide and branched off of <code class="docutils literal notranslate"><span class="pre">main</span></code>.</p>
+</div>
 </section>
 </section>
 
@@ -302,6 +337,7 @@ $<span class="w"> </span>git<span class="w"> </span>rebase<span class="w"> </spa
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="coding_standard.html" class="btn btn-neutral float-left" title="Coding Standards" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="lua_bindings.html" class="btn btn-neutral float-right" title="Binding C++ classes to Lua" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>
