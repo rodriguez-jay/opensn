@@ -27,7 +27,7 @@ public:
   static void WriteAngularFluxes(
     LBSSolver& lbs_solver,
     const std::string& file_stem,
-    std::optional<std::vector<uint64_t>> bndry_ids = std::nullopt,
+    std::optional<const std::vector<uint64_t>> bndry_ids = std::nullopt,
     std::optional<const std::reference_wrapper<std::vector<std::vector<double>>>> opt_src =
       std::nullopt);
 

@@ -13,7 +13,7 @@ void
 LBSSolverIO::WriteAngularFluxes(
   LBSSolver& lbs_solver,
   const std::string& file_base,
-  std::optional<std::vector<uint64_t>> bndry_ids,
+  std::optional<const std::vector<uint64_t>> bndry_ids,
   std::optional<const std::reference_wrapper<std::vector<std::vector<double>>>> opt_src)
 {
   // Open the HDF5 file
@@ -39,10 +39,11 @@ LBSSolverIO::WriteAngularFluxes(
   H5CreateAttribute(file_id, "num_groupsets", num_groupsets);
 
   // Check the boundary IDs
-  if (bndry_ids)
-  {
+  const auto& bndry = *bndry_ids;
+  if (bndry_ids && !bndry_ids->empty()) 
+  {  
     const auto unique_bids = grid.GetDomainUniqueBoundaryIDs();
-    for (const auto& bid : bndry_ids)
+    for (const auto& bid : bndry)
     {
       const auto it = std::find(unique_bids.begin(), unique_bids.end(), bid);
       OpenSnInvalidArgumentIf(it == unique_bids.end(),
@@ -103,6 +104,7 @@ LBSSolverIO::WriteAngularFluxes(
 
     std::vector<double> values;
     for (const auto& cell : grid.local_cells)
+    {  
       // Write the groupset angular flux data
       for (uint64_t i = 0; i < discretization.GetCellNumNodes(cell); ++i)
         for (uint64_t n = 0; n < num_gs_dirs; ++n)
@@ -122,14 +124,16 @@ LBSSolverIO::WriteAngularFluxes(
 
         // const auto& cell_mapping = discretization_->GetCellMapping(cell);
         const auto& cell_mapping = discretization.GetCellMapping(cell);
-        const auto& fe_values = unit_cell_matrices_.at(cell.local_id);
+        
+	const auto& unit_cell_matrices = lbs_solver.GetUnitCellMatrices();
+	const auto& fe_values = unit_cell_matrices.at(cell.local_id);
 
         unsigned int f = 0;
         for (const auto& face : cell.faces)
         {
           // If face is on the specified boundary
-          const auto it = std::find(bndry_ids.begin(), bndry_ids.end(), face.neighbor_id);
-          if (not face.has_neighbor and it != bndry_ids.end())
+          const auto it = std::find(bndry.begin(), bndry.end(), face.neighbor_id);
+          if (not face.has_neighbor and it != bndry.end())
           {
             // To do: Get the id name!
             const auto& int_f_shape_i = fe_values.intS_shapeI[f];
@@ -147,7 +151,7 @@ LBSSolverIO::WriteAngularFluxes(
                 if (mu_n <= 0.0)
                   continue;
 
-                mu.push_back(mu_n)
+                mu.push_back(mu_n);
                 coeff.push_back(weight_n * mu_n * int_f_shape_i(i));
                 for (uint64_t g = 0; g < num_gs_groups; ++g)
                 {
@@ -163,6 +167,7 @@ LBSSolverIO::WriteAngularFluxes(
         H5WriteDataset1D(file_id, group_name + "/mu", mu);
         H5WriteDataset1D(file_id, group_name + "/coeff", coeff);
       }
+    }
   }
   H5Fclose(file_id);
 }

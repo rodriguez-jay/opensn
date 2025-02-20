@@ -72,10 +72,9 @@ LBSWriteAngularFluxes(lua_State* L)
     opensn::GetStackItem<opensn::LBSSolver>(opensn::object_stack, solver_handle, fname);
 
   // Get boundary IDs given boundary names are provided
+  std::vector<uint64_t> bndry_ids;
   if (LuaNumArgs(L) > 2)
   {
-    std::vector<uint64_t> bndry_ids;
-
     // Get the supported boundaries
     const auto supported_boundary_names = opensn::DiscreteOrdinatesSolver::supported_boundary_names;
     const auto supported_boundary_ids = opensn::DiscreteOrdinatesSolver::supported_boundary_ids;
