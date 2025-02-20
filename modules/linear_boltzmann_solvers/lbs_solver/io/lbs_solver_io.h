@@ -31,6 +31,11 @@ public:
     std::optional<const std::reference_wrapper<std::vector<std::vector<double>>>> opt_src =
       std::nullopt);
 
+  static void WriteSurfaceAngularFluxes(
+    LBSSolver& lbs_solver,
+    const std::string& file_stem,
+    const std::vector<uint64_t> bndry_ids);
+
   /**
    * Read an angular flux vector from a file.
    *
