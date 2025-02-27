@@ -67,6 +67,21 @@ int LBSReadGroupsetAngularFlux(lua_State* L);
 int LBSWriteAngularFluxes(lua_State* L);
 
 /**
+ * Writes the surface angular fluxes to file.
+ *
+ * \param SolverIndex int Handle to the solver for which the group
+ *      is to be created.
+ *
+ * \param file_base string Path+Filename_base to use for the output. Each location
+ *      will append its id to the back plus an extension ".data"
+ * 
+ * \param BoundaryNames array List of boundary names. These must be the
+ *      standard boundary names used in OpenSn:
+ *      xmax, xmin, ymax, ymin, zmax, zmin
+ */
+int LBSWriteSurfaceAngularFluxes(lua_State* L);
+
+/**
  * Reads the angular fluxes from a file.
  *
  * \param SolverIndex int Handle to the solver for which the group

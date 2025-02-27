@@ -187,16 +187,14 @@ void
 LBSSolverIO::WriteSurfaceAngularFluxes(
   LBSSolver& lbs_solver,
   const std::string& file_base,
-  const std::vector<uint64_t> bndry_id)
+  const std::vector<uint64_t> bndry_ids)
 {
   // Open the HDF5 file
   std::string file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".h5";
   hid_t file_id = H5Fcreate(file_name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
   OpenSnLogicalErrorIf(file_id < 0, "WriteSurfaceAngularFluxes: Failed to open " + file_name + ".");
 
-  // Select source vector
-  std::vector<std::vector<double>>& src =
-    opt_src.has_value() ? opt_src.value().get() : lbs_solver.PsiNewLocal();
+  std::vector<std::vector<double>>& src = lbs_solver.PsiNewLocal();
 
   log.Log() << "Writing surface angular flux to " << file_base;
 
@@ -209,44 +207,53 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   auto num_local_nodes = discretization.GetNumLocalNodes();
   auto num_groupsets = groupsets.size();
 
+  // Store groupsets
   H5CreateAttribute(file_id, "num_groupsets", num_groupsets);
 
-  // Check the boundary IDs
-  const auto& bndry = *bndry_ids;
-  if (bndry_ids && !bndry_ids->empty()) 
-  {  
-    const auto unique_bids = grid.GetDomainUniqueBoundaryIDs();
-    for (const auto& bid : bndry)
-    {
-      const auto it = std::find(unique_bids.begin(), unique_bids.end(), bid);
-      OpenSnInvalidArgumentIf(it == unique_bids.end(),
-                              "Boundary ID " + std::to_string(bid) + "not found on grid.");
-    }
-  }
+  // // Check the boundary IDs
+  // const auto& bndry = bndry_ids;
+  // if (bndry_ids && !bndry_ids->empty()) 
+  // {  
+  //   const auto unique_bids = grid.GetDomainUniqueBoundaryIDs();
+  //   for (const auto& bid : bndry)
+  //   {
+  //     const auto it = std::find(unique_bids.begin(), unique_bids.end(), bid);
+  //     OpenSnInvalidArgumentIf(it == unique_bids.end(),
+  //                             "Boundary ID " + std::to_string(bid) + "not found on grid.");
+  //   }
+  // }
 
-  // Store Mesh Information
-  std::vector<uint64_t> cell_ids, num_cell_nodes;
-  cell_ids.reserve(num_local_cells);
-  num_cell_nodes.reserve(num_local_cells);
-
-  std::vector<double> nodes_x, nodes_y, nodes_z;
-  nodes_x.reserve(num_local_nodes);
-  nodes_y.reserve(num_local_nodes);
-  nodes_z.reserve(num_local_nodes);
-
-  for (const auto& cell : grid.local_cells)
+  const auto unique_bids = grid.GetDomainUniqueBoundaryIDs();
+  for (const auto& bid : bndry_ids)
   {
-    cell_ids.push_back(cell.global_id);
-    num_cell_nodes.push_back(discretization.GetCellNumNodes(cell));
-
-    const auto& nodes = discretization.GetCellNodeLocations(cell);
-    for (const auto& node : nodes)
-    {
-      nodes_x.push_back(node.x);
-      nodes_y.push_back(node.y);
-      nodes_z.push_back(node.z);
-    }
+    const auto it = std::find(unique_bids.begin(), unique_bids.end(), bid);
+    OpenSnInvalidArgumentIf(it == unique_bids.end(),
+                            "Boundary ID " + std::to_string(bid) + "not found on grid.");
   }
+
+  // Store Global Mesh Information
+  // std::vector<uint64_t> cell_ids, num_cell_nodes;
+  // cell_ids.reserve(num_local_cells);
+  // num_cell_nodes.reserve(num_local_cells);
+
+  // std::vector<double> nodes_x, nodes_y, nodes_z;
+  // nodes_x.reserve(num_local_nodes);
+  // nodes_y.reserve(num_local_nodes);
+  // nodes_z.reserve(num_local_nodes);
+
+  // for (const auto& cell : grid.local_cells)
+  // {
+  //   cell_ids.push_back(cell.global_id);
+  //   num_cell_nodes.push_back(discretization.GetCellNumNodes(cell));
+
+  //   const auto& nodes = discretization.GetCellNodeLocations(cell);
+  //   for (const auto& node : nodes)
+  //   {
+  //     nodes_x.push_back(node.x);
+  //     nodes_y.push_back(node.y);
+  //     nodes_z.push_back(node.z);
+  //   }
+  // }
 
   // Write mesh data to h5 inside the mesh group
   hid_t mesh = H5CreateGroup(file_id, "mesh");
@@ -287,27 +294,31 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
       const auto& cell_mapping = discretization.GetCellMapping(cell);
 	    const auto& unit_cell_matrices = lbs_solver.GetUnitCellMatrices();
 	    const auto& fe_values = unit_cell_matrices.at(cell.local_id);
+
       unsigned int f = 0;
       for (const auto& face : cell.faces)
       {
         // If face is on the specified boundary
-        const auto it = std::find(bndry.begin(), bndry.end(), face.neighbor_id);
-        if (not face.has_neighbor and it != bndry.end())
+        const auto it = std::find(bndry_ids.begin(), bndry_ids.end(), face.neighbor_id);
+        if (not face.has_neighbor and it != bndry_ids.end())
         {
+          std::cout << "Neighbor ID: " << *it << std::endl;
+          exit(0);
+          
           // To do: Get the id name!
           const auto& int_f_shape_i = fe_values.intS_shapeI[f];
           const auto num_face_nodes = cell_mapping.NumFaceNodes(f);
 
           // Store face information
-          hid_t mesh = H5CreateGroup(file_id, "mesh");
+          // hid_t mesh = H5CreateGroup(file_id, "mesh");
           // hid_t global_mesh = H5CreateGroup(mesh, "global");
-          H5CreateAttribute(mesh, "num_local_cells", num_local_cells);
-          H5CreateAttribute(mesh, "num_local_nodes", num_local_nodes);
-          H5WriteDataset1D(mesh, "cell_ids", cell_ids);
-          H5WriteDataset1D(mesh, "num_cell_nodes", num_cell_nodes);
-          H5WriteDataset1D(mesh, "nodes_x", nodes_x);
-          H5WriteDataset1D(mesh, "nodes_y", nodes_y);
-          H5WriteDataset1D(mesh, "nodes_z", nodes_z);
+          // H5CreateAttribute(mesh, "num_local_cells", num_local_cells);
+          // H5CreateAttribute(mesh, "num_local_nodes", num_local_nodes);
+          // H5WriteDataset1D(mesh, "cell_ids", cell_ids);
+          // H5WriteDataset1D(mesh, "num_cell_nodes", num_cell_nodes);
+          // H5WriteDataset1D(mesh, "nodes_x", nodes_x);
+          // H5WriteDataset1D(mesh, "nodes_y", nodes_y);
+          // H5WriteDataset1D(mesh, "nodes_z", nodes_z);
 
           for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
           {
@@ -338,7 +349,6 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
     }
   }
   H5Fclose(file_id);
-
 }
 
 void

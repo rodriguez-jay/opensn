@@ -20,6 +20,7 @@ RegisterLuaFunctionInNamespace(LBSWriteGroupsetAngularFlux, lbs, WriteGroupsetAn
 RegisterLuaFunctionInNamespace(LBSReadGroupsetAngularFlux, lbs, ReadGroupsetAngularFlux);
 
 RegisterLuaFunctionInNamespace(LBSWriteAngularFluxes, lbs, WriteAngularFluxes);
+RegisterLuaFunctionInNamespace(LBSWriteAngularFluxes, lbs, WriteSurfaceAngularFluxes);
 RegisterLuaFunctionInNamespace(LBSReadAngularFluxes, lbs, ReadAngularFluxes);
 
 int
@@ -91,6 +92,37 @@ LBSWriteAngularFluxes(lua_State* L)
   }
   else
     LBSSolverIO::WriteAngularFluxes(lbs_solver, file_base);
+
+  return LuaReturn(L);
+}
+
+int
+LBSWriteSurfaceAngularFluxes(lua_State* L)
+{
+  const std::string fname = "lbs.WriteSurfaceAngularFluxes";
+  LuaCheckArgs<size_t, std::string>(L, fname);
+
+  const auto solver_handle = LuaArg<size_t>(L, 1);
+  const auto file_base = LuaArg<std::string>(L, 2);
+  auto bnd_names = LuaArg<std::vector<std::string>>(L, 3);
+
+  // Get pointer to solver
+  auto& lbs_solver =
+    opensn::GetStackItem<opensn::LBSSolver>(opensn::object_stack, solver_handle, fname);
+
+  // Get the supported boundaries
+  const auto supported_boundary_names = opensn::DiscreteOrdinatesSolver::supported_boundary_names;
+  const auto supported_boundary_ids = opensn::DiscreteOrdinatesSolver::supported_boundary_ids;
+  
+  std::vector<uint64_t> bndry_ids;
+  for (auto& name : bnd_names)
+    bndry_ids.push_back(supported_boundary_names.at(name));
+
+  for (auto& bid : bndry_ids)
+  {
+    auto bnd_name = supported_boundary_ids.at(bid);
+  }
+  LBSSolverIO::WriteSurfaceAngularFluxes(lbs_solver, file_base, bndry_ids);
 
   return LuaReturn(L);
 }
