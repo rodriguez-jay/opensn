@@ -187,16 +187,17 @@ void
 LBSSolverIO::WriteSurfaceAngularFluxes(
   LBSSolver& lbs_solver,
   const std::string& file_base,
-  const std::vector<uint64_t> bndry_ids)
+  const std::map<std::string, uint64_t>& bndry_map)
 {
   // Open the HDF5 file
   std::string file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".h5";
   hid_t file_id = H5Fcreate(file_name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
   OpenSnLogicalErrorIf(file_id < 0, "WriteSurfaceAngularFluxes: Failed to open " + file_name + ".");
 
-  std::vector<std::vector<double>>& src = lbs_solver.PsiNewLocal();
-
   log.Log() << "Writing surface angular flux to " << file_base;
+
+  std::vector<std::vector<double>>& src = lbs_solver.PsiNewLocal();
+  const auto& supported_boundary_ids = lbs_solver.supported_boundary_ids;
 
   // Write macro info
   const auto& grid = lbs_solver.Grid();
@@ -211,25 +212,25 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   H5CreateAttribute(file_id, "num_groupsets", num_groupsets);
 
   // // Check the boundary IDs
-  // const auto& bndry = bndry_ids;
-  // if (bndry_ids && !bndry_ids->empty()) 
-  // {  
-  //   const auto unique_bids = grid.GetDomainUniqueBoundaryIDs();
-  //   for (const auto& bid : bndry)
-  //   {
-  //     const auto it = std::find(unique_bids.begin(), unique_bids.end(), bid);
-  //     OpenSnInvalidArgumentIf(it == unique_bids.end(),
-  //                             "Boundary ID " + std::to_string(bid) + "not found on grid.");
-  //   }
-  // }
-
+  std::vector<uint64_t> bndry_ids;
+  std::vector<std::string> bndry_names;
   const auto unique_bids = grid.GetDomainUniqueBoundaryIDs();
-  for (const auto& bid : bndry_ids)
+  for (const auto& bndry : bndry_map)
   {
-    const auto it = std::find(unique_bids.begin(), unique_bids.end(), bid);
-    OpenSnInvalidArgumentIf(it == unique_bids.end(),
-                            "Boundary ID " + std::to_string(bid) + "not found on grid.");
+    bndry_names.push_back(bndry.first);
+    bndry_ids.push_back(bndry.second);
+    const auto id = std::find(unique_bids.begin(), unique_bids.end(), bndry.second);
+    OpenSnInvalidArgumentIf(id == unique_bids.end(),
+                            "Boundary ID " + std::to_string(bndry.second) + "not found on grid.");
   }
+
+  // const auto unique_bids = grid.GetDomainUniqueBoundaryIDs();
+  // for (const auto& bid : bndry_ids)
+  // {
+  //   const auto it = std::find(unique_bids.begin(), unique_bids.end(), bid);
+  //   OpenSnInvalidArgumentIf(it == unique_bids.end(),
+  //                           "Boundary ID " + std::to_string(bid) + "not found on grid.");
+  // }
 
   // Store Global Mesh Information
   // std::vector<uint64_t> cell_ids, num_cell_nodes;
@@ -266,10 +267,13 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   // H5WriteDataset1D(mesh, "nodes_y", nodes_y);
   // H5WriteDataset1D(mesh, "nodes_z", nodes_z);
 
+  std::map<std::string, std::vector<std::vector<double>>> mesh_map;
   // Go through each groupset
   for (const auto& groupset : groupsets)
   {
     // Write groupset info
+    std::map<std::string, std::vector<std::vector<double>>> data_map;
+
     const auto& uk_man = groupset.psi_uk_man_;
     const auto& quadrature = groupset.quadrature;
 
@@ -282,7 +286,6 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
     H5CreateAttribute(file_id, group_name + "/num_directions", num_gs_dirs);
     H5CreateAttribute(file_id, group_name + "/num_groups", num_gs_groups);
 
-    std::vector<double> values;
     for (const auto& cell : grid.local_cells)
     {  
       // Write the groupset surface angular flux data
@@ -292,6 +295,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
 
       // const auto& cell_mapping = discretization_->GetCellMapping(cell);
       const auto& cell_mapping = discretization.GetCellMapping(cell);
+      const auto& node_locations = cell_mapping.GetNodeLocations();
 	    const auto& unit_cell_matrices = lbs_solver.GetUnitCellMatrices();
 	    const auto& fe_values = unit_cell_matrices.at(cell.local_id);
 
@@ -302,9 +306,9 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         const auto it = std::find(bndry_ids.begin(), bndry_ids.end(), face.neighbor_id);
         if (not face.has_neighbor and it != bndry_ids.end())
         {
-          std::cout << "Neighbor ID: " << *it << std::endl;
-          exit(0);
-          
+          auto& bndry_name = supported_boundary_ids.at(*it);
+          // std::cout << "Neighbor ID: " << *it << std::endl;
+
           // To do: Get the id name!
           const auto& int_f_shape_i = fe_values.intS_shapeI[f];
           const auto num_face_nodes = cell_mapping.NumFaceNodes(f);
@@ -323,31 +327,77 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
           for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
           {
             const auto i = cell_mapping.MapFaceNode(f, fi);
-            // Maybe change to (dir : num_gs_dirs)?
+            const auto& node_vec = node_locations[i];
+
+            // Only add mesh data for the first groupset
+            for (auto gset = groupsets.begin(); gset != groupsets.end(); ++gset) 
+              if (gset == groupsets.begin()) 
+                mesh_map[bndry_name].push_back({node_vec[0], node_vec[1], node_vec[2]});
+            // mesh_map[bndry_name].push_back({node_vec[0],node_vec[1],node_vec[2]});
+          
+            // std::cout << mesh_map[bndry_name] << std::endl;
+            // for (const auto& value : mesh_map[bndry_name]) 
+            // {
+            //   std::cout << value << std::endl;
+            // }
+            // std::cout << "Bndry Name:" << bndry_name << std::endl;
+            // std::cout << "Pos: " << node_vec.x << " " << node_vec.y << " " << node_vec.z << std::endl;
+
             for (unsigned int n = 0; n < num_gs_dirs; ++n)
             {
               const auto& omega_n = quadrature->omegas[n];
-              const auto& weight_n = quadrature->weights[n];
+              const auto weight_n = quadrature->weights[n];
               const auto mu_n = omega_n.Dot(face.normal);
+
               if (mu_n <= 0.0)
                 continue;
-              mu.push_back(mu_n);
-              coeff.push_back(weight_n * mu_n * int_f_shape_i(i));
+
+              std::vector<double> data_vec;
+              data_vec.push_back(mu_n);
+              data_vec.push_back(weight_n * mu_n * int_f_shape_i(i));
               for (uint64_t g = 0; g < num_gs_groups; ++g)
               {
                 const auto dof_map = discretization.MapDOFLocal(cell, i, uk_man, n, g);
-                surf_flux.push_back(src[groupset_id][dof_map]);
+                data_vec.push_back(src[groupset_id][dof_map]);
               }
+              // Move the vector to avoid unecessary copy
+              data_map[bndry_name].push_back(std::move(data_vec));
             }
           }
         }
         ++f;
       }
-      H5WriteDataset1D(file_id, group_name + "/surf_flux", surf_flux);
-      H5WriteDataset1D(file_id, group_name + "/mu", mu);
-      H5WriteDataset1D(file_id, group_name + "/coeff", coeff);
+      // for (const auto& data_vec : data_map)
+      // {
+      //   for (double val : node_vec) 
+      //   {
+      //       std::cout << val << " ";  // Print each value in the node vector
+      //   }
+      //   std::cout << std::endl;  // Move to the next line after printing one node
+      // }
     }
+    for (const auto& [key, vec] : mesh_map) 
+      std::cout << "Boundary: " << key << " has " << vec.size() << " node vectors." << std::endl;
+
+    for (const auto& [key, vec] : data_map) 
+      std::cout << "Boundary: " << key << " has " << vec.size() << " data vectors." << std::endl;
+
+    exit(0);
+    // H5WriteDataset1D(file_id, group_name + "/surf_flux", surf_flux);
+    //   H5WriteDataset1D(file_id, group_name + "/mu", mu);
+    //   H5WriteDataset1D(file_id, group_name + "/coeff", coeff);
   }
+  // for (const auto& node_vec : mesh_map[bndry_name]) 
+  //         {
+  //           std::cout << "Node Data: ";
+  //           for (double val : node_vec) 
+  //           {
+  //               std::cout << val << " "; 
+  //           }
+  //           std::cout << std::endl;
+  //         }
+
+
   H5Fclose(file_id);
 }
 

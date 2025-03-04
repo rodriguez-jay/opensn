@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <map>
 #include <string>
 #include <optional>
 #include <cstdint>
@@ -34,7 +35,7 @@ public:
   static void WriteSurfaceAngularFluxes(
     LBSSolver& lbs_solver,
     const std::string& file_stem,
-    const std::vector<uint64_t> bndry_ids);
+    const std::map<std::string, uint64_t>& bndry_map);
 
   /**
    * Read an angular flux vector from a file.
