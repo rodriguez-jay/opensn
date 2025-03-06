@@ -22,6 +22,7 @@ RegisterLuaFunctionInNamespace(LBSReadGroupsetAngularFlux, lbs, ReadGroupsetAngu
 RegisterLuaFunctionInNamespace(LBSWriteAngularFluxes, lbs, WriteAngularFluxes);
 RegisterLuaFunctionInNamespace(LBSWriteSurfaceAngularFluxes, lbs, WriteSurfaceAngularFluxes);
 RegisterLuaFunctionInNamespace(LBSReadAngularFluxes, lbs, ReadAngularFluxes);
+RegisterLuaFunctionInNamespace(LBSReadSurfaceAngularFluxes, lbs, ReadSurfaceAngularFluxes);
 
 int
 LBSWriteGroupsetAngularFlux(lua_State* L)
@@ -148,6 +149,22 @@ LBSReadAngularFluxes(lua_State* L)
   auto& lbs_solver =
     opensn::GetStackItem<opensn::LBSSolver>(opensn::object_stack, solver_handle, fname);
   LBSSolverIO::ReadAngularFluxes(lbs_solver, file_base);
+
+  return LuaReturn(L);
+}
+int
+LBSReadSurfaceAngularFluxes(lua_State* L)
+{
+  const std::string fname = "lbs.ReadSurfaceAngularFluxes";
+  LuaCheckArgs<size_t, std::string>(L, fname);
+
+  const auto solver_handle = LuaArg<size_t>(L, 1);
+  const auto file_base = LuaArg<std::string>(L, 2);
+
+  // Get pointer to solver
+  auto& lbs_solver =
+    opensn::GetStackItem<opensn::LBSSolver>(opensn::object_stack, solver_handle, fname);
+  LBSSolverIO::ReadSurfaceAngularFluxes(lbs_solver, file_base);
 
   return LuaReturn(L);
 }

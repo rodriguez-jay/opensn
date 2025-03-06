@@ -415,6 +415,7 @@ ResponseEvaluator::EvaluateResponse(const std::string& buffer) const
 
   // Point sources
   for (const auto& point_source : point_sources_)
+  {
     for (const auto& subscriber : point_source.Subscribers())
     {
       const auto& cell = grid.local_cells[subscriber.cell_local_id];
@@ -432,6 +433,7 @@ ResponseEvaluator::EvaluateResponse(const std::string& buffer) const
           local_response += vol_wt * shape_val * src[g] * phi_dagger[dof_map + g];
       } // for node i
     }   // for subscriber
+  }
 
   // Volumetric sources
   for (const auto& volumetric_source : volumetric_sources_)

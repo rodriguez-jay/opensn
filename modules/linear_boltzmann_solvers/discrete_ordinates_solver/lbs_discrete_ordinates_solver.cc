@@ -589,7 +589,7 @@ DiscreteOrdinatesSolver::ComputeLeakage(const std::vector<uint64_t>& boundary_id
               const auto& weight = quadrature->weights[n];
               const auto mu = omega.Dot(face.normal);
               
-              // bndry_data << "Mu: " << mu << " w: " << weight << " Ylm: " << int_f_shape_i(i) << std::endl;
+              // std::cout << "Mu: " << mu << " w: " << weight << " Ylm: " << int_f_shape_i(i) << std::endl;
               
               if (mu <= 0.0)
                 continue;

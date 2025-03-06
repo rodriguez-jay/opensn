@@ -93,6 +93,17 @@ int LBSWriteSurfaceAngularFluxes(lua_State* L);
 int LBSReadAngularFluxes(lua_State* L);
 
 /**
+ * Reads the surface angular fluxes from a file.
+ *
+ * \param SolverIndex int Handle to the solver for which the group
+ * is to be created.
+ *
+ * \param file_base string Path+Filename_base to use for the output. Each location
+ *                         will append its id to the back plus an extension ".data"
+ */
+int LBSReadSurfaceAngularFluxes(lua_State* L);
+
+/**
  * Writes the flux-moments of a LBS solution to file (phi_old_local).
  *
  * \param SolverIndex int Handle to the solver for which the group

@@ -32,6 +32,13 @@ public:
     std::optional<const std::reference_wrapper<std::vector<std::vector<double>>>> opt_src =
       std::nullopt);
 
+  /**
+   * Write surface angular flux vector(s) to a file.
+   *
+   * \param lbs_solver LBS solver
+   * \param file_base File name stem
+   * \param bndry_map Map of boundary names and ids
+   */
   static void WriteSurfaceAngularFluxes(
     LBSSolver& lbs_solver,
     const std::string& file_stem,
@@ -49,6 +56,16 @@ public:
     const std::string& file_stem,
     std::optional<std::reference_wrapper<std::vector<std::vector<double>>>> opt_dest =
       std::nullopt);
+
+  /**
+   * Read surface angular flux vector(s) from a file.
+   *
+   * \param lbs_solver LBS solver
+   * \param file_base File name stem
+   */
+  static void ReadSurfaceAngularFluxes(
+    LBSSolver& lbs_solver,
+    const std::string& file_stem);
 
   /**
    * Write an angular flux groupset vector to a file.
