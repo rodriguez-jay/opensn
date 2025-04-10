@@ -243,4 +243,210 @@ LBSSolverIO::ReadAngularFluxes(
   H5Fclose(file_id);
 }
 
+void
+LBSSolverIO::WriteSurfaceAngularFluxes(
+  LBSProblem& lbs_problem,
+  const std::string& file_base,
+  std::map<std::string, uint64_t>& bndry_map)
+{
+  // Open the HDF5 file
+  std::string file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".h5";
+  hid_t file_id = H5Fcreate(file_name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+  OpenSnLogicalErrorIf(file_id < 0, "WriteSurfaceAngularFluxes: Failed to open " + file_name + ".");
+
+  // Perform checks
+  // OpenSnLogicalErrorIf(not options_.save_angular_flux,
+  //                      "The option `save_angular_flux` must be set to `true` in order "
+  //                      "to compute outgoing currents.");
+
+  log.Log() << "Writing surface angular flux to " << file_base;
+
+  std::vector<std::vector<double>>& src = lbs_problem.GetPsiNewLocal();
+  const auto& supported_boundary_ids = lbs_problem.supported_boundary_ids;
+
+  // Write macro info
+  const auto& grid = lbs_problem.GetGrid();
+  const auto& discretization = lbs_problem.GetSpatialDiscretization();
+  const auto& groupsets = lbs_problem.GetGroupsets();
+
+  auto num_local_cells = grid->local_cells.size();
+  auto num_local_nodes = discretization.GetNumLocalNodes();
+  auto num_groupsets = groupsets.size();
+
+  // Store groupsets
+  H5CreateAttribute(file_id, "num_groupsets", num_groupsets);
+
+  // Check the boundary IDs
+  std::vector<uint64_t> bndry_ids;
+  std::vector<std::string> bndry_names;
+  const auto unique_bids = grid->GetUniqueBoundaryIDs();
+  for (const auto& bndry : bndry_map)
+  {
+    bndry_names.push_back(bndry.first);
+    bndry_ids.push_back(bndry.second);
+    const auto id = std::find(unique_bids.begin(), unique_bids.end(), bndry.second);
+    OpenSnInvalidArgumentIf(id == unique_bids.end(),
+                            "Boundary ID " + std::to_string(bndry.second) + "not found on grid.");
+  }
+
+  std::map<std::string, std::vector<std::pair<uint64_t, std::vector<double>>>> mesh_map;
+  
+  // Go through each groupset
+  unsigned int gset = 0;
+  for (const auto& groupset : groupsets)
+  {
+    // Write groupset info
+    std::map<std::string, std::vector<std::vector<double>>> data_map;
+    std::map<std::string, std::vector<double>> mass_map;
+
+    const auto& uk_man = groupset.psi_uk_man_;
+    const auto& quadrature = groupset.quadrature;
+
+    auto groupset_id = groupset.id;
+    auto num_gs_dirs = quadrature->omegas.size();
+    auto num_gs_groups = groupset.groups.size();
+
+    std::cout << "Num Dirs: " << num_gs_dirs << std::endl;
+
+    for (const auto& cell : grid->local_cells)
+    {  
+      // const auto& cell_mapping = discretization_->GetCellMapping(cell);
+      const uint64_t& cell_id = cell.global_id;
+      const auto& cell_mapping = discretization.GetCellMapping(cell);
+      const auto& node_locations = cell_mapping.GetNodeLocations();
+	    const auto& unit_cell_matrices = lbs_problem.GetUnitCellMatrices();
+	    const auto& fe_values = unit_cell_matrices.at(cell.local_id);
+
+      unsigned int f = 0;
+      for (const auto& face : cell.faces)
+      {
+        // If face is on the specified boundary
+        const auto it = std::find(bndry_ids.begin(), bndry_ids.end(), face.neighbor_id);
+        if (not face.has_neighbor and it != bndry_ids.end())
+        {
+          const auto& bndry_name = supported_boundary_ids.at(*it);
+
+          const auto& int_f_shape_i = fe_values.intS_shapeI[f];
+          const auto& M_ij = fe_values.intS_shapeI_shapeJ[f];
+
+          const auto num_face_nodes = cell_mapping.GetNumFaceNodes(f);
+
+          for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
+          {
+            const auto i = cell_mapping.MapFaceNode(f, fi);
+            const auto& node_vec = node_locations[i];
+
+            if (gset == 0)
+              mesh_map[bndry_name].push_back({cell_id, {node_vec[0], node_vec[1], node_vec[2]}});
+
+            for (unsigned int d = 0; d < num_gs_dirs; ++d)
+            {
+              const auto& omega_d = quadrature->omegas[d];
+              const auto weight_d = quadrature->weights[d];
+              const auto mu_d = omega_d.Dot(face.normal);
+              
+              std::vector<double> data_vec;
+              data_vec.insert(data_vec.end(), {omega_d.x, omega_d.y, omega_d.z});
+              data_vec.push_back(mu_d);
+              data_vec.push_back(weight_d);
+              data_vec.push_back(int_f_shape_i(i));
+              for (uint64_t g = 0; g < num_gs_groups; ++g)
+              {
+                const auto dof_map = discretization.MapDOFLocal(cell, i, uk_man, d, g);
+                data_vec.push_back(src[groupset_id][dof_map]);
+              }
+              // Move the vector to avoid unecessary copy
+              data_map[bndry_name].push_back(std::move(data_vec));
+            }
+
+            for (unsigned int fj = 0; fj < num_face_nodes; ++fj)
+            {
+              const auto j = cell_mapping.MapFaceNode(f, fj);
+              mass_map[bndry_name].push_back(M_ij(i, j));
+            }
+          }
+        }
+        ++f;
+      }
+    }
+
+    std::string group_name = "groupset_" + std::to_string(groupset_id);
+
+    H5CreateGroup(file_id, group_name);
+    H5CreateAttribute(file_id, group_name + "/num_directions", num_gs_dirs);
+    H5CreateAttribute(file_id, group_name + "/num_groups", num_gs_groups);
+
+    // Write mesh information
+    if (gset == 0)
+    {
+      H5CreateGroup(file_id, "mesh");
+      // Per boundary id
+      for (const auto& [key, node_vectors] : mesh_map) 
+      {
+        // Create Group
+        const auto& bndry_id = key.c_str();
+        
+        std::vector<uint64_t> cell_ids;
+        std::vector<double> nodes_x, nodes_y, nodes_z;
+        for (const auto& [cell_id, vec] : node_vectors)
+        {
+          cell_ids.push_back(cell_id);
+          nodes_x.push_back(vec[0]);
+          nodes_y.push_back(vec[1]);
+          nodes_z.push_back(vec[2]);
+        }
+
+        std::string bndry_mesh = std::string("mesh/") + bndry_id;
+        H5CreateGroup(file_id, bndry_mesh);
+        H5WriteDataset1D(file_id, bndry_mesh + "/cell_ids", cell_ids);
+        H5WriteDataset1D(file_id, bndry_mesh + "/nodes_x", nodes_x);
+        H5WriteDataset1D(file_id, bndry_mesh + "/nodes_y", nodes_y);
+        H5WriteDataset1D(file_id, bndry_mesh + "/nodes_z", nodes_z);
+      }
+    }
+
+    // Write data information
+    for (const auto& [key, data_vectors] : data_map) 
+    {
+      const auto& bndry_id = key.c_str();
+      std::string bndry_grp = group_name + std::string("/") + bndry_id;
+      // H5CreateGroup(file_id, group_name + "/" + bndry_id);
+      H5CreateGroup(file_id, bndry_grp);
+
+      // Write the groupset surface angular flux data
+      std::vector<double> omega;
+      std::vector<double> mu;
+      std::vector<double> w_d;
+      std::vector<double> fe_shape;
+      std::vector<double> surf_flux;
+      for (const auto&vec : data_vectors)
+      {
+        omega.insert(omega.end(), {vec[0], vec[1], vec[2]});
+        mu.push_back(vec[3]);
+        w_d.push_back(vec[4]);
+        fe_shape.push_back(vec[5]);
+        surf_flux.push_back(vec[6]);
+      }
+      H5WriteDataset1D(file_id, bndry_grp + "/omega", omega);
+      H5WriteDataset1D(file_id, bndry_grp + "/mu", mu);
+      H5WriteDataset1D(file_id, bndry_grp + "/w_d", w_d);
+      H5WriteDataset1D(file_id, bndry_grp + "/fe_shape", fe_shape);
+      H5WriteDataset1D(file_id, bndry_grp + "/surf_flux", surf_flux);
+    }
+
+    // Write mass matrix information
+    for (const auto& [key, mass_vector] : mass_map) 
+    {
+      const auto& bndry_id = key.c_str();
+      std::string bndry_grp = group_name + std::string("/") + bndry_id;
+      H5WriteDataset1D(file_id, bndry_grp + "/M_ij", mass_vector);
+    }
+    ++gset;
+  }
+
+  ssize_t num_open_objs = H5Fget_obj_count(file_id, H5F_OBJ_ALL);
+  std::cout << num_open_objs << std::endl;
+  H5Fclose(file_id);
+}
+
 } // namespace opensn
