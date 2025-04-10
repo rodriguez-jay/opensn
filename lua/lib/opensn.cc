@@ -657,6 +657,7 @@ static bool reg = opensnlua::Console::Bind(
       .addFunction("ReadFluxMoments", &LBSReadFluxMoments)
       .addFunction("WriteAngularFluxes", &LBSWriteAngularFluxes)
       .addFunction("ReadAngularFluxes", &LBSReadAngularFluxes)
+      .addFunction("WriteSurfaceAngularFluxes", &LBSWriteSurfaceAngularFluxes)
       .endNamespace();
   });
 

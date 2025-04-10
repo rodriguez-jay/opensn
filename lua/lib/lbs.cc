@@ -121,4 +121,22 @@ LBSReadAngularFluxes(std::shared_ptr<LBSProblem> lbs_problem, const std::string&
   LBSSolverIO::ReadAngularFluxes(*lbs_problem, file_base);
 }
 
+void
+LBSWriteSurfaceAngularFluxes(std::shared_ptr<LBSProblem> lbs_problem, 
+                             const std::string& file_base,
+                             const std::vector<std::string>& bnd_names)
+{
+  // Get the supported boundaries
+  const auto supported_boundary_names = opensn::DiscreteOrdinatesProblem::supported_boundary_names;
+  const auto supported_boundary_ids = opensn::DiscreteOrdinatesProblem::supported_boundary_ids;
+
+  // Get the boundaries to parse
+  std::map<std::string, std::uint64_t> bndry_map;
+  for (auto& name : bnd_names)
+  {
+    bndry_map[name] = supported_boundary_names.at(name);
+  }
+  LBSSolverIO::WriteSurfaceAngularFluxes(*lbs_problem, file_base, bndry_map);
+}
+
 } // namespace opensnlua
