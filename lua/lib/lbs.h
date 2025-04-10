@@ -41,4 +41,8 @@ void LBSWriteAngularFluxes(std::shared_ptr<opensn::LBSProblem> lbs_problem,
 void LBSReadAngularFluxes(std::shared_ptr<opensn::LBSProblem> lbs_problem,
                           const std::string& file_base);
 
+void LBSWriteSurfaceAngularFluxes(std::shared_ptr<opensn::LBSProblem> lbs_problem,
+                                  const std::string& file_base,
+                                  const std::vector<std::string>& bnd_names);
+
 } // namespace opensnlua
