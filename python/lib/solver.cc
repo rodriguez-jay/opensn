@@ -491,6 +491,33 @@ WrapLBS(py::module& slv)
       }
     }
   );
+  lbs_problem.def(
+    "WriteSurfaceAngularFluxes",
+    [](LBSProblem& self, const std::string& file_base, py::list bndry_names)
+    {
+      std::map<std::string, std::uint64_t> allowed_bd_names = LBSProblem::supported_boundary_names;
+      std::map<std::uint64_t, std::string> allowed_bd_ids = LBSProblem::supported_boundary_ids;
+
+      std::map<std::string, std::uint64_t> bndry_map;
+      for (py::handle name : bndry_names)
+      {
+        std::string bndry = name.cast<std::string>();
+        bndry_map[bndry] = allowed_bd_names.at(bndry);
+      }
+
+      LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndry_map);
+    },
+    R"(
+    ???
+
+    Parameters
+    ----------
+    file_base: str
+        ???
+    )",
+    py::arg("file_base"),
+    py::arg("bndry_names")
+  );
 
   // discrete ordinate solver
   auto do_problem = py::class_<DiscreteOrdinatesProblem, std::shared_ptr<DiscreteOrdinatesProblem>,

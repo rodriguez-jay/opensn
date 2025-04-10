@@ -3,9 +3,11 @@
 
 #pragma once
 
+#include <map>
 #include <string>
 #include <optional>
 #include <vector>
+#include <cstdint>
 #include <functional>
 
 namespace opensn
@@ -42,6 +44,19 @@ public:
     const std::string& file_base,
     std::optional<std::reference_wrapper<std::vector<std::vector<double>>>> opt_dest =
       std::nullopt);
+
+  /**
+   * Write surface angular flux vector(s) to a file.
+   *
+   * \param lbs_solver LBS solver
+   * \param file_base File name stem
+   * \param bndry_map Map of boundary names and ids
+   */
+  static void WriteSurfaceAngularFluxes(
+    LBSProblem& lbs_solver,
+    const std::string& file_stem,
+    std::map<std::string, uint64_t>& bndry_map);
+
 
   /**
    * Write a flux moments vector to a file.
