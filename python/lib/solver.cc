@@ -636,6 +636,13 @@ WrapNLKEigen(py::module& slv)
     ???
     )"
   );
+  non_linear_k_eigen_solver.def(
+    "GetEigenvalue",
+    &NonLinearKEigenSolver::GetEigenvalue,
+    R"(
+    Return the current k‑eigenvalue.
+    )"
+  );
   // clang-format on
 }
 
@@ -668,6 +675,13 @@ WrapPIteration(py::module& slv)
     Parameters
     ----------
     ???
+    )"
+  );
+  pi_k_eigen_solver.def(
+    "GetEigenvalue",
+    &PowerIterationKEigenSolver::GetEigenvalue,
+    R"(
+    Return the current k‑eigenvalue.
     )"
   );
 
