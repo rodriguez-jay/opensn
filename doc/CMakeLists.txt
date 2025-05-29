@@ -65,6 +65,16 @@ if(DOXYGEN_FOUND AND NOT ${SPHINX_BUILD} STREQUAL SPHINX_BUILD-NOTFOUND)
     configure_file(${CMAKE_SOURCE_DIR}/tutorials/python/lbs/index.rst src/tutorials/lbs/index.rst COPYONLY)
     configure_file(${CMAKE_SOURCE_DIR}/tutorials/python/lbs/first/first_example.ipynb
                    src/tutorials/lbs/first/first_example.ipynb COPYONLY)
+    # Tutorials Adjoint
+    configure_file(${CMAKE_SOURCE_DIR}/tutorials/python/lbs/adjoint/index.rst src/tutorials/lbs/adjoint/index.rst COPYONLY)
+    configure_file(${CMAKE_SOURCE_DIR}/tutorials/python/lbs/adjoint/VolSrc_1D.ipynb
+                   src/tutorials/lbs/adjoint/VolSrc_1D.ipynb COPYONLY)
+    configure_file(${CMAKE_SOURCE_DIR}/tutorials/python/lbs/adjoint/BndrySrc_1D.ipynb
+                   src/tutorials/lbs/adjoint/BndrySrc_1D.ipynb COPYONLY)
+    configure_file(${CMAKE_SOURCE_DIR}/tutorials/python/lbs/adjoint/Detector_1D.ipynb
+                   src/tutorials/lbs/adjoint/Detector_1D.ipynb COPYONLY)
+    configure_file(${CMAKE_SOURCE_DIR}/tutorials/python/lbs/adjoint/Glovebox_2D.ipynb
+                   src/tutorials/lbs/adjoint/Glovebox_2D.ipynb COPYONLY)
     # Tutorials mesh
     configure_file(${CMAKE_SOURCE_DIR}/tutorials/python/mesh/index.rst
                    src/tutorials/mesh/index.rst COPYONLY)
@@ -122,6 +132,7 @@ if(DOXYGEN_FOUND AND NOT ${SPHINX_BUILD} STREQUAL SPHINX_BUILD-NOTFOUND)
         ${PROJECT_SOURCE_DIR}/modules/*.h
     )
 
+    generate_tutorial(${CMAKE_SOURCE_DIR}/tutorials/python/lbs/adjoint)
     generate_tutorial(${CMAKE_SOURCE_DIR}/tutorials/python/lbs/first)
     generate_tutorial(${CMAKE_SOURCE_DIR}/tutorials/python/mesh)
     generate_tutorial(${CMAKE_SOURCE_DIR}/tutorials/python/aquad)

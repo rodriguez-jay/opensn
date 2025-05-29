@@ -6,3 +6,4 @@ Linear Boltzmann Solver
    :maxdepth: 1
 
    first/first_example
+   adjoint/index
