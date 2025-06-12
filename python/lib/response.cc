@@ -57,7 +57,7 @@ WrapResEval(py::module& response)
     Parameters
     ----------
     buffer_name: str
-        ???
+        A string containing the name of the adjoint buffer
     )",
     py::arg("buffer_name")
   );

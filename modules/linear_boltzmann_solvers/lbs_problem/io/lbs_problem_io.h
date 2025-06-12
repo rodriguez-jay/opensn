@@ -56,6 +56,18 @@ public:
     const std::string& file_stem,
     std::map<std::string, uint64_t>& bndry_map);
 
+  /**
+   * Read a surface angular flux vector from a file.
+   *
+   * \param lbs_problem LBS problem
+   * \param file_base File name stem
+   * \param per_material Optional angular flux destination vector
+   */
+  static void ReadSurfaceAngularFluxes(
+    LBSProblem& lbs_solver,
+    const std::string& file_stem,
+    std::map<std::string, uint64_t>& bndry_map);
+
 
   /**
    * Write a flux moments vector to a file.
