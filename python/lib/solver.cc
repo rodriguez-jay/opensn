@@ -508,12 +508,39 @@ WrapLBS(py::module& slv)
       LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndry_map);
     },
     R"(
-    ???
+    Write surface angular flux data to file.
 
     Parameters
     ----------
     file_base: str
-        ???
+        File basename.
+    )",
+    py::arg("file_base"),
+    py::arg("bndry_names")
+  );
+  lbs_problem.def(
+    "ReadSurfaceAngularFluxes",
+    [](LBSProblem& self, const std::string& file_base, py::list bndry_names)
+    {
+      std::map<std::string, std::uint64_t> allowed_bd_names = LBSProblem::supported_boundary_names;
+      std::map<std::uint64_t, std::string> allowed_bd_ids = LBSProblem::supported_boundary_ids;
+
+      std::map<std::string, std::uint64_t> bndry_map;
+      for (py::handle name : bndry_names)
+      {
+        std::string bndry = name.cast<std::string>();
+        bndry_map[bndry] = allowed_bd_names.at(bndry);
+      }
+      
+      LBSSolverIO::ReadSurfaceAngularFluxes(self, file_base, bndry_map);
+    },
+    R"(
+    Read surface angular fluxes from file.
+
+    Parameters
+    ----------
+    file_base: str
+        File basename.
     )",
     py::arg("file_base"),
     py::arg("bndry_names")

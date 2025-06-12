@@ -450,4 +450,20 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   H5Fclose(file_id);
 }
 
+void
+LBSSolverIO::ReadSurfaceAngularFluxes(
+  LBSProblem& lbs_problem,
+  const std::string& file_base,
+  std::map<std::string, uint64_t>& bndry_map)
+{
+  // Open HDF5 file
+  std::string file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".h5";
+  hid_t file_id = H5Fopen(file_name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+  OpenSnLogicalErrorIf(file_id < 0, "Failed to open " + file_name + ".");
+
+  log.Log() << "Reading surface angular flux file from " << file_base;
+
+  H5Fclose(file_id);
+}
+
 } // namespace opensn
