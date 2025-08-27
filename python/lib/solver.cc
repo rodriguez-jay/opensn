@@ -493,19 +493,24 @@ WrapLBS(py::module& slv)
   );
   lbs_problem.def(
     "WriteSurfaceAngularFluxes",
-    [](LBSProblem& self, const std::string& file_base, py::list bndry_names)
+    [](LBSProblem& self, 
+      const std::string& file_base, 
+      py::list bndry_names)
     {
-      std::map<std::string, std::uint64_t> allowed_bd_names = LBSProblem::supported_boundary_names;
+      std::map<std::string, uint64_t> allowed_bd_names = LBSProblem::supported_boundary_names;
       std::map<std::uint64_t, std::string> allowed_bd_ids = LBSProblem::supported_boundary_ids;
 
-      std::map<std::string, std::uint64_t> bndry_map;
+      // std::map<std::string, uint64_t> bndry_map;
+      std::vector<std::string> bndrys;
       for (py::handle name : bndry_names)
       {
         std::string bndry = name.cast<std::string>();
-        bndry_map[bndry] = allowed_bd_names.at(bndry);
+        // bndry_map[bndry] = allowed_bd_names.at(bndry);
+        bndrys.push_back(bndry);
       }
 
-      LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndry_map);
+      // LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndry_map);
+      LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndrys);
     },
     R"(
     Write surface angular flux data to file.
@@ -522,17 +527,19 @@ WrapLBS(py::module& slv)
     "ReadSurfaceAngularFluxes",
     [](LBSProblem& self, const std::string& file_base, py::list bndry_names)
     {
-      std::map<std::string, std::uint64_t> allowed_bd_names = LBSProblem::supported_boundary_names;
-      std::map<std::uint64_t, std::string> allowed_bd_ids = LBSProblem::supported_boundary_ids;
+      std::map<std::string, std::uint64_t> supported_bd_names = LBSProblem::supported_boundary_names;
+      std::map<std::uint64_t, std::string> supported_bd_ids = LBSProblem::supported_boundary_ids;
 
-      std::map<std::string, std::uint64_t> bndry_map;
+      // std::map<std::string, std::uint64_t> bndry_map;
+      std::vector<std::string> bndrys;
       for (py::handle name : bndry_names)
       {
         std::string bndry = name.cast<std::string>();
-        bndry_map[bndry] = allowed_bd_names.at(bndry);
+        // bndry_map[bndry] = supported_bd_names.at(bndry);
+        bndrys.push_back(bndry);
       }
-      
-      LBSSolverIO::ReadSurfaceAngularFluxes(self, file_base, bndry_map);
+      // LBSSolverIO::ReadSurfaceAngularFluxes(self, file_base, bndry_map);
+      LBSSolverIO::ReadSurfaceAngularFluxes(self, file_base, bndrys);
     },
     R"(
     Read surface angular fluxes from file.
