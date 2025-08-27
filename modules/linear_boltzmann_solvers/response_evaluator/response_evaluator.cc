@@ -490,14 +490,35 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& buffer) const
   // const auto& psi_dagger = buffer_data.third;
   const auto& psi_dagger = buffer_data.surface_angular_fluxes;
 
-
   OpenSnLogicalErrorIf(psi_dagger.empty(),
                        "Surface adjoint flux data must be available "
                        "for a surface response evaluation.");
 
+  const auto& groupsets = lbs_problem.GetGroupsets()
+
   for (const auto surf_psi : psi_dagger)
   {
     std::cout << surf_psi.mu.size() << std::endl;
+    std::cout << surf_psi.M_ij.size() << std::endl;
+    std::cout << surf_psi.surf_flux.size() << std::endl;
+
+    for (const auto& groupset : groupsets)
+    {
+      auto groupset_id = groupset.id;
+      auto num_gs_groups = groupset.groups.size();
+
+      auto num_gs_dir = surf_psi.omega.size()
+
+      for (unsigned int d = 0; d < num_gs_dirs; ++d)
+      {
+        const auto& omega_d = surf_psi.omega[d]
+        for (uint64_t g = 0; g < num_gs_groups; ++g)
+        {
+          std::cout << "Index : " << std::to_string(d * num_gs_groups + g) << std::endl;
+          std::cout << "Value : " << surf_psi.surf_flux[d * num_gs_groups + g] << std::endl;
+        }
+      }
+    }
   } 
   exit(0);
 }
