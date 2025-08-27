@@ -604,6 +604,11 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
                             "Boundary " + bndry + "not found on grid.");
   }
 
+  ///////////////////////////////////////////////////////////////////////////
+  // * Double check multiple groupsets!! There might be something there wrong
+  // * Add a way to get mesh data for each surface node -> M_ij
+  ///////////////////////////////////////////////////////////////////////////
+
   // Go through each groupset
   for (const auto& groupset : groupsets)
   {

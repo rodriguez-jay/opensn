@@ -52,7 +52,7 @@ public:
     std::vector<double> w_d;
     std::vector<double> M_ij;
     std::vector<double> psi;
-   };
+  };
 
   /**
    * Write surface angular flux vector(s) to a file.
