@@ -62,6 +62,20 @@ WrapResEval(py::module& response)
     py::arg("buffer_name")
   );
   res_eval.def(
+    "EvaluateSurfaceResponse",
+    &ResponseEvaluator::EvaluateSurfaceResponse,
+    R"(
+    Evaluate a surface response using the specified bndry name and adjoint buffer with 
+    the currently defined forward sources in the solver.
+
+    Parameters
+    ----------
+    buffer_name: str
+        Adjoint buffer name
+    )",
+    py::arg("buffer_name")
+  );
+  res_eval.def(
     "SetOptions",
     [](ResponseEvaluator& self, py::kwargs& params)
     {
