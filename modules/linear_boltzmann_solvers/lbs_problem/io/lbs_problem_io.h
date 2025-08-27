@@ -44,17 +44,26 @@ public:
     std::optional<std::reference_wrapper<std::vector<std::vector<double>>>> opt_dest =
       std::nullopt);
 
+
+  struct SurfaceAngularFluxes {
+    std::vector<double> omega;
+    std::vector<double> mu;
+    std::vector<double> w_d;
+    std::vector<double> M_ij;
+    std::vector<double> psi;
+   };
+
   /**
    * Write surface angular flux vector(s) to a file.
    *
    * \param lbs_solver LBS solver
    * \param file_base File name stem
-   * \param bndry_map Map of boundary names and ids
+   * \param bndrys Map of boundary names and ids
    */
   static void WriteSurfaceAngularFluxes(
     LBSProblem& lbs_solver,
     const std::string& file_stem,
-    std::map<std::string, uint64_t>& bndry_map);
+    std::vector<std::string>& bndrys);
 
   /**
    * Read a surface angular flux vector from a file.
@@ -63,11 +72,11 @@ public:
    * \param file_base File name stem
    * \param per_material Optional angular flux destination vector
    */
-  static void ReadSurfaceAngularFluxes(
+  static std::vector<SurfaceAngularFluxes> 
+  ReadSurfaceAngularFluxes(
     LBSProblem& lbs_solver,
     const std::string& file_stem,
-    std::map<std::string, uint64_t>& bndry_map);
-
+    std::vector<std::string>& bndrys);
 
   /**
    * Write a flux moments vector to a file.
