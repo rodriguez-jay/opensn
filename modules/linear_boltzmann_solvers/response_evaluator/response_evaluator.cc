@@ -117,6 +117,11 @@ ResponseEvaluator::GetBufferOptionsBlock()
     "file_prefixes",
     "A table containing file prefixes for flux moments and angular flux binary files. "
     "These are keyed by \"flux_moments\" and \"angular_fluxes\", respectively.");
+  params.AddOptionalParameter<std::string>(
+    "surf",
+    {},
+    "Optional list of surface ids."
+  );
 
   return params;
 }
@@ -143,7 +148,20 @@ ResponseEvaluator::SetBufferOptions(const InputParameters& input)
     LBSSolverIO::ReadAngularFluxes(
       *lbs_problem_, prefixes.GetParamValue<std::string>("angular_fluxes"), psi);
 
-  adjoint_buffers_[name] = {phi, psi};
+  std::vector<opensn::LBSSolverIO::SurfaceAngularFluxes> surf_psi;
+  if (prefixes.Has("surface_angular_fluxes"))
+  {
+    const auto surf = params.GetParamValue<std::string>("surf");
+    std::cout << "Surface: " << surf << std::endl;
+
+    std::vector<std::string> bndrys;
+    bndrys.push_back(surf);
+     
+    surf_psi = LBSSolverIO::ReadSurfaceAngularFluxes(
+      *lbs_problem_, prefixes.GetParamValue<std::string>("surface_angular_fluxes"), bndrys);
+  }
+
+  adjoint_buffers_[name] = {phi, psi, surf_psi};
   log.Log0Verbose1() << "Adjoint buffer " << name << " added to the stack.";
 }
 
@@ -314,8 +332,11 @@ double
 ResponseEvaluator::EvaluateResponse(const std::string& buffer) const
 {
   const auto& buffer_data = adjoint_buffers_.at(buffer);
-  const auto& phi_dagger = buffer_data.first;
-  const auto& psi_dagger = buffer_data.second;
+  // const auto& phi_dagger = buffer_data.first;
+  // const auto& psi_dagger = buffer_data.second;
+
+  const auto& phi_dagger = buffer_data.flux_moments;
+  const auto& psi_dagger = buffer_data.angular_fluxes;
 
   OpenSnLogicalErrorIf(not material_sources_.empty() and phi_dagger.empty(),
                        "If material sources are present, adjoint flux moments "
@@ -460,6 +481,25 @@ ResponseEvaluator::EvaluateResponse(const std::string& buffer) const
   double global_response = 0.0;
   mpi_comm.all_reduce(local_response, global_response, mpi::op::sum<double>());
   return global_response;
+}
+
+double
+ResponseEvaluator::EvaluateSurfaceResponse(const std::string& buffer) const
+{
+  const auto& buffer_data = adjoint_buffers_.at(buffer);
+  // const auto& psi_dagger = buffer_data.third;
+  const auto& psi_dagger = buffer_data.surface_angular_fluxes;
+
+
+  OpenSnLogicalErrorIf(psi_dagger.empty(),
+                       "Surface adjoint flux data must be available "
+                       "for a surface response evaluation.");
+
+  for (const auto surf_psi : psi_dagger)
+  {
+    std::cout << surf_psi.mu.size() << std::endl;
+  } 
+  exit(0);
 }
 
 std::vector<double>
