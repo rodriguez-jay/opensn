@@ -484,43 +484,62 @@ ResponseEvaluator::EvaluateResponse(const std::string& buffer) const
 }
 
 double
-ResponseEvaluator::EvaluateSurfaceResponse(const std::string& buffer) const
+ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_buffer,
+                                           const std::string& adj_buffer) const
 {
-  const auto& buffer_data = adjoint_buffers_.at(buffer);
-  // const auto& psi_dagger = buffer_data.third;
-  const auto& psi_dagger = buffer_data.surface_angular_fluxes;
+  const auto& fwd_data = adjoint_buffers_.at(fwd_buffer);
+  const auto& psi = fwd_data.surface_angular_fluxes;
+  OpenSnLogicalErrorIf(psi.empty(),
+                       "Surface flux data must be available "
+                       "for a surface response evaluation.");
 
+  const auto& adj_data = adjoint_buffers_.at(adj_buffer);
+  const auto& psi_dagger = adj_data.surface_angular_fluxes;
   OpenSnLogicalErrorIf(psi_dagger.empty(),
                        "Surface adjoint flux data must be available "
                        "for a surface response evaluation.");
 
-  const auto& groupsets = lbs_problem.GetGroupsets()
-
+  double totlkg_rate = 0.;
   for (const auto surf_psi : psi_dagger)
   {
-    std::cout << surf_psi.mu.size() << std::endl;
-    std::cout << surf_psi.M_ij.size() << std::endl;
-    std::cout << surf_psi.surf_flux.size() << std::endl;
+    const auto num_face_nodes = surf_psi.M_ij.size();
 
-    for (const auto& groupset : groupsets)
+    for (size_t fi = 0; fi < num_face_nodes; ++fi)
     {
-      auto groupset_id = groupset.id;
-      auto num_gs_groups = groupset.groups.size();
-
-      auto num_gs_dir = surf_psi.omega.size()
-
-      for (unsigned int d = 0; d < num_gs_dirs; ++d)
+      const auto M_ij = surf_psi.M_ij[fi];
+      for (const auto& groupset : lbs_problem_->GetGroupsets())
       {
-        const auto& omega_d = surf_psi.omega[d]
-        for (uint64_t g = 0; g < num_gs_groups; ++g)
+        auto groupset_id = groupset.id;
+        auto num_gs_groups = groupset.groups.size();
+
+        auto num_dirs = surf_psi.mu.size();
+        // std::cout << "Num Dirs : " << num_dirs << std::endl;
+        for (unsigned int d = 0; d < num_dirs; ++d)
         {
-          std::cout << "Index : " << std::to_string(d * num_gs_groups + g) << std::endl;
-          std::cout << "Value : " << surf_psi.surf_flux[d * num_gs_groups + g] << std::endl;
+          // std::cout << "Omega : " << surf_psi.omega[3*d + 0] << " " 
+                                  // << surf_psi.omega[3*d + 1] << " " 
+                                  // << surf_psi.omega[3*d + 2] << std::endl;
+          const auto& mu_d = surf_psi.mu[d];
+          const auto& wt_d = surf_psi.wt_d[d];
+
+          if (mu_d <= 0.0)
+            continue;
+
+          // std::cout << "Mu : " << mu_d << std::endl;
+          for (uint64_t g = 0; g < num_gs_groups; ++g)
+          {
+            //  std::cout << "Index : " << std::to_string(d * num_gs_groups + g) << std::endl;
+            // std::cout << "Value : " << surf_psi.psi[d * num_gs_groups + g] << std::endl;
+            double lkg = mu_d * wt_d * M_ij * surf_psi.psi[d * num_gs_groups + g];
+            // std::cout << "Lkg : " << lkg << std::endl;
+            totlkg_rate = totlkg_rate + lkg;
+          }
         }
       }
     }
+    std::cout << "Total Lkg Rate : " << totlkg_rate << std::endl;
   } 
-  exit(0);
+  return totlkg_rate;
 }
 
 std::vector<double>
