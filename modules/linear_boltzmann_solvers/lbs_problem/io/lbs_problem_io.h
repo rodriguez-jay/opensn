@@ -45,11 +45,22 @@ public:
     std::optional<std::reference_wrapper<std::vector<std::vector<double>>>> opt_dest =
       std::nullopt);
 
+  struct NodeData {
+    uint64_t node_id;
+    std::vector<double> loc;
+  };
 
+  struct CellData{ 
+    uint64_t cell_id;
+    std::vector<NodeData> nodes;
+  };
+  // std::vector<std::pair<uint64_t, Vector3>> nodes;
+
+  
   struct SurfaceAngularFluxes {
     std::vector<double> omega;
     std::vector<double> mu;
-    std::vector<double> w_d;
+    std::vector<double> wt_d;
     std::vector<double> M_ij;
     std::vector<double> psi;
   };
@@ -64,7 +75,8 @@ public:
   static void WriteSurfaceAngularFluxes(
     LBSProblem& lbs_solver,
     const std::string& file_stem,
-    std::vector<std::string>& bndrys);
+    std::vector<std::string>& bndrys,
+    std::optional<std::pair<std::string, double>> surfaces);
 
   /**
    * Read a surface angular flux vector from a file.

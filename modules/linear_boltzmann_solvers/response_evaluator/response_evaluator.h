@@ -59,8 +59,8 @@ class ResponseEvaluator
 private:
   using FluxMomentBuffer = std::vector<double>;
   using AngularFluxBuffer = std::vector<std::vector<double>>;
-  using SurfaceAngularFluxBuffer = std::vector<LBSSolverIO::SurfaceAngularFluxes>;
   // using AdjointBuffer = std::pair<FluxMomentBuffer, AngularFluxBuffer>;
+  using SurfaceAngularFluxBuffer = std::vector<LBSSolverIO::SurfaceAngularFluxes>;
   struct AdjointBuffer 
   {
     FluxMomentBuffer flux_moments;
@@ -104,10 +104,11 @@ public:
   double EvaluateResponse(const std::string& buffer_name) const;
 
   /**
-   * Evaluate a response using the specified adjoint buffer with the currently defined sources in
-   * the solver.
+   * Evaluate a response using the specified forward buffer and 
+   * adjoint buffer towards a specified surface id.
    */
-  double EvaluateSurfaceResponse(const std::string& buffer_name) const;
+  double EvaluateSurfaceResponse(const std::string& fwd_buffer,
+                                 const std::string& adj_buffer) const;
 
 private:
   /**
