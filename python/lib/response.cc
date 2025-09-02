@@ -70,10 +70,13 @@ WrapResEval(py::module& response)
 
     Parameters
     ----------
-    buffer_name: str
+    fwd_buffer: str
+        Foward buffer name
+    adj_buffer: str
         Adjoint buffer name
     )",
-    py::arg("buffer_name")
+    py::arg("fwd_buffer"),
+    py::arg("adj_buffer")
   );
   res_eval.def(
     "SetOptions",
