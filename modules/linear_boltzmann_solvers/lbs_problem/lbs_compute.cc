@@ -458,11 +458,13 @@ ComputeLeakage(DiscreteOrdinatesProblem& do_problem, const std::vector<uint64_t>
               if (mu <= 0.0)
                 continue;
 
+              // std::cout << "Mu : " << mu << std::endl;
               const auto coeff = weight * mu * int_f_shape_i(i);
               for (unsigned int gsg = 0; gsg < num_gs_groups; ++gsg)
               {
                 const auto g = first_gs_group + gsg;
                 const auto imap = sdm.MapDOFLocal(cell, i, psi_uk_man, n, gsg);
+                // std::cout << "CompLkg : " << psi_gs[imap] << std::endl;
                 bndry_leakage[g] += coeff * psi_gs[imap];
               } // for groupset group gsg
             } // for angle n
