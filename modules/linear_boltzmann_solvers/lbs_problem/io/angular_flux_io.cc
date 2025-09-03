@@ -330,10 +330,13 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   //          -> Cell_i+1  -> [nodes_i, nodes_i+1, ..., nodes_n]
   //          -> ...       -> [...]
   //          -> Cell_n    -> [...]
-  // std::map<std::string, std::vector<std::pair<uint64_t, std::vector<double>>>> mesh_map;
+  std::map<std::string, std::vector<std::pair<uint64_t, std::vector<double>>>> mesh_map;
+
+  std::vector<uint64_t> cell_ids, num_nodes, node_ids;
+  std::vector<double> nodes_x, nodes_y, nodes_z;
 
   // Map of Boundary IDs to Structured CellData object
-  std::map<std::string, std::vector<LBSSolverIO::CellData>> mesh_map;
+  // std::map<std::string, std::vector<LBSSolverIO::CellData>> mesh_map;
   
   // Go through each groupset
   unsigned int gset = 0;
@@ -355,13 +358,14 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
     // std::cout << "Num Dirs: " << num_gs_dirs << std::endl;
 
     // Loop over all cells
-    std::vector<LBSSolverIO::CellData> cell_data;
+    // std::vector<LBSSolverIO::CellData> cell_data;
     for (const auto& cell : grid->local_cells)
     {  
       // const auto& cell_mapping = discretization_->GetCellMapping(cell);
       const uint64_t& cell_id = cell.global_id;
       const auto& cell_mapping = discretization.GetCellMapping(cell);
       const auto& node_locations = cell_mapping.GetNodeLocations();
+      uint64_t num_cell_nodes = 0;
 
       const auto& unit_cell_matrices = lbs_problem.GetUnitCellMatrices();
 	    const auto& fe_values = unit_cell_matrices.at(cell.local_id);
@@ -420,21 +424,36 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         if (isSurf)
         {
           double lkgrate = 0.0;
+
+          // Pass multiple faces for the same cell
+          auto has_cell = std::find(cell_ids.begin(), cell_ids.end(), cell_id);
+          if (has_cell == cell_ids.end())
+            cell_ids.push_back(cell_id);
+
           const auto& int_f_shape_i = fe_values.intS_shapeI[f];
           const auto& M_ij = fe_values.intS_shapeI_shapeJ[f];
 
-          const auto num_face_nodes = cell_mapping.GetNumFaceNodes(f);
+          const uint64_t& num_face_nodes = cell_mapping.GetNumFaceNodes(f);
+          // num_nodes.push_back(num_face_nodes);
+
+          // What about a cell with multiple faces on the boundary?
+          num_cell_nodes += num_face_nodes;
 
           // std::vector<LBSSolverIO::NodeData> node_data; 
           for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
           {
-            const auto i = cell_mapping.MapFaceNode(f, fi);
+            uint64_t i = cell_mapping.MapFaceNode(f, fi);
             const auto& node_vec = node_locations[i];
             // node_data.push_back({i, node_Vec});
-            cell_data[cell_id].nodes.push_back({i, {node_vec[0], node_vec[1], node_vec[2]}});
+            // cell_data[cell_id].nodes.push_back({i, {node_vec[0], node_vec[1], node_vec[2]}});
 
-            // if (gset == 0)
-              // mesh_map[bndry_name].push_back({cell_id, {node_vec[0], node_vec[1], node_vec[2]}});
+            if (gset == 0)
+            {
+              mesh_map[bndry_name].push_back({cell_id, {node_vec[0], node_vec[1], node_vec[2]}});
+              nodes_x.push_back(node_vec[0]);
+              nodes_y.push_back(node_vec[1]);
+              nodes_z.push_back(node_vec[2]);
+            }
 
             for (unsigned int d = 0; d < num_gs_dirs; ++d)
             {
@@ -465,7 +484,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         }
         ++f;
       }
-      mesh_map[bndry_tags.back()].push_back(cell_data[cell_id]);
+      // mesh_map[bndry_tags.back()].push_back(cell_data[cell_id]);
     }
 
     std::string group_name = "groupset_" + std::to_string(groupset_id);
@@ -479,25 +498,44 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
     // of nodes !!
     /////////////////////////////////////////////////////////////////////////
     // Write mesh information
+    // for (const auto& bndry : bndry_tags)
+    // {
+    //   std::cout << "Bndry : " << bndry.c_str() << std::endl;
+    // }
+    // exit(0);
+
     if (gset == 0)
     {
       H5CreateGroup(file_id, "mesh");
       // Per boundary id
-      for (const auto& [key, node_vectors] : mesh_map) 
-      {
-        // Create Group
-        const auto& bndry_id = key.c_str();
-        std::vector<uint64_t> cell_ids;
-        std::vector<double> nodes_x, nodes_y, nodes_z;
-        for (const auto& [cell_id, vec] : node_vectors)
-        {
-          cell_ids.push_back(cell_id);
-          nodes_x.push_back(vec[0]);
-          nodes_y.push_back(vec[1]);
-          nodes_z.push_back(vec[2]);
-        }
+      // for (const auto& [key, node_vectors] : mesh_map) 
+      // {
+      //   // Create Group
+      //   const auto& bndry_id = key.c_str();
+      //   std::vector<uint64_t> cell_ids;
+      //   std::vector<double> nodes_x, nodes_y, nodes_z;
+      //   for (const auto& [cell_id, vec] : node_vectors)
+      //   {
+      //     cell_ids.push_back(cell_id);
+      //     nodes_x.push_back(vec[0]);
+      //     nodes_y.push_back(vec[1]);
+      //     nodes_z.push_back(vec[2]);
+      //   }
 
-        std::string bndry_mesh = std::string("mesh/") + bndry_id;
+      //   std::string bndry_mesh = std::string("mesh/") + bndry_id;
+      //   H5CreateGroup(file_id, bndry_mesh);
+      //   H5WriteDataset1D(file_id, bndry_mesh + "/cell_ids", cell_ids);
+      //   H5WriteDataset1D(file_id, bndry_mesh + "/nodes_x", nodes_x);
+      //   H5WriteDataset1D(file_id, bndry_mesh + "/nodes_y", nodes_y);
+      //   H5WriteDataset1D(file_id, bndry_mesh + "/nodes_z", nodes_z);
+      // }
+
+      for (const std::string& bndry : bndry_tags)
+      {
+        std::cout << "Bndry : " << bndry << std::endl;
+        std::string bndry_mesh = std::string("mesh/") + bndry;
+        std::cout << "Mesh tag : " << bndry_mesh << std::endl;
+        
         H5CreateGroup(file_id, bndry_mesh);
         H5WriteDataset1D(file_id, bndry_mesh + "/cell_ids", cell_ids);
         H5WriteDataset1D(file_id, bndry_mesh + "/nodes_x", nodes_x);
