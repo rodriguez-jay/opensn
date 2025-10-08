@@ -493,7 +493,7 @@ WrapLBS(py::module& slv)
   );
   lbs_problem.def(
     "WriteSurfaceAngularFluxes",
-    [](LBSProblem& self, 
+    [](DiscreteOrdinatesProblem& self, 
       const std::string& file_base, 
       py::list bndry_names,
       py::object surfaces)
@@ -535,7 +535,7 @@ WrapLBS(py::module& slv)
   );
   lbs_problem.def(
     "ReadSurfaceAngularFluxes",
-    [](LBSProblem& self, const std::string& file_base, py::list bndry_names)
+    [](DiscreteOrdinatesProblem& self, const std::string& file_base, py::list bndry_names)
     {
       std::map<std::string, std::uint64_t> supported_bd_names = LBSProblem::supported_boundary_names;
       std::map<std::uint64_t, std::string> supported_bd_ids = LBSProblem::supported_boundary_ids;

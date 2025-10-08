@@ -73,7 +73,7 @@ public:
    * \param bndrys Map of boundary names and ids
    */
   static void WriteSurfaceAngularFluxes(
-    LBSProblem& lbs_solver,
+    DiscreteOrdinatesProblem& do_problem,
     const std::string& file_stem,
     std::vector<std::string>& bndrys,
     std::optional<std::pair<std::string, double>> surfaces);
@@ -87,7 +87,7 @@ public:
    */
   static std::vector<SurfaceAngularFluxes> 
   ReadSurfaceAngularFluxes(
-    LBSProblem& lbs_solver,
+    DiscreteOrdinatesProblem& do_problem,
     const std::string& file_stem,
     std::vector<std::string>& bndrys);
 

@@ -232,7 +232,7 @@ LBSSolverIO::ReadAngularFluxes(
       const auto cell_global_id = file_cell_ids[c];
       const auto& cell = grid->cells[cell_global_id];
 
-      const auto& unit_cell_matrices = lbs_problem.GetUnitCellMatrices();
+      const auto& unit_cell_matrices = do_problem.GetUnitCellMatrices();
 	    const auto& fe_values = unit_cell_matrices.at(cell.local_id);
       
       for (uint64_t i = 0; i < discretization.GetCellNumNodes(cell); ++i)
@@ -271,7 +271,7 @@ LBSSolverIO::ReadAngularFluxes(
 
 void
 LBSSolverIO::WriteSurfaceAngularFluxes(
-  LBSProblem& lbs_problem,
+  DiscreteOrdinatesProblem& do_problem,
   const std::string& file_base,
   std::vector<std::string>& bndrys,
   std::optional<std::pair<std::string, double>> surfaces)
@@ -294,14 +294,14 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
 
   log.Log() << "Writing surface angular flux to " << file_base;
 
-  std::vector<std::vector<double>>& psi = lbs_problem.GetPsiNewLocal();
-  const auto& supported_bd_ids = lbs_problem.supported_boundary_ids;
-  const auto& supported_bd_names = lbs_problem.supported_boundary_names;
+  std::vector<std::vector<double>>& psi = do_problem.GetPsiNewLocal();
+  const auto& supported_bd_ids = do_problem.supported_boundary_ids;
+  const auto& supported_bd_names = do_problem.supported_boundary_names;
 
   // Write macro info
-  const auto& grid = lbs_problem.GetGrid();
-  const auto& discretization = lbs_problem.GetSpatialDiscretization();
-  const auto& groupsets = lbs_problem.GetGroupsets();
+  const auto& grid = do_problem.GetGrid();
+  const auto& discretization = do_problem.GetSpatialDiscretization();
+  const auto& groupsets = do_problem.GetGroupsets();
 
   auto num_local_cells = grid->local_cells.size();
   auto num_local_nodes = discretization.GetNumLocalNodes();
@@ -330,9 +330,9 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   //          -> Cell_i+1  -> [nodes_i, nodes_i+1, ..., nodes_n]
   //          -> ...       -> [...]
   //          -> Cell_n    -> [...]
-  std::map<std::string, std::vector<std::pair<uint64_t, std::vector<double>>>> mesh_map;
+  std::map<std::string, std::vector<std::pair<uint64_t, std::vector<uint64_t>>>> mesh_map;
 
-  std::vector<uint64_t> cell_ids, num_nodes, node_ids;
+  std::vector<uint64_t> cell_ids, num_face_nodes, node_ids;
   std::vector<double> nodes_x, nodes_y, nodes_z;
 
   // Map of Boundary IDs to Structured CellData object
@@ -367,7 +367,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
       const auto& node_locations = cell_mapping.GetNodeLocations();
       uint64_t num_cell_nodes = 0;
 
-      const auto& unit_cell_matrices = lbs_problem.GetUnitCellMatrices();
+      const auto& unit_cell_matrices = do_problem.GetUnitCellMatrices();
 	    const auto& fe_values = unit_cell_matrices.at(cell.local_id);
 
       // std::cout << "Num Faces:" << cell.faces.size() << std::endl;
@@ -391,7 +391,10 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
             const auto& node_vec = node_locations[i];
             if (node_vec.z == slice)
             {
-              std::cout << "Surface ID: " << surf_id << std::endl;
+              std::stringstream surf_str;
+              surf_str << surf_id << cell_id;
+
+              std::cout << "Surface ID: " << surf_str.str() << std::endl;
               std::cout << "Cell ID: " << cell_id << std::endl;
               std::cout << "Face ID: " << f << std::endl;
               std::cout << "Node ID: " << i << std::endl;
@@ -400,8 +403,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
               std::cout << "Vec Pos : " << node_vec.x << " " 
                                         << node_vec.y << " " 
                                         << node_vec.z << std::endl << std::endl;
-              std::stringstream surf_str;
-              surf_str << surf_id << cell_id;
+              
               bndry_name = surf_str.str();
               isSurf = true;
               bndry_tags.push_back(bndry_name);
@@ -426,15 +428,18 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
           double lkgrate = 0.0;
 
           // Pass multiple faces for the same cell
-          auto has_cell = std::find(cell_ids.begin(), cell_ids.end(), cell_id);
-          if (has_cell == cell_ids.end())
-            cell_ids.push_back(cell_id);
+          // auto has_cell = std::find(cell_ids.begin(), cell_ids.end(), cell_id);
+          // if (has_cell == cell_ids.end())
+            // cell_ids.push_back(cell_id);
+
+          cell_ids.push_back(cell_id);
+
 
           const auto& int_f_shape_i = fe_values.intS_shapeI[f];
           const auto& M_ij = fe_values.intS_shapeI_shapeJ[f];
 
           const uint64_t& num_face_nodes = cell_mapping.GetNumFaceNodes(f);
-          // num_nodes.push_back(num_face_nodes);
+          num_face_nodes.push_back(num_face_nodes);
 
           // What about a cell with multiple faces on the boundary?
           num_cell_nodes += num_face_nodes;
@@ -449,7 +454,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
 
             if (gset == 0)
             {
-              mesh_map[bndry_name].push_back({cell_id, {node_vec[0], node_vec[1], node_vec[2]}});
+              mesh_map[bndry_name].push_back({cell_id, {num_face_nodes}});
               nodes_x.push_back(node_vec[0]);
               nodes_y.push_back(node_vec[1]);
               nodes_z.push_back(node_vec[2]);
@@ -487,11 +492,14 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
       // mesh_map[bndry_tags.back()].push_back(cell_data[cell_id]);
     }
 
+
+    // Export data to HDF5
     std::string group_name = "groupset_" + std::to_string(groupset_id);
 
     H5CreateGroup(file_id, group_name);
     H5CreateAttribute(file_id, group_name + "/num_directions", num_gs_dirs);
     H5CreateAttribute(file_id, group_name + "/num_groups", num_gs_groups);
+    // H5CreateAttribute(file_id, group_name + "/surf_ids", bndry_tags);
 
     /////////////////////////////////////////////////////////////////////////
     // Fix mesh map to save number of faces and a vector with the number 
@@ -508,27 +516,32 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
     {
       H5CreateGroup(file_id, "mesh");
       // Per boundary id
-      // for (const auto& [key, node_vectors] : mesh_map) 
-      // {
-      //   // Create Group
-      //   const auto& bndry_id = key.c_str();
-      //   std::vector<uint64_t> cell_ids;
-      //   std::vector<double> nodes_x, nodes_y, nodes_z;
-      //   for (const auto& [cell_id, vec] : node_vectors)
-      //   {
-      //     cell_ids.push_back(cell_id);
-      //     nodes_x.push_back(vec[0]);
-      //     nodes_y.push_back(vec[1]);
-      //     nodes_z.push_back(vec[2]);
-      //   }
+      for (const auto& [key, cells] : mesh_map) 
+      {
+        // Create Group
+        const auto& bndry_id = key.c_str();
+        std::cout << "Map ID:" << bndry_id << std::endl;
+        
+        // std::vector<uint64_t> cell_ids;
+        // std::vector<double> nodes_x, nodes_y, nodes_z;
+        for (const auto& [cell_id, num_nodes] : cells)
+        {
+          std::cout << "Cell ID:" << std::to_string(cell_id) << std::endl;
+          std::cout << "Num Face Nodes:" << std::to_string(num_face_nodes) << std::endl;
 
-      //   std::string bndry_mesh = std::string("mesh/") + bndry_id;
-      //   H5CreateGroup(file_id, bndry_mesh);
-      //   H5WriteDataset1D(file_id, bndry_mesh + "/cell_ids", cell_ids);
-      //   H5WriteDataset1D(file_id, bndry_mesh + "/nodes_x", nodes_x);
-      //   H5WriteDataset1D(file_id, bndry_mesh + "/nodes_y", nodes_y);
-      //   H5WriteDataset1D(file_id, bndry_mesh + "/nodes_z", nodes_z);
-      // }
+          // cell_ids.push_back(cell_id);
+        //   nodes_x.push_back(vec[0]);
+        //   nodes_y.push_back(vec[1]);
+        //   nodes_z.push_back(vec[2]);
+        }
+
+        // std::string bndry_mesh = std::string("mesh/") + bndry_id;
+        // H5CreateGroup(file_id, bndry_mesh);
+        // H5WriteDataset1D(file_id, bndry_mesh + "/cell_ids", cell_ids);
+        // H5WriteDataset1D(file_id, bndry_mesh + "/nodes_x", nodes_x);
+        // H5WriteDataset1D(file_id, bndry_mesh + "/nodes_y", nodes_y);
+        // H5WriteDataset1D(file_id, bndry_mesh + "/nodes_z", nodes_z);
+      }
 
       for (const std::string& bndry : bndry_tags)
       {
@@ -538,6 +551,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         
         H5CreateGroup(file_id, bndry_mesh);
         H5WriteDataset1D(file_id, bndry_mesh + "/cell_ids", cell_ids);
+        H5WriteDataset1D(file_id, bndry_mesh + "/num_nodes", num_nodes);
         H5WriteDataset1D(file_id, bndry_mesh + "/nodes_x", nodes_x);
         H5WriteDataset1D(file_id, bndry_mesh + "/nodes_y", nodes_y);
         H5WriteDataset1D(file_id, bndry_mesh + "/nodes_z", nodes_z);
@@ -591,7 +605,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
 
 std::vector<LBSSolverIO::SurfaceAngularFluxes>
 LBSSolverIO::ReadSurfaceAngularFluxes(
-  LBSProblem& lbs_problem,
+  DiscreteOrdinatesProblem& do_problem,
   const std::string& file_base,
   std::vector<std::string>& bndrys)
 {
@@ -604,16 +618,16 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
 
   log.Log() << "Reading surface angular flux file from " << file_base;
 
-  const auto& supported_bd_ids = lbs_problem.supported_boundary_ids;
-  const auto& supported_bd_names = lbs_problem.supported_boundary_names;
+  const auto& supported_bd_ids = do_problem.supported_boundary_ids;
+  const auto& supported_bd_names = do_problem.supported_boundary_names;
 
   // Read macro data and check for compatibility
   uint64_t file_num_groupsets;
   H5ReadAttribute(file_id, "num_groupsets", file_num_groupsets);
 
-  const auto& grid = lbs_problem.GetGrid();
-  const auto& discretization = lbs_problem.GetSpatialDiscretization();
-  const auto& groupsets = lbs_problem.GetGroupsets();
+  const auto& grid = do_problem.GetGrid();
+  const auto& discretization = do_problem.GetSpatialDiscretization();
+  const auto& groupsets = do_problem.GetGroupsets();
   auto num_groupsets = groupsets.size();
 
   OpenSnLogicalErrorIf(file_num_groupsets != num_groupsets,
@@ -623,18 +637,28 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
   // Check the boundary IDs
   std::vector<uint64_t> bndry_ids;
   // std::vector<std::string> bndry_names;
-  const auto unique_bids = grid->GetUniqueBoundaryIDs();
-  for (const auto& bndry : bndrys)
-  {
-    // const auto bndry_id = supported_bd_ids.at(bndry);
-    const auto bndry_id = supported_bd_names.at(bndry);
 
-    // bndry_names.push_back(bndry.first);
-    bndry_ids.push_back(bndry_id);
-    const auto id = std::find(unique_bids.begin(), unique_bids.end(), bndry_id);
-    OpenSnInvalidArgumentIf(id == unique_bids.end(),
-                            "Boundary " + bndry + "not found on grid.");
-  }
+  // std::vector<string> surfaces;
+  // H5ReadDataset1D<double>(file_id, "mesh", surfaces);
+  // for (const auto& surface : surfaces)
+  // {
+  //   std::cout << surface << std::endl;
+  // }
+  // exit(0);
+
+  // const auto unique_bids = grid->GetUniqueBoundaryIDs();
+  // for (const auto& bndry : bndrys)
+  // {
+    // std::cout << bndry << std::endl;
+    // const auto bndry_id = supported_bd_ids.at(bndry);
+    // const auto bndry_id = supported_bd_names.at(bndry);
+
+    // // bndry_names.push_back(bndry.first);
+    // bndry_ids.push_back(bndry_id);
+    // const auto id = std::find(unique_bids.begin(), unique_bids.end(), bndry_id);
+    // OpenSnInvalidArgumentIf(id == unique_bids.end(),
+    //                         "Boundary " + bndry + "not found on grid.");
+  // }
 
   ///////////////////////////////////////////////////////////////////////////
   // * Double check multiple groupsets!! There might be something there wrong
@@ -669,6 +693,23 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
 
       std::cout << "Bndry Name: " << bndry << std::endl;
       std::string bndry_grp = group_name + "/" + bndry;
+      std::string mesh_grp = group_name + "/" + bndry;
+
+      std::vector<double> cell_ids;
+      std::vector<double> num_nodes;
+      std::string mesh_tag = "mesh/" + bndry;
+      H5ReadDataset1D<double>(file_id, mesh_tag + "/cell_ids", cell_ids);
+      H5ReadDataset1D<double>(file_id, mesh_tag + "/num_nodes", num_nodes);
+
+      for (uint64_t i = 0; i < cell_ids.size(); ++i)
+      {
+        std::cout << "Cell Id : " << std::to_string(cell_ids[i]) << std::endl;
+      } 
+
+      for (const auto& nodes : num_nodes)
+      {
+        std::cout << "Num Nodes: " << std::to_string(nodes) << std::endl;
+      }
 
       H5ReadDataset1D<double>(file_id, bndry_grp + "/omega", fluxes.omega);
       H5ReadDataset1D<double>(file_id, bndry_grp + "/mu", fluxes.mu);

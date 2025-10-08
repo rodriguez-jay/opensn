@@ -159,7 +159,7 @@ ResponseEvaluator::SetBufferOptions(const InputParameters& input)
     bndrys.push_back(surf);
      
     surf_psi = LBSSolverIO::ReadSurfaceAngularFluxes(
-      *lbs_problem_, prefixes.GetParamValue<std::string>("surface_angular_fluxes"), bndrys);
+      *do_problem_, prefixes.GetParamValue<std::string>("surface_angular_fluxes"), bndrys);
   }
 
   adjoint_buffers_[name] = {phi, psi, surf_psi};
@@ -501,44 +501,99 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_buffer,
                        "for a surface response evaluation.");
 
   double totlkg_rate = 0.;
-  for (const auto surf_psi : psi_dagger)
+  double lkg_p = 0.;
+  double lkg_m = 0.;
+
+  const auto& surf_psi = psi_dagger[0];
+  const auto num_face_nodes = surf_psi.M_ij.size();
+  std::cout << "Face Nodes: " << num_face_nodes << std::endl;
+  
+  for (size_t fi = 0; fi < num_face_nodes; ++fi)
   {
-    const auto num_face_nodes = surf_psi.M_ij.size();
-
-    for (size_t fi = 0; fi < num_face_nodes; ++fi)
+    const auto M_ij = surf_psi.M_ij[fi];
+    for (const auto& groupset : do_problem_->GetGroupsets())
     {
-      const auto M_ij = surf_psi.M_ij[fi];
-      for (const auto& groupset : lbs_problem_->GetGroupsets())
-      {
-        auto groupset_id = groupset.id;
-        auto num_gs_groups = groupset.groups.size();
+      auto groupset_id = groupset.id;
+      auto num_gs_groups = groupset.groups.size();
 
-        auto num_dirs = surf_psi.mu.size();
-        // std::cout << "Num Dirs : " << num_dirs << std::endl;
-        for (unsigned int d = 0; d < num_dirs; ++d)
+      auto num_dirs = surf_psi.mu.size();
+      // std::cout << "Num Dirs : " << num_dirs << std::endl;
+      for (unsigned int d = 0; d < num_dirs; ++d)
+      {
+        // std::cout << "Omega : " << surf_psi.omega[3*d + 0] << " " 
+                                // << surf_psi.omega[3*d + 1] << " " 
+                                // << surf_psi.omega[3*d + 2] << std::endl;
+        const auto& mu_d = surf_psi.mu[d];
+        const auto& wt_d = surf_psi.wt_d[d];
+
+        // if (mu_d <= 0.0)
+        //   continue;
+
+        // std::cout << "Mu : " << mu_d << std::endl;
+        for (uint64_t g = 0; g < num_gs_groups; ++g)
         {
-          // std::cout << "Omega : " << surf_psi.omega[3*d + 0] << " " 
-                                  // << surf_psi.omega[3*d + 1] << " " 
-                                  // << surf_psi.omega[3*d + 2] << std::endl;
-          const auto& mu_d = surf_psi.mu[d];
-          const auto& wt_d = surf_psi.wt_d[d];
+          //  std::cout << "Index : " << std::to_string(d * num_gs_groups + g) << std::endl;
+          // std::cout << "Value : " << surf_psi.psi[d * num_gs_groups + g] << std::endl;
+          double lkg = mu_d * wt_d * M_ij * surf_psi.psi[d * num_gs_groups + g];
+          // std::cout << "Lkg : " << lkg << std::endl;
+          // totlkg_rate = totlkg_rate + lkg;
 
           if (mu_d <= 0.0)
-            continue;
-
-          // std::cout << "Mu : " << mu_d << std::endl;
-          for (uint64_t g = 0; g < num_gs_groups; ++g)
-          {
-            //  std::cout << "Index : " << std::to_string(d * num_gs_groups + g) << std::endl;
-            // std::cout << "Value : " << surf_psi.psi[d * num_gs_groups + g] << std::endl;
-            double lkg = mu_d * wt_d * M_ij * surf_psi.psi[d * num_gs_groups + g];
-            // std::cout << "Lkg : " << lkg << std::endl;
-            totlkg_rate = totlkg_rate + lkg;
-          }
+            lkg_m = lkg_m + lkg;
+          else
+            lkg_p = lkg_p + lkg;
         }
       }
     }
-    std::cout << "Total Lkg Rate : " << totlkg_rate << std::endl;
+
+
+  // for (const auto surf_psi : psi_dagger)
+  // {
+  //   const auto num_face_nodes = surf_psi.M_ij.size();
+  //   std::cout << "Face Nodes: " << num_face_nodes << std::endl;
+    
+  //   for (size_t fi = 0; fi < num_face_nodes; ++fi)
+  //   {
+  //     const auto M_ij = surf_psi.M_ij[fi];
+  //     for (const auto& groupset : do_problem_->GetGroupsets())
+  //     {
+  //       auto groupset_id = groupset.id;
+  //       auto num_gs_groups = groupset.groups.size();
+
+  //       auto num_dirs = surf_psi.mu.size();
+  //       // std::cout << "Num Dirs : " << num_dirs << std::endl;
+  //       for (unsigned int d = 0; d < num_dirs; ++d)
+  //       {
+  //         // std::cout << "Omega : " << surf_psi.omega[3*d + 0] << " " 
+  //                                 // << surf_psi.omega[3*d + 1] << " " 
+  //                                 // << surf_psi.omega[3*d + 2] << std::endl;
+  //         const auto& mu_d = surf_psi.mu[d];
+  //         const auto& wt_d = surf_psi.wt_d[d];
+
+  //         // if (mu_d <= 0.0)
+  //         //   continue;
+
+  //         // std::cout << "Mu : " << mu_d << std::endl;
+  //         for (uint64_t g = 0; g < num_gs_groups; ++g)
+  //         {
+  //           //  std::cout << "Index : " << std::to_string(d * num_gs_groups + g) << std::endl;
+  //           // std::cout << "Value : " << surf_psi.psi[d * num_gs_groups + g] << std::endl;
+  //           double lkg = mu_d * wt_d * M_ij * surf_psi.psi[d * num_gs_groups + g];
+  //           // std::cout << "Lkg : " << lkg << std::endl;
+  //           // totlkg_rate = totlkg_rate + lkg;
+
+  //           if (mu_d <= 0.0)
+  //             lkg_m = lkg_m + lkg;
+  //           else
+  //             lkg_p = lkg_p + lkg;
+  //         }
+  //       }
+  //     }
+  //   }
+  
+    // std::cout << "Total Lkg Rate : " << totlkg_rate << std::endl;
+    std::cout << "Lkg + Rate : " << lkg_p << std::endl;
+    std::cout << "Lkg - Rate : " << lkg_m << std::endl;
   } 
   return totlkg_rate;
 }
