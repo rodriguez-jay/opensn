@@ -76,8 +76,8 @@ public:
   static void WriteSurfaceAngularFluxes(
     DiscreteOrdinatesProblem& do_problem,
     const std::string& file_stem,
-    std::vector<std::string>& bndrys,
-    std::optional<std::pair<std::string, double>> surfaces);
+    std::vector<std::string>& bndry_surfs,
+    std::vector<std::pair<std::string, std::pair<std::string, double>>>& int_surfs);
 
   /**
    * Read a surface angular flux vector from a file.
@@ -90,7 +90,7 @@ public:
   ReadSurfaceAngularFluxes(
     DiscreteOrdinatesProblem& do_problem,
     const std::string& file_stem,
-    std::vector<std::string>& bndrys);
+    std::vector<std::string>& surfaces);
 
   /**
    * Write a flux moments vector to a file.

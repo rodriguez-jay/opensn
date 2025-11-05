@@ -162,7 +162,7 @@ ResponseEvaluator::SetBufferOptions(const InputParameters& input)
     
     std::vector<std::string> bndrys;
     if (!bndry.empty())
-      bndrys.push_back(surf);
+      bndrys.push_back(bndry);
     else if (!surf.empty())
     {
       const std::string surf_u = surf + "_u";
@@ -170,8 +170,6 @@ ResponseEvaluator::SetBufferOptions(const InputParameters& input)
       bndrys.insert(bndrys.end(), {surf_u, surf_d});
     }
     
-    // bndrys.push_back(surf);
-     
     surf_psi = LBSSolverIO::ReadSurfaceAngularFluxes(
       *do_problem_, prefixes.GetParamValue<std::string>("surface_angular_fluxes"), bndrys);
   }
@@ -517,17 +515,45 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_buffer,
                        "for a surface response evaluation.");
 
   double response = 0.0;
-  const auto& num_surfs = fwd_surfaces.size() - 1;
+
+  std::cout << "Num Fwd Surfs : " << fwd_surfaces.size() << std::endl;
+  std::cout << "Num Adj Surfs : " << adj_surfaces.size() << std::endl;
+  const auto& num_surfs = fwd_surfaces.size(); //- 1;
+  std::cout << "Num Surfs :" << num_surfs << std::endl;
+
+  // if (adj_surfaces.size() > 1)
+    // const auto& adj = adj_surfaces[1];
+  // else 
+    // const auto& adj = adj_surfaces[0];
+
+  // const auto& adj = (adj_surfaces.size() > 1) ? adj_surfaces[1] : adj_surfaces[0];
+  // const auto& fwd = (fwd_surfaces.size() > 1) ? fwd_surfaces[0] : fwd_surfaces[0];
+
   for (size_t si=0; si < num_surfs; ++si)
   {
-    const auto& adj = adj_surfaces[1];
-    const auto& fwd = fwd_surfaces[0];
+    auto* adj = &adj_surfaces[0];
+    auto* fwd = &fwd_surfaces[0];
+    if (si == 0 && num_surfs > 1)
+    {
+      std::cout << std::endl << "Adjoint Upwind" << std::endl;
+      adj = &adj_surfaces[1];
+    }
+    else if (si == 1 && num_surfs > 1)
+    {
+      std::cout << std::endl << "Forward Upwind" << std::endl;
+      fwd = &fwd_surfaces[1];
+    }
 
+    std::cout << "Num Cells : " << fwd->mapping.cell_ids.size() << std::endl;
     size_t gi = 0; // start of global index
-    for (size_t ci=0; ci < fwd.mapping.cell_ids.size(); ++ci)
+    for (size_t ci=0; ci < fwd->mapping.cell_ids.size(); ++ci)
     {
       size_t mi = 0; // start of mass index
-      const auto& num_nodes = fwd.mapping.num_nodes[ci];
+      const auto& num_nodes = fwd->mapping.num_nodes[ci];
+      std::cout << "Fwd Cell " << fwd->mapping.cell_ids[ci] 
+                << " | Num Nodes " << num_nodes << std::endl;
+      std::cout << "Adj Cell " << adj->mapping.cell_ids[ci] 
+                << " | Num Nodes " << num_nodes << std::endl;
       for (size_t ni=0; ni < num_nodes; ++ni)
       {
         const auto& node_strd = gi + ni;
@@ -536,24 +562,73 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_buffer,
           auto groupset_id = groupset.id;
           auto num_gs_groups = groupset.groups.size();
 
+          //    Fwd     :     Adj
+          // |  (-) --> : <--- (+)   | -n == + resp
+          // | <-- (+)  :   (-) -->  | +n * -1 == + resp
           const auto& quadrature = groupset.quadrature;
           auto num_gs_dirs = quadrature->omegas.size();
           for (unsigned int d = 0; d < num_gs_dirs; ++d)
           {
-            const auto& dir_strd = node_strd * num_gs_dirs + d;
-            const auto& adir_strd = node_strd * num_gs_dirs + num_gs_dirs - d - 1;
+            size_t dir_strd = node_strd * num_gs_dirs + d;
+            size_t adir_strd = node_strd * num_gs_dirs + num_gs_dirs - d - 1;
+            // const auto& mu_d = fwd->data.mu[dir_strd];
+            // const auto& wt_d = fwd->data.wt_d[dir_strd];
 
-            const auto& mu_d = adj.data.mu[adir_strd];
-            const auto& wt_d = adj.data.wt_d[adir_strd];
+            // std::cout << "Upwind Mu : " << fwd_surfaces[0].data.mu[dir_strd] << std::endl;
+            // std::cout << "Downwind Mu : " << fwd_surfaces[1].data.mu[dir_strd] << std::endl;
+
+            // double* mu_d = nullptr;
+            // double* wt_d = nullptr;
+            // if (si == 0)
+            // {
+            //   std::cout << std::endl << "Adj Mu : " << adj->data.mu[dir_strd] << std::endl;
+            //   mu_d = &adj->data.mu[dir_strd];
+            //   wt_d = &adj->data.wt_d[dir_strd];
+            // }
+            // else
+            // {
+            //   std::cout << "Rev Adj Mu : " << adj->data.mu[adir_strd] << std::endl;
+            //   mu_d = &adj->data.mu[adir_strd];
+            //   wt_d = &adj->data.wt_d[adir_strd];
+            // }
+
+            double mu_d = (si == 0) 
+              ? adj->data.mu[dir_strd] : fwd->data.mu[adir_strd];
+
+            double wt_d = (si == 0) 
+              ? adj->data.wt_d[dir_strd] : fwd->data.wt_d[adir_strd];
+
+            std::cout << "Mu : " << mu_d << std::endl;
+
+            // if (mu_d > 0.0) 
+            // {
+            //   std::cout << "SI : " << si << std::endl;
+            //   break;
+            // }
+            // else if (mu_d < 0.0 && si > 0)
+            // {
+            //   std::cout << "SI : " << si << std::endl;
+            //   break;  
+            // }
+
             for (uint64_t g = 0; g < num_gs_groups; ++g)
             {
-              const auto& grp_strd = dir_strd * num_gs_groups + g;
-              const auto& agrp_strd = adir_strd * num_gs_groups + g;
+              // if (si == 0)
+              //   auto* grp_strd = dir_strd * num_gs_groups + g;
+              // else
+              //   auto* grp_strd = adir_strd * num_gs_groups + g;
+
+              size_t grp_strd = (si == 0) 
+                ? dir_strd * num_gs_groups + g : adir_strd * num_gs_groups + g;
+
+              std::cout << "Adj Psi : " << adj->data.psi[grp_strd] << std::endl;
+              std::cout << "Fwd Psi : " << fwd->data.psi[grp_strd] << std::endl;
               for (size_t nj=0; nj < num_nodes; ++nj)
               {
                 const auto& mass_strd = mi + nj;
-                response += mu_d * wt_d * adj.data.M_ij[mass_strd] 
-                              * adj.data.psi[agrp_strd] * fwd.data.psi[grp_strd];
+                if (si == 1) mu_d = abs(mu_d);
+                response -= mu_d * wt_d * adj->data.M_ij[mass_strd] 
+                              * adj->data.psi[grp_strd] * fwd->data.psi[grp_strd];
               }
             }
           }
@@ -562,6 +637,7 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_buffer,
       } 
       gi += num_nodes;
     }
+    std::cout << "Resp " << response << std::endl;
   }
   return response;
 }

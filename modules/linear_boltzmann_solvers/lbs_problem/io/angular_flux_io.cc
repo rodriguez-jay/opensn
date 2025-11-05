@@ -258,15 +258,19 @@ void
 LBSSolverIO::WriteSurfaceAngularFluxes(
   DiscreteOrdinatesProblem& do_problem,
   const std::string& file_base,
-  std::vector<std::string>& bndrys,
-  std::optional<std::pair<std::string, double>> surfaces)
+  std::vector<std::string>& bndry_surfs,
+  std::vector<std::pair<std::string, std::pair<std::string, double>>>& int_surfs)
 {
   // Open the HDF5 file
   std::string file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".h5";
   hid_t file_id = H5Fcreate(file_name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
   OpenSnLogicalErrorIf(file_id < 0, "WriteSurfaceAngularFluxes: Failed to open " + file_name + ".");
 
-  log.Log() << "Writing surface angular flux to " << file_base;
+  if (bndry_surfs.empty() && int_surfs.empty())
+  {
+    throw std::invalid_argument(
+              "Must provide either boundary names or surface definitions.");
+  }
 
   std::vector<std::vector<double>>& psi = do_problem.GetPsiNewLocal();
   const auto& supported_bd_ids = do_problem.supported_boundary_ids;
@@ -281,23 +285,26 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   auto num_local_nodes = discretization.GetNumLocalNodes();
   auto num_groupsets = groupsets.size();
 
-  // Store groupsets
-  H5CreateAttribute(file_id, "num_groupsets", num_groupsets);
-
-  // Check the boundary IDs
   std::vector<uint64_t> bndry_ids;
-  const auto unique_bids = grid->GetUniqueBoundaryIDs();
-  for (const auto& bndry : bndrys)
+  if (!bndry_surfs.empty())
   {
-    // Verify if supplied boundary has a valid boundary ID
-    const auto bndry_id = supported_bd_names.at(bndry);
-    bndry_ids.push_back(bndry_id);
-    const auto id = std::find(unique_bids.begin(), unique_bids.end(), bndry_id);
-    OpenSnInvalidArgumentIf(id == unique_bids.end(),
-                            "Boundary " + bndry + "not found on grid.");
+    // Check the boundary IDs
+    const auto unique_bids = grid->GetUniqueBoundaryIDs();
+    for (const auto& bndry : bndry_surfs)
+    {
+      // Verify if supplied boundary has a valid boundary ID
+      const auto bndry_id = supported_bd_names.at(bndry);
+      bndry_ids.push_back(bndry_id);
+      const auto id = std::find(unique_bids.begin(), unique_bids.end(), bndry_id);
+      OpenSnInvalidArgumentIf(id == unique_bids.end(),
+                              "Boundary " + bndry + "not found on grid.");
+    }
   }
 
-  std::vector<std::string> bndry_tags;
+  log.Log() << "Writing surface angular flux to " << file_base;
+
+  // Store groupsets
+  H5CreateAttribute(file_id, "num_groupsets", num_groupsets);
 
   // ===========================================================
   // The goal is limit the number of itrations over all cells 
@@ -307,11 +314,11 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   // The mesh map is structured as follows;
   //                     |   face_i | face_i+1 | ... | face_n   |
   // -----------------------------------------------------------
-  // Bndry_id | Cell_i   | [nodes_i, nodes_i+1, ..., nodes_n]   |
+  // surf_id  | Cell_i   | [nodes_i, nodes_i+1, ..., nodes_n]   |
   //          | Cell_i+1 | [nodes_i, nodes_i+1, ..., nodes_n]   |
   //          | ...      |              [...]                   |
   //          | Cell_n   |              [...]                   |
-  std::map<std::string, std::vector<std::pair<uint64_t, uint64_t>>> mesh_map;
+  std::unordered_set<std::string> surf_tags;
   std::map<std::string, std::vector<uint64_t>> cell_map, node_map;
   std::map<std::string, std::vector<double>> x_map, y_map, z_map;
 
@@ -320,8 +327,6 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   for (const auto& groupset : groupsets)
   {
     // Write groupset info
-    std::map<uint64_t, std::vector<uint64_t>> surf_map;
-    
     std::map<std::string, std::vector<std::vector<double>>> data_map;
     std::map<std::string, std::vector<double>> mass_map;
 
@@ -348,50 +353,63 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
       for (const auto& face : cell.faces)
       {
         bool isSurf = false;
-        std::string bndry_name;
+        std::string surf_name;
 
         // Surface Mapping
-        if (surfaces.has_value())
+        if (!int_surfs.empty())
         {
-          const std::string& surf_id = surfaces->first;
-          double slice = surfaces->second;
-
-          const auto num_face_nodes = cell_mapping.GetNumFaceNodes(f);
-          for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
+          for (const auto& surface : int_surfs)
           {
-            const auto i = cell_mapping.MapFaceNode(f, fi);
-            const auto& node_vec = node_locations[i];
-            if (node_vec.z == slice)
+            const std::string& surf_id = surface.first;
+            const std::string& axis = surface.second.first;
+            const double& slice = surface.second.second;
+
+            const auto num_face_nodes = cell_mapping.GetNumFaceNodes(f);
+            for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
             {
-              const auto& omega_0 = quadrature->omegas[0];
-              const auto mu_0 = omega_0.Dot(face.normal);
-              bndry_name = surf_id + (mu_0 > 0 ? "_u" : "_d");
-              isSurf = true;
-              bndry_tags.push_back(bndry_name);
+              const auto i = cell_mapping.MapFaceNode(f, fi);
+              const auto& node_vec = node_locations[i];
+
+              bool on_axis = false;
+              if (axis == "x") on_axis = (node_vec.x == slice);
+              else if (axis == "y") on_axis = (node_vec.y == slice);
+              else if (axis == "z") on_axis = (node_vec.z == slice);
+
+              if (on_axis)
+              {
+                const auto& omega_0 = quadrature->omegas[0];
+                const auto mu_0 = omega_0.Dot(face.normal);
+                surf_name = surf_id + (mu_0 > 0 ? "_u" : "_d");
+                isSurf = true;
+                
+                // std::cout << surf_name << " pos : " << node_vec.x << " "
+                //           << node_vec.y << " "
+                //           << node_vec.z << " " << std::endl; 
+              }
             }
           }
         }
-        //
 
-        // Boundary Mapping
+        // Boundary mapping
         const auto it = std::find(bndry_ids.begin(), bndry_ids.end(), face.neighbor_id);
-        if (not face.has_neighbor and it != bndry_ids.end())
+        if (!bndry_surfs.empty() && not face.has_neighbor and it != bndry_ids.end())
         {
-          bndry_name = supported_bd_ids.at(*it);
+          surf_name = supported_bd_ids.at(*it);
           isSurf = true;
-          bndry_tags.push_back(bndry_name);
         }
 
         // Write Surface Data
         if (isSurf)
         {
+          std::cout << "Writing Surface : "<< surf_name << std::endl;
+          surf_tags.insert(surf_name);
+
           const auto& int_f_shape_i = fe_values.intS_shapeI[f];
           const auto& M_ij = fe_values.intS_shapeI_shapeJ[f];
           const uint64_t& num_face_nodes = cell_mapping.GetNumFaceNodes(f);
 
-          mesh_map[bndry_name].push_back({cell_id, num_face_nodes});
-          cell_map[bndry_name].push_back(cell_id);
-          node_map[bndry_name].push_back(num_face_nodes);
+          cell_map[surf_name].push_back(cell_id);
+          node_map[surf_name].push_back(num_face_nodes);
 
           num_cell_nodes += num_face_nodes;
           for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
@@ -400,9 +418,12 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
             const auto& node_vec = node_locations[i];
             if (gset == 0)
             {
-              x_map[bndry_name].push_back(node_vec[0]);
-              y_map[bndry_name].push_back(node_vec[1]);
-              z_map[bndry_name].push_back(node_vec[2]);
+              x_map[surf_name].push_back(node_vec[0]);
+              y_map[surf_name].push_back(node_vec[1]);
+              z_map[surf_name].push_back(node_vec[2]);
+              // std::cout << surf_name << " pos : " << node_vec[0] << " "
+              //                       << node_vec[1] << " "
+              //                       << node_vec[2] << " " << std::endl; 
             }
 
             for (unsigned int d = 0; d < num_gs_dirs; ++d)
@@ -410,6 +431,8 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
               const auto& omega_d = quadrature->omegas[d];
               const auto weight_d = quadrature->weights[d];
               const auto mu_d = omega_d.Dot(face.normal);
+
+              // std::cout << "MU:" << mu_d << std::endl;
                
               std::vector<double> data_vec;
               data_vec.insert(data_vec.end(), {omega_d.x, omega_d.y, omega_d.z});
@@ -422,13 +445,13 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
                 data_vec.push_back(psi[groupset_id][dof_map]);
               }
               // Move the vector to avoid unecessary copy
-              data_map[bndry_name].push_back(std::move(data_vec));
+              data_map[surf_name].push_back(std::move(data_vec));
             }
 
             for (unsigned int fj = 0; fj < num_face_nodes; ++fj)
             {
               const auto j = cell_mapping.MapFaceNode(f, fj);
-              mass_map[bndry_name].push_back(M_ij(i, j));
+              mass_map[surf_name].push_back(M_ij(i, j));
             }
           }
         }
@@ -443,28 +466,27 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
     H5CreateAttribute(file_id, group_name + "/num_groups", num_gs_groups);
 
     H5CreateGroup(file_id, "mesh");
-    for (const auto& bndry_id : bndry_tags)
+    for (const auto& surf_id : surf_tags)
     {
       if (gset == 0)
       {
-        std::cout << "Boundry ID:" << bndry_id << std::endl;
-        const auto& cell_ids = cell_map.at(bndry_id);
-        const auto& num_nodes = node_map.at(bndry_id);
-        const auto& x_bndry = x_map.at(bndry_id);
-        const auto& y_bndry = y_map.at(bndry_id);
-        const auto& z_bndry = z_map.at(bndry_id);
+        const auto& cell_ids = cell_map.at(surf_id);
+        const auto& num_nodes = node_map.at(surf_id);
+        const auto& x_surf = x_map.at(surf_id);
+        const auto& y_surf = y_map.at(surf_id);
+        const auto& z_surf = z_map.at(surf_id);
 
-        std::string bndry_mesh = std::string("mesh/") + bndry_id;
-        H5CreateGroup(file_id, bndry_mesh);
-        H5WriteDataset1D(file_id, bndry_mesh + "/cell_ids", cell_ids);
-        H5WriteDataset1D(file_id, bndry_mesh + "/num_nodes", num_nodes);
-        H5WriteDataset1D(file_id, bndry_mesh + "/nodes_x", x_bndry);
-        H5WriteDataset1D(file_id, bndry_mesh + "/nodes_y", y_bndry);
-        H5WriteDataset1D(file_id, bndry_mesh + "/nodes_z", z_bndry);
+        std::string surf_mesh = std::string("mesh/") + surf_id;
+        H5CreateGroup(file_id, surf_mesh);
+        H5WriteDataset1D(file_id, surf_mesh + "/cell_ids", cell_ids);
+        H5WriteDataset1D(file_id, surf_mesh + "/num_nodes", num_nodes);
+        H5WriteDataset1D(file_id, surf_mesh + "/nodes_x", x_surf);
+        H5WriteDataset1D(file_id, surf_mesh + "/nodes_y", y_surf);
+        H5WriteDataset1D(file_id, surf_mesh + "/nodes_z", z_surf);
       }
 
-      std::string bndry_grp = group_name + std::string("/") + bndry_id;
-      H5CreateGroup(file_id, bndry_grp);
+      std::string surf_grp = group_name + std::string("/") + surf_id;
+      H5CreateGroup(file_id, surf_grp);
 
       // Write the groupset surface angular flux data
       std::vector<double> omega;
@@ -473,7 +495,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
       std::vector<double> fe_shape;
       std::vector<double> surf_flux;
 
-      const auto& data_vectors = data_map.at(bndry_id);
+      const auto& data_vectors = data_map.at(surf_id);
       for (const auto&vec : data_vectors)
       {
         omega.insert(omega.end(), {vec[0], vec[1], vec[2]});
@@ -482,15 +504,15 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         fe_shape.push_back(vec[5]);
         surf_flux.insert(surf_flux.end(), vec.begin()+6, vec.end());
       }
-      H5WriteDataset1D(file_id, bndry_grp + "/omega", omega);
-      H5WriteDataset1D(file_id, bndry_grp + "/mu", mu);
-      H5WriteDataset1D(file_id, bndry_grp + "/wt_d", wt_d);
-      H5WriteDataset1D(file_id, bndry_grp + "/fe_shape", fe_shape);
-      H5WriteDataset1D(file_id, bndry_grp + "/surf_flux", surf_flux);
+      H5WriteDataset1D(file_id, surf_grp + "/omega", omega);
+      H5WriteDataset1D(file_id, surf_grp + "/mu", mu);
+      H5WriteDataset1D(file_id, surf_grp + "/wt_d", wt_d);
+      H5WriteDataset1D(file_id, surf_grp + "/fe_shape", fe_shape);
+      H5WriteDataset1D(file_id, surf_grp + "/surf_flux", surf_flux);
 
       // Write mass matrix information
-      const auto& mass_vector = mass_map.at(bndry_id);
-      H5WriteDataset1D(file_id, bndry_grp + "/M_ij", mass_vector);
+      const auto& mass_vector = mass_map.at(surf_id);
+      H5WriteDataset1D(file_id, surf_grp + "/M_ij", mass_vector);
     }
     ++gset;
   }
@@ -503,7 +525,7 @@ std::vector<LBSSolverIO::SurfaceAngularFlux>
 LBSSolverIO::ReadSurfaceAngularFluxes(
   DiscreteOrdinatesProblem& do_problem,
   const std::string& file_base,
-  std::vector<std::string>& bndrys)
+  std::vector<std::string>& surfaces)
 {
   std::vector<SurfaceAngularFlux> surf_fluxes;
 
@@ -545,25 +567,25 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
     H5ReadAttribute(file_id, group_name + "/num_directions", file_num_gs_dirs);
     H5ReadAttribute(file_id, group_name + "/num_groups", file_num_gs_groups);
 
-    for (const auto& bndry : bndrys)
+    for (const auto& surface : surfaces)
     {
       SurfaceMap surf_map;
       SurfaceData surf_data;
       SurfaceAngularFlux surf_flux;
 
-      std::cout << "Reading Surface: " << bndry << std::endl;
-      std::string mesh_tag = "mesh/" + bndry;
+      std::cout << "Reading Surface: " << surface << std::endl;
+      std::string mesh_tag = "mesh/" + surface;
       H5ReadDataset1D<double>(file_id, mesh_tag + "/cell_ids", surf_map.cell_ids);
       H5ReadDataset1D<double>(file_id, mesh_tag + "/num_nodes", surf_map.num_nodes);
       H5ReadDataset1D<double>(file_id, mesh_tag + "/nodes_x", surf_map.nodes_x);
       H5ReadDataset1D<double>(file_id, mesh_tag + "/nodes_y", surf_map.nodes_y);
       H5ReadDataset1D<double>(file_id, mesh_tag + "/nodes_z", surf_map.nodes_z);
-      std::string bndry_grp = group_name + "/" + bndry;
-      H5ReadDataset1D<double>(file_id, bndry_grp + "/omega", surf_data.omega);
-      H5ReadDataset1D<double>(file_id, bndry_grp + "/mu", surf_data.mu);
-      H5ReadDataset1D<double>(file_id, bndry_grp + "/wt_d", surf_data.wt_d);
-      H5ReadDataset1D<double>(file_id, bndry_grp + "/M_ij", surf_data.M_ij);
-      H5ReadDataset1D<double>(file_id, bndry_grp + "/surf_flux", surf_data.psi);
+      std::string surf_grp = group_name + "/" + surface;
+      H5ReadDataset1D<double>(file_id, surf_grp + "/omega", surf_data.omega);
+      H5ReadDataset1D<double>(file_id, surf_grp + "/mu", surf_data.mu);
+      H5ReadDataset1D<double>(file_id, surf_grp + "/wt_d", surf_data.wt_d);
+      H5ReadDataset1D<double>(file_id, surf_grp + "/M_ij", surf_data.M_ij);
+      H5ReadDataset1D<double>(file_id, surf_grp + "/surf_flux", surf_data.psi);
 
       surf_flux.mapping = std::move(surf_map);
       surf_flux.data = std::move(surf_data);

@@ -403,31 +403,79 @@ WrapLBS(py::module& slv)
     "WriteSurfaceAngularFluxes",
     [](DiscreteOrdinatesProblem& self, 
       const std::string& file_base, 
-      py::list bndry_names,
-      py::object surfaces)
+      py::list surfaces)
     {
       // Map boundary names
-      std::map<std::string, uint64_t> allowed_bd_names = LBSProblem::supported_boundary_names;
-      std::map<std::uint64_t, std::string> allowed_bd_ids = LBSProblem::supported_boundary_ids;
-      std::vector<std::string> bndrys;
-      for (py::handle name : bndry_names)
-        bndrys.push_back(name.cast<std::string>());
+      // std::map<std::string, uint64_t> allowed_bd_names = LBSProblem::supported_boundary_names;
+      // std::map<std::uint64_t, std::string> allowed_bd_ids = LBSProblem::supported_boundary_ids;
+      // std::vector<std::string> bndrys;
+      // for (py::handle name : boundaries)
+        // bndrys.push_back(name.cast<std::string>());
 
       // Map surface names
-      std::optional<std::pair<std::string, double>> opt_surfaces;
-      if (!surfaces.is_none())
-      {
-        py::list surf_list = surfaces.cast<py::list>();
-        if (py::len(surf_list) == 2)
-        {
-          std::string surf_id = surf_list[0].cast<std::string>();
-          double slice = surf_list[1].cast<double>();
-          opt_surfaces = std::make_pair(surf_id, slice);
-        }
+      // std::optional<std::pair<std::string, double>> opt_surfaces;
+      // std::optional<std::pair<std::string, std::pair<std::string, double>>> opt_surfaces;
+      // if (!surfaces.is_none())
+      // {
+      //   py::list surf_list = surfaces.cast<py::list>();
+      //   // Expect a surface like ('surf name', {"z": 6.0})
+      //   if (py::len(surf_list) == 2)
+      //   {
+      //     std::string surf_id = surf_list[0].cast<std::string>();
+      //     py::object slice_obj = surf_list[1];
+      //     if (py::isinstance<py::dict>(slice_obj))
+      //     {
+      //       py::dict slice = slice_obj.cast<py::dict>();
+      //       std::string axis = "";
+      //       double value = 0.0;
+      //       for (auto& [key, val] : slice)
+      //       {
+      //         axis = py::cast<std::string>(key);
+      //         value = py::cast<double>(val);
+      //       }
+      //       opt_surfaces = std::make_pair(surf_id, std::make_pair(axis, value));
+      //     }
+      //     // double slice = surf_list[1].cast<double>();
+      //     // opt_surfaces = std::make_pair(surf_id, slice);
+      //   }
+      //   else
+      //   {
+      //     throw std::runtime_error("Invalid surface arguement.\nExpected a list of length 2: ('surf name', {'z': 5.0})\n");
+      //   }
+      // }
+
+
+      std::vector<std::string> bndry_surfs;
+      std::vector<std::pair<std::string, std::pair<std::string, double>>> int_surfs;
+      for (auto surface : surfaces) {
+          if (py::isinstance<py::str>(surface)) 
+          {
+            bndry_surfs.push_back(surface.cast<std::string>());
+          } 
+          else if (py::isinstance<py::tuple>(surface)) 
+          {
+            py::tuple surf_tuple = surface.cast<py::tuple>();
+            if (surf_tuple.size() != 2)
+                throw std::invalid_argument("Surface tuple must have 2 elements (name,{axis:value})");
+       
+            std::string surf_name = surf_tuple[0].cast<std::string>();
+            py::dict surf_dict = surf_tuple[1].cast<py::dict>();
+            if (surf_dict.size() != 1)
+                throw std::invalid_argument("Surface dict must have exactly one key-value pair");
+       
+            auto& surf_slice = *surf_dict.begin();
+            std::string axis = surf_slice.first.cast<std::string>();
+            double value = surf_slice.second.cast<double>();
+            int_surfs.push_back({surf_name, {axis, value}});
+          } 
+          else {
+              throw std::invalid_argument(
+                  "Each element in 'surfaces' must be either a string corresponding to a boundary id\n or a tuple ('name', {'axis': value})");
+          }
       }
 
       // LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndry_map);
-      LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndrys, opt_surfaces);
+      LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndry_surfs, int_surfs);
     },
     R"(
     Write surface angular flux data to file.
@@ -438,8 +486,7 @@ WrapLBS(py::module& slv)
         File basename.
     )",
     py::arg("file_base"),
-    py::arg("bndry_names"),
-    py::arg("surfaces") = py::none()
+    py::arg("surfaces") = py::list{}
   );
   lbs_problem.def(
     "ReadSurfaceAngularFluxes",
