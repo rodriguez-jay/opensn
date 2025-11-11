@@ -381,6 +381,9 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
                 const auto mu_0 = omega_0.Dot(face.normal);
                 surf_name = surf_id + (mu_0 > 0 ? "_u" : "_d");
                 isSurf = true;
+
+                // std::cout << mu_0 << std::endl;
+                // std::cout << face.normal[0] << " " << face.normal[1] << " "  << face.normal[2] << std::endl;
                 
                 // std::cout << surf_name << " pos : " << node_vec.x << " "
                 //           << node_vec.y << " "
