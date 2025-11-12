@@ -466,6 +466,7 @@ WrapLBS(py::module& slv)
             auto& surf_slice = *surf_dict.begin();
             std::string axis = surf_slice.first.cast<std::string>();
             double value = surf_slice.second.cast<double>();
+
             int_surfs.push_back({surf_name, {axis, value}});
           } 
           else {
@@ -488,14 +489,16 @@ WrapLBS(py::module& slv)
     py::arg("file_base"),
     py::arg("surfaces") = py::list{}
   );
+  // Add better checks for boundary_names/ids 
+  // Possibly check if a surface name is in the h5?
   lbs_problem.def(
     "ReadSurfaceAngularFluxes",
     [](DiscreteOrdinatesProblem& self, const std::string& file_base, py::list bndry_names)
     {
-      std::map<std::string, std::uint64_t> supported_bd_names = LBSProblem::supported_boundary_names;
-      std::map<std::uint64_t, std::string> supported_bd_ids = LBSProblem::supported_boundary_ids;
-
-      // std::map<std::string, std::uint64_t> bndry_map;
+      auto grid = self.GetGrid();
+      // get the supported boundaries
+      std::map<std::string, std::uint64_t> allowed_bd_names = grid->GetBoundaryNameMap();
+      std::map<std::uint64_t, std::string> allowed_bd_ids = grid->GetBoundaryIDMap();
       std::vector<std::string> bndrys;
       for (py::handle name : bndry_names)
       {
