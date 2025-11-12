@@ -273,11 +273,14 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   }
 
   std::vector<std::vector<double>>& psi = do_problem.GetPsiNewLocal();
-  const auto& supported_bd_ids = do_problem.supported_boundary_ids;
-  const auto& supported_bd_names = do_problem.supported_boundary_names;
+  // const auto& supported_bd_ids = do_problem.supported_boundary_ids;
+  // const auto& supported_bd_names = do_problem.supported_boundary_names;
 
   // Write macro info
   const auto& grid = do_problem.GetGrid();
+  std::map<std::string, std::uint64_t> allowed_bd_names = grid->GetBoundaryNameMap();
+  std::map<std::uint64_t, std::string> allowed_bd_ids = grid->GetBoundaryIDMap();
+
   const auto& discretization = do_problem.GetSpatialDiscretization();
   const auto& groupsets = do_problem.GetGroupsets();
 
@@ -293,7 +296,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
     for (const auto& bndry : bndry_surfs)
     {
       // Verify if supplied boundary has a valid boundary ID
-      const auto bndry_id = supported_bd_names.at(bndry);
+      const auto bndry_id = allowed_bd_names.at(bndry);
       bndry_ids.push_back(bndry_id);
       const auto id = std::find(unique_bids.begin(), unique_bids.end(), bndry_id);
       OpenSnInvalidArgumentIf(id == unique_bids.end(),
@@ -365,6 +368,8 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
             const double& slice = surface.second.second;
 
             const auto num_face_nodes = cell_mapping.GetNumFaceNodes(f);
+            std::cout << std::endl << "Num Face Nodes : " << num_face_nodes << std::endl;
+            unsigned int nodes_on_face = 0;
             for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
             {
               const auto i = cell_mapping.MapFaceNode(f, fi);
@@ -376,19 +381,17 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
               else if (axis == "z") on_axis = (node_vec.z == slice);
 
               if (on_axis)
-              {
-                const auto& omega_0 = quadrature->omegas[0];
-                const auto mu_0 = omega_0.Dot(face.normal);
-                surf_name = surf_id + (mu_0 > 0 ? "_u" : "_d");
-                isSurf = true;
+                ++nodes_on_face; 
+            }
 
-                // std::cout << mu_0 << std::endl;
-                // std::cout << face.normal[0] << " " << face.normal[1] << " "  << face.normal[2] << std::endl;
-                
-                // std::cout << surf_name << " pos : " << node_vec.x << " "
-                //           << node_vec.y << " "
-                //           << node_vec.z << " " << std::endl; 
-              }
+            // Ensure each node is on the prescribed face
+            if (nodes_on_face == num_face_nodes)
+            {
+              const auto& omega_0 = quadrature->omegas[0];
+              const auto mu_0 = omega_0.Dot(face.normal);
+              surf_name = surf_id + (mu_0 > 0 ? "_u" : "_d");
+              std::cout << surf_name << " HERE Surf " << std::endl;
+              isSurf = true;
             }
           }
         }
@@ -397,13 +400,15 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         const auto it = std::find(bndry_ids.begin(), bndry_ids.end(), face.neighbor_id);
         if (!bndry_surfs.empty() && not face.has_neighbor and it != bndry_ids.end())
         {
-          surf_name = supported_bd_ids.at(*it);
+          surf_name = allowed_bd_ids.at(*it);
+          std::cout << surf_name << " HERE Bndry " << std::endl;
           isSurf = true;
         }
 
         // Write Surface Data
         if (isSurf)
         {
+
           std::cout << "Writing Surface : "<< surf_name << std::endl;
           surf_tags.insert(surf_name);
 
@@ -424,9 +429,10 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
               x_map[surf_name].push_back(node_vec[0]);
               y_map[surf_name].push_back(node_vec[1]);
               z_map[surf_name].push_back(node_vec[2]);
-              // std::cout << surf_name << " pos : " << node_vec[0] << " "
-              //                       << node_vec[1] << " "
-              //                       << node_vec[2] << " " << std::endl; 
+              std::cout << surf_name << " pos : " 
+                                     << node_vec[0] << " "
+                                     << node_vec[1] << " "
+                                     << node_vec[2] << " " << std::endl; 
             }
 
             for (unsigned int d = 0; d < num_gs_dirs; ++d)
@@ -538,9 +544,6 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
   OpenSnLogicalErrorIf(file_id < 0, "Failed to open " + file_name + ".");
 
   log.Log() << "Reading surface angular flux file from " << file_base;
-
-  const auto& supported_bd_ids = do_problem.supported_boundary_ids;
-  const auto& supported_bd_names = do_problem.supported_boundary_names;
 
   // Read macro data and check for compatibility
   uint64_t file_num_groupsets;
