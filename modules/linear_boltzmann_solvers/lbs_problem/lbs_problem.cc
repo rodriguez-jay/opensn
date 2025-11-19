@@ -698,10 +698,6 @@ LBSProblem::SetOptions(const InputParameters& input)
 
     else if (spec.GetName() == "field_function_prefix")
       options_.field_function_prefix = spec.GetValue<std::string>();
-
-    else if (spec.GetName() == "adjoint")
-      options_.adjoint = spec.GetValue<bool>();
-
   } // for p
 
   if (options_.restart_writes_enabled)
