@@ -368,7 +368,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
             const double& slice = surface.second.second;
 
             const auto num_face_nodes = cell_mapping.GetNumFaceNodes(f);
-            std::cout << std::endl << "Num Face Nodes : " << num_face_nodes << std::endl;
+            // std::cout << std::endl << "Num Face Nodes : " << num_face_nodes << std::endl;
             unsigned int nodes_on_face = 0;
             for (unsigned int fi = 0; fi < num_face_nodes; ++fi)
             {
@@ -390,7 +390,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
               const auto& omega_0 = quadrature->omegas[0];
               const auto mu_0 = omega_0.Dot(face.normal);
               surf_name = surf_id + (mu_0 > 0 ? "_u" : "_d");
-              std::cout << surf_name << " HERE Surf " << std::endl;
+              // std::cout << surf_name << " HERE Surf " << std::endl;
               isSurf = true;
             }
           }
@@ -401,7 +401,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         if (!bndry_surfs.empty() && not face.has_neighbor and it != bndry_ids.end())
         {
           surf_name = allowed_bd_ids.at(*it);
-          std::cout << surf_name << " HERE Bndry " << std::endl;
+          // std::cout << surf_name << " HERE Bndry " << std::endl;
           isSurf = true;
         }
 
@@ -409,7 +409,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         if (isSurf)
         {
 
-          std::cout << "Writing Surface : "<< surf_name << std::endl;
+          // std::cout << "Writing Surface : "<< surf_name << std::endl;
           surf_tags.insert(surf_name);
 
           const auto& int_f_shape_i = fe_values.intS_shapeI[f];
@@ -429,10 +429,10 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
               x_map[surf_name].push_back(node_vec[0]);
               y_map[surf_name].push_back(node_vec[1]);
               z_map[surf_name].push_back(node_vec[2]);
-              std::cout << surf_name << " pos : " 
-                                     << node_vec[0] << " "
-                                     << node_vec[1] << " "
-                                     << node_vec[2] << " " << std::endl; 
+              // std::cout << surf_name << " pos : " 
+              //                        << node_vec[0] << " "
+              //                        << node_vec[1] << " "
+              //                        << node_vec[2] << " " << std::endl; 
             }
 
             for (unsigned int d = 0; d < num_gs_dirs; ++d)
