@@ -436,7 +436,7 @@ WrapLBS(py::module& slv)
       //       opt_surfaces = std::make_pair(surf_id, std::make_pair(axis, value));
       //     }
       //     // double slice = surf_list[1].cast<double>();
-      //     // opt_surfaces = std::make_pair(surf_id, slice);
+      //     // opt_surfaces = std::make_pair(surf_id, slice);3
       //   }
       //   else
       //   {
@@ -445,38 +445,40 @@ WrapLBS(py::module& slv)
       // }
 
 
-      std::vector<std::string> bndry_surfs;
-      std::vector<std::pair<std::string, std::pair<std::string, double>>> int_surfs;
-      for (auto surface : surfaces) {
-          if (py::isinstance<py::str>(surface)) 
-          {
-            bndry_surfs.push_back(surface.cast<std::string>());
-          } 
-          else if (py::isinstance<py::tuple>(surface)) 
-          {
-            py::tuple surf_tuple = surface.cast<py::tuple>();
-            if (surf_tuple.size() != 2)
-                throw std::invalid_argument("Surface tuple must have 2 elements (name,{axis:value})");
-       
-            std::string surf_name = surf_tuple[0].cast<std::string>();
-            py::dict surf_dict = surf_tuple[1].cast<py::dict>();
-            if (surf_dict.size() != 1)
-                throw std::invalid_argument("Surface dict must have exactly one key-value pair");
-       
-            auto& surf_slice = *surf_dict.begin();
-            std::string axis = surf_slice.first.cast<std::string>();
-            double value = surf_slice.second.cast<double>();
-
-            int_surfs.push_back({surf_name, {axis, value}});
-          } 
-          else {
-              throw std::invalid_argument(
-                  "Each element in 'surfaces' must be either a string corresponding to a boundary id\n or a tuple ('name', {'axis': value})");
-          }
+      std::vector<std::string> boundary_surfaces;
+      std::vector<std::pair<std::string, std::pair<std::string, double>>> internal_surfaces;
+      for (auto surface : surfaces) 
+      {
+        if (py::isinstance<py::str>(surface)) 
+        {
+          boundary_surfaces.push_back(surface.cast<std::string>());
+        } 
+        else if (py::isinstance<py::tuple>(surface)) 
+        {
+          py::tuple surface_tuple = surface.cast<py::tuple>();
+          if (surface_tuple.size() != 2)
+              throw std::invalid_argument("Surface tuple must have 2 elements (name,{axis:value})");
+      
+          std::string surface_name = surface_tuple[0].cast<std::string>();
+          py::dict surface_dict = surface_tuple[1].cast<py::dict>();
+          if (surface_dict.size() != 1)
+              throw std::invalid_argument("Surface dict must have exactly one key-value pair");
+      
+          auto& surface_slice = *surface_dict.begin();
+          std::string axis = surface_slice.first.cast<std::string>();
+          double value = surface_slice.second.cast<double>();
+          internal_surfaces.push_back({surface_name, {axis, value}});
+        } 
+        else 
+        {
+            throw std::invalid_argument(
+                "Each element in 'surfaces' must be either a string corresponding to a boundary id\n \
+                 or a tuple defining an internal surfae ('name', {'axis': value})");
+        }
       }
 
       // LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndry_map);
-      LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndry_surfs, int_surfs);
+      LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, boundary_surfaces, internal_surfaces);
     },
     R"(
     Write surface angular flux data to file.
