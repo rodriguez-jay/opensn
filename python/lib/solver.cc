@@ -405,50 +405,11 @@ WrapLBS(py::module& slv)
       const std::string& file_base, 
       py::list surfaces)
     {
-      // Map boundary names
-      // std::map<std::string, uint64_t> allowed_bd_names = LBSProblem::supported_boundary_names;
-      // std::map<std::uint64_t, std::string> allowed_bd_ids = LBSProblem::supported_boundary_ids;
-      // std::vector<std::string> bndrys;
-      // for (py::handle name : boundaries)
-        // bndrys.push_back(name.cast<std::string>());
-
-      // Map surface names
-      // std::optional<std::pair<std::string, double>> opt_surfaces;
-      // std::optional<std::pair<std::string, std::pair<std::string, double>>> opt_surfaces;
-      // if (!surfaces.is_none())
-      // {
-      //   py::list surf_list = surfaces.cast<py::list>();
-      //   // Expect a surface like ('surf name', {"z": 6.0})
-      //   if (py::len(surf_list) == 2)
-      //   {
-      //     std::string surf_id = surf_list[0].cast<std::string>();
-      //     py::object slice_obj = surf_list[1];
-      //     if (py::isinstance<py::dict>(slice_obj))
-      //     {
-      //       py::dict slice = slice_obj.cast<py::dict>();
-      //       std::string axis = "";
-      //       double value = 0.0;
-      //       for (auto& [key, val] : slice)
-      //       {
-      //         axis = py::cast<std::string>(key);
-      //         value = py::cast<double>(val);
-      //       }
-      //       opt_surfaces = std::make_pair(surf_id, std::make_pair(axis, value));
-      //     }
-      //     // double slice = surf_list[1].cast<double>();
-      //     // opt_surfaces = std::make_pair(surf_id, slice);3
-      //   }
-      //   else
-      //   {
-      //     throw std::runtime_error("Invalid surface arguement.\nExpected a list of length 2: ('surf name', {'z': 5.0})\n");
-      //   }
-      // }
-
-
       std::vector<std::string> boundary_surfaces;
       std::vector<std::pair<std::string, std::pair<std::string, double>>> internal_surfaces;
       for (auto surface : surfaces) 
       {
+        // Group boundary and internal surfaces
         if (py::isinstance<py::str>(surface)) 
         {
           boundary_surfaces.push_back(surface.cast<std::string>());
@@ -476,8 +437,6 @@ WrapLBS(py::module& slv)
                  or a tuple defining an internal surfae ('name', {'axis': value})");
         }
       }
-
-      // LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, bndry_map);
       LBSSolverIO::WriteSurfaceAngularFluxes(self, file_base, boundary_surfaces, internal_surfaces);
     },
     R"(
@@ -487,29 +446,21 @@ WrapLBS(py::module& slv)
     ----------
     file_base: str
         File basename.
+    surfaces: List[str, Tuple], default=[]
+        List of strings corresponding to boundary ids or tuples prescribing an internal surface. 
+        Internal surfaces are along a fixed axis and defined by a tuple ('name', {'axis': value}). 
     )",
     py::arg("file_base"),
     py::arg("surfaces") = py::list{}
   );
-  // Add better checks for boundary_names/ids 
-  // Possibly check if a surface name is in the h5?
   lbs_problem.def(
     "ReadSurfaceAngularFluxes",
-    [](DiscreteOrdinatesProblem& self, const std::string& file_base, py::list bndry_names)
+    [](DiscreteOrdinatesProblem& self, const std::string& file_base, py::list surfaces)
     {
-      auto grid = self.GetGrid();
-      // get the supported boundaries
-      std::map<std::string, std::uint64_t> allowed_bd_names = grid->GetBoundaryNameMap();
-      std::map<std::uint64_t, std::string> allowed_bd_ids = grid->GetBoundaryIDMap();
-      std::vector<std::string> bndrys;
-      for (py::handle name : bndry_names)
-      {
-        std::string bndry = name.cast<std::string>();
-        // bndry_map[bndry] = supported_bd_names.at(bndry);
-        bndrys.push_back(bndry);
-      }
-      // LBSSolverIO::ReadSurfaceAngularFluxes(self, file_base, bndry_map);
-      LBSSolverIO::ReadSurfaceAngularFluxes(self, file_base, bndrys);
+      std::vector<std::string> surface_ids;
+      for (py::handle surface : surfaces)
+        surface_ids.push_back(surface.cast<std::string>());
+      LBSSolverIO::ReadSurfaceAngularFluxes(self, file_base, surface_ids);
     },
     R"(
     Read surface angular fluxes from file.
