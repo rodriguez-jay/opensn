@@ -159,7 +159,6 @@ ResponseEvaluator::SetBufferOptions(const InputParameters& input)
   {
     const auto bndry = params.GetParamValue<std::string>("bndry");
     const auto surf = params.GetParamValue<std::string>("surf");
-    
     std::vector<std::string> surfaces;
     if (!bndry.empty())
       surfaces.push_back(bndry);
@@ -169,7 +168,6 @@ ResponseEvaluator::SetBufferOptions(const InputParameters& input)
       const std::string surf_d = surf + "_d";
       surfaces.insert(surfaces.end(), {surf_u, surf_d});
     }
-    
     surf_psi = LBSSolverIO::ReadSurfaceAngularFluxes(
       *do_problem_, prefixes.GetParamValue<std::string>("surface_angular_fluxes"), surfaces);
   }
@@ -518,100 +516,101 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_buffer,
   double response_d = 0.0;
   double surface_response = 0.0;
 
-  std::cout << "Num Fwd Surfs : " << fwd_surfaces.size() << std::endl;
-  std::cout << "Num Adj Surfs : " << adj_surfaces.size() << std::endl;
+  // std::cout << "Num Fwd Surfs : " << fwd_surfaces.size() << std::endl;
+  // std::cout << "Num Adj Surfs : " << adj_surfaces.size() << std::endl;
   const auto& num_surfs = fwd_surfaces.size(); //- 1;
-  std::cout << "Num Surfs :" << num_surfs << std::endl;
+  // std::cout << "Num Surfs :" << num_surfs << std::endl;
 
-  // if (adj_surfaces.size() > 1)
-    // const auto& adj = adj_surfaces[1];
-  // else 
-    // const auto& adj = adj_surfaces[0];
-
-  // const auto& adj = (adj_surfaces.size() > 1) ? adj_surfaces[1] : adj_surfaces[0];
-  // const auto& fwd = (fwd_surfaces.size() > 1) ? fwd_surfaces[0] : fwd_surfaces[0];
-
-  // for (size_t si=0; si < num_surfs; ++si)
-  // {
- 
-  auto* adj = &adj_surfaces[0];
   auto* fwd = &fwd_surfaces[0];
+  auto* adj = &adj_surfaces[0];
 
-  std::cout << "Num Cells : " << fwd->mapping.cell_ids.size() << std::endl;
-  size_t gi = 0; // start of global index
-  for (size_t ci=0; ci < fwd->mapping.cell_ids.size(); ++ci)
+  auto& node_stride = fwd->data.node_stride;
+  auto& dir_stride = fwd->data.dir_stride;
+
+  size_t mij = 0;
+  const auto& nodes_x = fwd->mapping.nodes_x;
+  size_t node_indx = 0;
+  const auto& num_cells = fwd->mapping.cell_ids.size();
+  for (size_t ci = 0; ci < num_cells; ++ci)
   {
-    size_t mi = 0; // start of mass index
-    const auto& num_nodes = fwd->mapping.num_nodes[ci];
-    std::cout << "Fwd Cell " << fwd->mapping.cell_ids[ci] 
-              << " | Num Nodes " << num_nodes << std::endl;
-    std::cout << "Adj Cell " << adj->mapping.cell_ids[ci] 
-              << " | Num Nodes " << num_nodes << std::endl;
+    auto& num_face_nodes = fwd->mapping.num_face_nodes[ci];
 
-    for (size_t ni=0; ni < num_nodes; ++ni)
+    // For a given face both surfaces must have the same number of nodes
+    OpenSnLogicalErrorIf(fwd->mapping.num_face_nodes[ci] != adj->mapping.num_face_nodes[ci],
+                         "Incompatible number of nodes found on surfaces.");
+  
+    for (size_t ni = 0; ni < num_face_nodes; ++ni)
     {
-      if (num_surfs > 1)
+      for (size_t nj = 0; nj < num_face_nodes; ++nj)
       {
-        fwd = &fwd_surfaces[0];
-        adj = &adj_surfaces[1];
-      }
-
-      const auto& node_strd = gi + ni;
-      for (const auto& groupset : do_problem_->GetGroupsets())
-      {
-        auto groupset_id = groupset.id;
-        auto num_gs_groups = groupset.groups.size();
-        // |  Fwd     :     Adj    |
-        // |  (-) --> : <--- (+)   | -n == + resp
-        // | <-- (+)  :   (-) -->  | +n * -1 == + resp
-        const auto& quadrature = groupset.quadrature;
-        auto num_gs_dirs = quadrature->omegas.size();
-        double mu_d;
-        double wt_d;
-        for (unsigned int d = 0; d < num_gs_dirs; ++d)
+        auto& M_ij = fwd->data.M_ij[mij];
+        for (const auto& groupset : do_problem_->GetGroupsets())
         {
-          size_t dir_strd = node_strd * num_gs_dirs + d;
-          size_t adir_strd = node_strd * num_gs_dirs + num_gs_dirs - d - 1;
-          // std::cout << "\n\nDir Strd" << dir_strd << std::endl;
-          // std::cout << "Dir* Strd" << adir_strd << std::endl;
+          auto groupset_id = groupset.id;
+          auto num_gs_groups = groupset.groups.size();
 
-          mu_d = fwd->data.mu[dir_strd];
-          wt_d = fwd->data.wt_d[dir_strd];
-          if (mu_d < 0.0 and num_surfs > 1) 
+          const auto& quadrature = groupset.quadrature;
+          auto num_gs_dirs = quadrature->omegas.size();
+
+          auto& mu = fwd->data.mu;
+          // auto& mu_d = fwd->data.mu;
+          auto& wt_d = fwd->data.wt_d;
+          for (size_t d = 0; d < num_gs_dirs; ++d)
           {
-            fwd = &fwd_surfaces[1];
-            adj = &adj_surfaces[0];
-            mu_d = fwd->data.mu[dir_strd];
-            wt_d = fwd->data.wt_d[dir_strd];
-          }
+            auto& mu_d = mu[(node_indx + ni)*num_gs_dirs + d];
 
-          double psi;
-          double psi_dagger;
-          for (uint64_t g = 0; g < num_gs_groups; ++g)
-          {
-            size_t grp_strd = dir_strd * num_gs_groups + g;
-            size_t agrp_strd = adir_strd * num_gs_groups + g;
-            psi = fwd->data.psi[grp_strd];
-            psi_dagger = adj->data.psi[agrp_strd];
-
-            // std::cout << "Psi : " << psi << std::endl;
-            // std::cout << "Psi* : " << psi_dagger << std::endl;
-            for (size_t nj=0; nj < num_nodes; ++nj)
+            size_t dj;
+            if (num_face_nodes == 2)
             {
-              const auto& mass_strd = mi + nj;
-              const auto& M_ij = fwd->data.M_ij[mass_strd];
-              if (d < num_gs_dirs / 2)
-                response_u += mu_d * wt_d * M_ij * psi * psi_dagger;
+              if (d < num_gs_dirs / 2) dj = d + 0.5 * num_gs_dirs;
+              else dj = d - 0.5 * num_gs_dirs;
+            }
+            else dj = d;
+
+            if (num_surfs > 1)
+            {
+              // Set the direction logic for the upwinding and downwinging cells
+              size_t surf_indx = (mu_d > 0);
+              adj = &adj_surfaces[surf_indx];
+              fwd = &fwd_surfaces[1-surf_indx];
+            }
+
+            for (size_t g = 0; g < num_gs_groups; ++g)
+            {
+              uint64_t strd_i = node_stride[node_indx + ni] + d*num_gs_groups + g;        
+              uint64_t strd_j;
+              if (num_face_nodes <= 2)
+                strd_j = node_stride[node_indx + num_face_nodes-nj-1] + dj*num_gs_groups + g;
+              else if (num_face_nodes > 2)
+              {
+                int n = static_cast<int>(num_face_nodes);
+                strd_j = node_stride[node_indx + (n - nj) % n] + dj*num_gs_groups + g;
+              }
+              // std::cout << "Node Stride : " << strd_i << " " << strd_j << std::endl;
+
+              auto& psi = fwd->data.psi[strd_i];
+              auto& psi_dagger = adj->data.psi[strd_j];
+              if (mu_d > 0.0)
+              {          
+                // std::cout << "Pos MU" << std::endl;
+                // std::cout << "PSI " << psi << " PSI* " << psi_dagger << std::endl;
+                response_u += mu_d * wt_d[d] * M_ij * psi * psi_dagger;
+              }
               else
-                response_d -= mu_d * wt_d * M_ij * psi * psi_dagger;
+              {
+                // std::cout << "Neg MU" << std::endl;
+                // std::cout << "PSI " << psi << " PSI* " << psi_dagger << std::endl;
+                response_d += mu_d * wt_d[d] * M_ij * psi * psi_dagger;
+              }
             }
           }
         }
+        ++mij;
       }
-      mi += num_nodes;
-    } 
-    gi += num_nodes;
+    }
+    node_indx += num_face_nodes;
   }
+  
   std::cout << "Resp U : " << response_u << std::endl;
   std::cout << "Resp D : " << response_d << std::endl;
   surface_response = response_u + response_d;
