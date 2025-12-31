@@ -6,6 +6,8 @@
 #include "framework/runtime.h"
 #include "framework/mesh/mesh_continuum/mesh_continuum.h"
 #include "framework/utils/hdf_utils.h"
+#include "framework/math/spatial_discretization/finite_element/finite_element_data.h"
+
 
 namespace opensn
 {
@@ -332,6 +334,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
       const auto& node_locations = cell_mapping.GetNodeLocations();
       uint64_t num_cell_nodes = 0;
 
+      const auto fe_vol_data = cell_mapping.MakeVolumetricFiniteElementData();
       const auto& unit_cell_matrices = do_problem.GetUnitCellMatrices();
 	    const auto& fe_values = unit_cell_matrices.at(cell.local_id);
 
@@ -392,10 +395,23 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         if (isSurf)
         {
           surf_tags.insert(surf_name);
+          std::cout << "Surf : " << surf_name << std::endl;
 
           const auto& int_f_shape_i = fe_values.intS_shapeI[f];
           const auto& M_ij = fe_values.intS_shapeI_shapeJ[f];
           const uint64_t& num_face_nodes = cell_mapping.GetNumFaceNodes(f);
+
+
+          const auto fe_srf_data = cell_mapping.MakeSurfaceFiniteElementData(f);
+          // for (const auto& qp : fe_srf_data.GetQuadraturePointIndices())
+          // {
+          //   std::cout << "F " << f <<" QP : " << qp << " QPoints : "
+          //             << fe_vol_data.QPointXYZ(qp)[0] << " " 
+          //             << fe_vol_data.QPointXYZ(qp)[1] << " "
+          //             << fe_vol_data.QPointXYZ(qp)[2] << " " 
+          //             << std::endl;
+          // }
+          // // exit(0);
 
           cell_map[surf_name].push_back(cell_id);
           node_map[surf_name].push_back(num_face_nodes);
@@ -407,9 +423,19 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
             const auto& node_vec = node_locations[i];
             if (gset == 0)
             {
-              x_map[surf_name].push_back(node_vec[0]);
-              y_map[surf_name].push_back(node_vec[1]);
-              z_map[surf_name].push_back(node_vec[2]);
+              // x_map[surf_name].push_back(node_vec[0]);
+              // y_map[surf_name].push_back(node_vec[1]);
+              // z_map[surf_name].push_back(node_vec[2]);
+
+              std::cout << "F " << fi << " QPoints : "
+                      << fe_vol_data.QPointXYZ(fi)[0] << " " 
+                      << fe_vol_data.QPointXYZ(fi)[1] << " "
+                      << fe_vol_data.QPointXYZ(fi)[2] << " " 
+                      << std::endl;
+
+              x_map[surf_name].push_back(fe_vol_data.QPointXYZ(fi)[0]);
+              y_map[surf_name].push_back(fe_vol_data.QPointXYZ(fi)[1]);
+              z_map[surf_name].push_back(fe_vol_data.QPointXYZ(fi)[2]);
             }
 
             for (unsigned int d = 0; d < num_gs_dirs; ++d)
@@ -425,6 +451,13 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
               for (uint64_t g = 0; g < num_gs_groups; ++g)
               {
                 const auto dof_map = discretization.MapDOFLocal(cell, i, uk_man, d, g);
+                // std::cout << surf_name << std::endl;
+                // if (surf_name == "inter_y_u")
+                // {
+                //   std::cout << "X : " << node_vec[0] << std::endl;
+                //   std::cout << "Y : " << node_vec[1] << std::endl;
+                //   std::cout << "Psi: " << psi[groupset_id][dof_map] << std::endl;
+                // }
                 data_vec.push_back(psi[groupset_id][dof_map]);
               }
               // Move the vector to avoid unecessary copy
@@ -573,12 +606,6 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
       H5ReadDataset1D<double>(file_id, mesh_tag + "/nodes_y", surf_map.nodes_y);
       H5ReadDataset1D<double>(file_id, mesh_tag + "/nodes_z", surf_map.nodes_z);
 
-      // std::cout << surf_map.num_nodes[0] << std::endl;
-      // std::cout << surf_map.nodes_x[0] << std::endl;
-      // std::cout << surf_map.nodes_y[0] << std::endl;
-      // std::cout << surf_map.nodes_z[0] << std::endl;
-      
-
       std::string surf_grp = group_name + "/" + surface;
       H5ReadDataset1D<double>(file_id, surf_grp + "/omega", surf_data.omega);
       H5ReadDataset1D<double>(file_id, surf_grp + "/mu", surf_data.mu);
@@ -586,60 +613,11 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
       H5ReadDataset1D<double>(file_id, surf_grp + "/M_ij", surf_data.M_ij);
       H5ReadDataset1D<double>(file_id, surf_grp + "/surf_flux", surf_data.psi);
 
-      // std::vector<double> norm; 
-      // if (surf_map.num_nodes[0] == 1)
-      //   norm = {-1., 1., -1.};
-      // else if (surf_map.num_nodes[0] == 2)
-      //   norm = {1., 1., -1.};
-      // else if (surf_map.num_nodes[0] > 2)
-      //   norm = {-1., -1., -1.};
-
-      // auto dot_prod = [&norm](const std::array<double, 3>& u,
-      //                    const std::array<double, 3>& v)
-      // {
-      //   std::cout << "Norm : " << norm[0] << " " << norm[1] << " " << norm[2] << std::endl;
-      //   std::cout << "u : " << u[0] << " " << u[1] << " " << u[2] << std::endl;
-      //   std::cout << "v : " << u[0]*v[0] << " " << u[1]*v[1] << " " << u[2]*v[2] << std::endl;
-      //   return u[0]*v[0]*norm[0] + u[1]*v[1]*norm[1] + u[2]*v[2]*norm[2];
-      // };
-
-      // for (size_t d = 0; d < file_num_gs_dirs; ++d)
-      // {
-      //   std::array<double, 3> u = {surf_data.omega[d*3],
-      //                               surf_data.omega[d*3+1]
-      //                               surf_data.omega[d*3+2]};
-
-      //   size_t dj;
-      //   if (d < file_num_gs_dirs / 2)
-      //   {
-      //     dj = d + file_num_gs_dirs / 2;
-      //   } 
-      //   else
-      //   {
-      //     dj = d - file_num_gs_dirs / 2;
-      //   }
-      //   std::cout << "DJ: " << dj << std::endl;
-      //   std::array<double, 3> v = {surf_data.omega[dj*3],
-      //                               surf_data.omega[dj*3+1],
-      //                               surf_data.omega[dj*3+2]};
-
-      //   double dot = dot_prod(u, v);
-      //   std::cout << "DOT : " << dot << std::endl;
-
-      //   std::cout << u[0] << " " 
-      //             << u[1] << " " 
-      //             << u[2] << " " << std::endl;
-      //   std::cout << v[0] << " " 
-      //             << v[1] << " " 
-      //             << v[2] << " " << std::endl;
-      // }
-      // exit(0);
-
-
       // Get strides
       std::vector<double> cell_stride = {0};
       std::vector<double> node_stride = {0};
       std::vector<double> dir_stride = {0};
+      size_t node_indx = 0;
       double stride = 0;
       auto num_cells = surf_map.cell_ids.size();
       for (size_t ci = 0; ci < num_cells; ++ci)
@@ -659,10 +637,10 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
         }
         if (ci + 1 < num_cells)
           cell_stride.push_back(stride);
+        node_indx += num_face_nodes;
       }
       surf_data.node_stride = node_stride;
       surf_data.dir_stride = dir_stride;
-
 
       surf_flux.mapping = std::move(surf_map);
       surf_flux.data = std::move(surf_data);
