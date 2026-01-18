@@ -272,10 +272,12 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   if (bndry_surfs.empty() && int_surfs.empty())
     OpenSnLogicalError("No surface provided. Provide either boundary names or internal surface definitions.");
 
+  // Get angular fluxes
   std::vector<std::vector<double>>& psi = do_problem.GetPsiNewLocal();
 
   // Write macro info
   const auto& grid = do_problem.GetGrid();
+
   std::map<std::string, std::uint64_t> allowed_bd_names = grid->GetBoundaryNameMap();
   std::map<std::uint64_t, std::string> allowed_bd_ids = grid->GetBoundaryIDMap();
 
@@ -286,28 +288,25 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
   auto num_local_nodes = discretization.GetNumLocalNodes();
   auto num_groupsets = groupsets.size();
 
+  // Check the boundary IDs
   std::vector<uint64_t> bndry_ids;
   if (!bndry_surfs.empty())
   {
-    // Check the boundary IDs
     const auto unique_bids = grid->GetUniqueBoundaryIDs();
     for (const auto& bndry : bndry_surfs)
     {
       // Verify if supplied boundary has a valid boundary ID
       const auto bndry_id = allowed_bd_names.at(bndry);
-      bndry_ids.push_back(bndry_id);
       const auto id = std::find(unique_bids.begin(), unique_bids.end(), bndry_id);
       OpenSnInvalidArgumentIf(id == unique_bids.end(),
                               "Boundary " + bndry + "not found on grid.");
+      bndry_ids.push_back(bndry_id);
     }
   }
 
-  log.Log() << "Writing surface angular flux to " << file_base;
-  // ===========================================================
-  // The goal is limit the number of itrations over all cells 
-  // Sweep through once and map cell_ids to boundaries then
-  // upack them into 1D vectors for exporting to H5
-  // ===========================================================
+  log.Log() << "Writing surface angular flux data to " << file_base;
+
+  // Get mapping for the surface data
   std::unordered_set<std::string> surf_tags;
   std::map<std::string, std::vector<uint64_t>> cell_map, node_map;
   std::map<std::string, std::vector<double>> x_map, y_map, z_map;
@@ -345,7 +344,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         bool isSurf = false;
         std::string surf_name;
 
-        // Internal surface Mapping
+        // Internal surface mapping
         if (!int_surfs.empty())
         {
           for (const auto& surface : int_surfs)
@@ -366,12 +365,13 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
               if (axis == "x") on_axis = (node_vec.x == slice);
               else if (axis == "y") on_axis = (node_vec.y == slice);
               else if (axis == "z") on_axis = (node_vec.z == slice);
+              else OpenSnLogicalError("Invalid axis provided.");
 
               if (on_axis)
                 ++nodes_on_face; 
             }
 
-            // Ensure each node is on the prescribed face
+            // Ensure each node is on the prescribed face.
             if (nodes_on_face == num_face_nodes)
             {
               // Assign an upwinding or downwinding tag to the surface
@@ -391,11 +391,10 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
           isSurf = true;
         }
 
-        // Write Surface Data
+        // Write suface data 
         if (isSurf)
         {
           surf_tags.insert(surf_name);
-          std::cout << "Surf : " << surf_name << std::endl;
 
           const auto& int_f_shape_i = fe_values.intS_shapeI[f];
           const auto& M_ij = fe_values.intS_shapeI_shapeJ[f];
@@ -423,19 +422,25 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
             const auto& node_vec = node_locations[i];
             if (gset == 0)
             {
-              // x_map[surf_name].push_back(node_vec[0]);
-              // y_map[surf_name].push_back(node_vec[1]);
-              // z_map[surf_name].push_back(node_vec[2]);
+              x_map[surf_name].push_back(node_vec[0]);
+              y_map[surf_name].push_back(node_vec[1]);
+              z_map[surf_name].push_back(node_vec[2]);
 
-              std::cout << "F " << fi << " QPoints : "
-                      << fe_vol_data.QPointXYZ(fi)[0] << " " 
-                      << fe_vol_data.QPointXYZ(fi)[1] << " "
-                      << fe_vol_data.QPointXYZ(fi)[2] << " " 
-                      << std::endl;
+              // std::cout << "Points : "
+              //         << node_vec[0] << " " 
+              //         << node_vec[1] << " "
+              //         << node_vec[2] << " " 
+              //         << std::endl;
 
-              x_map[surf_name].push_back(fe_vol_data.QPointXYZ(fi)[0]);
-              y_map[surf_name].push_back(fe_vol_data.QPointXYZ(fi)[1]);
-              z_map[surf_name].push_back(fe_vol_data.QPointXYZ(fi)[2]);
+              // std::cout << "F " << fi << " QPoints : "
+              //         << fe_vol_data.QPointXYZ(fi)[0] << " " 
+              //         << fe_vol_data.QPointXYZ(fi)[1] << " "
+              //         << fe_vol_data.QPointXYZ(fi)[2] << " " 
+              //         << std::endl;
+
+              // x_map[surf_name].push_back(fe_vol_data.QPointXYZ(fi)[0]);
+              // y_map[surf_name].push_back(fe_vol_data.QPointXYZ(fi)[1]);
+              // z_map[surf_name].push_back(fe_vol_data.QPointXYZ(fi)[2]);
             }
 
             for (unsigned int d = 0; d < num_gs_dirs; ++d)
@@ -469,11 +474,11 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
               const auto j = cell_mapping.MapFaceNode(f, fj);
               mass_map[surf_name].push_back(M_ij(i, j));
             }
-          }
+          } // for face node
         }
         ++f;
-      }
-    }
+      } // for face
+    } // for cell
 
     // Export data to HDF5
     H5CreateAttribute(file_id, "num_groupsets", num_groupsets);
@@ -522,19 +527,19 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
         surf_flux.insert(surf_flux.end(), vec.begin()+6, vec.end());
       }
 
-      std::vector<double> omegas;
-      std::vector<double> weights;
-      for (unsigned int d = 0; d < num_gs_dirs; ++d)
-      {
-        const auto& omega_d = quadrature->omegas[d];
-        omegas.insert(omegas.end(), {omega_d.x, omega_d.y, omega_d.z});
-        weights.push_back(quadrature->weights[d]);
-      }
-      H5WriteDataset1D(file_id, surf_grp + "/omega", omegas);
-      H5WriteDataset1D(file_id, surf_grp + "/wt_d", weights);
-      
+      // std::vector<double> omegas;
+      // std::vector<double> weights;
+      // for (unsigned int d = 0; d < num_gs_dirs; ++d)
+      // {
+      //   const auto& omega_d = quadrature->omegas[d];
+      //   omegas.insert(omegas.end(), {omega_d.x, omega_d.y, omega_d.z});
+      //   weights.push_back(quadrature->weights[d]);
+      // }
       // H5WriteDataset1D(file_id, surf_grp + "/omega", omegas);
-      // H5WriteDataset1D(file_id, surf_grp + "/wt_d", wt_d);
+      // H5WriteDataset1D(file_id, surf_grp + "/wt_d", weights);
+      
+      H5WriteDataset1D(file_id, surf_grp + "/omega", omega);
+      H5WriteDataset1D(file_id, surf_grp + "/wt_d", wt_d);
       H5WriteDataset1D(file_id, surf_grp + "/mu", mu);
       H5WriteDataset1D(file_id, surf_grp + "/fe_shape", fe_shape);
       H5WriteDataset1D(file_id, surf_grp + "/surf_flux", surf_flux);
@@ -544,7 +549,7 @@ LBSSolverIO::WriteSurfaceAngularFluxes(
       H5WriteDataset1D(file_id, surf_grp + "/M_ij", mass_vector);
     }
     ++gset;
-  }
+  } // for groupset
 
   ssize_t num_open_objs = H5Fget_obj_count(file_id, H5F_OBJ_ALL);
   H5Fclose(file_id);
@@ -592,13 +597,13 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
     H5ReadAttribute(file_id, group_name + "/num_directions", file_num_gs_dirs);
     H5ReadAttribute(file_id, group_name + "/num_groups", file_num_gs_groups);
 
+    // Read each surface for a given groupset
     for (const auto& surface : surfaces)
     {
       SurfaceMap surf_map;
       SurfaceData surf_data;
       SurfaceAngularFlux surf_flux;
 
-      std::cout << "Reading Surface: " << surface << std::endl;
       std::string mesh_tag = "mesh/" + surface;
       H5ReadDataset1D<double>(file_id, mesh_tag + "/cell_ids", surf_map.cell_ids);
       H5ReadDataset1D<double>(file_id, mesh_tag + "/num_face_nodes", surf_map.num_face_nodes);
@@ -614,9 +619,9 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
       H5ReadDataset1D<double>(file_id, surf_grp + "/surf_flux", surf_data.psi);
 
       // Get strides
-      std::vector<double> cell_stride = {0};
-      std::vector<double> node_stride = {0};
-      std::vector<double> dir_stride = {0};
+      std::vector<double> cell_index = {0};
+      std::vector<double> node_index = {0};
+      std::vector<double> dir_index = {0};
       size_t node_indx = 0;
       double stride = 0;
       auto num_cells = surf_map.cell_ids.size();
@@ -630,17 +635,18 @@ LBSSolverIO::ReadSurfaceAngularFluxes(
             for (size_t g = 0; g < file_num_gs_groups; ++g)
               ++stride;
             if ((d + 1 < file_num_gs_dirs) || (ni + 1 < num_face_nodes) || (ci + 1 < num_cells))
-              dir_stride.push_back(stride);
+              dir_index.push_back(stride);
           }
+
           if ((ni + 1 < num_face_nodes) || (ci + 1 < num_cells))
-            node_stride.push_back(stride);
+            node_index.push_back(stride);
         }
         if (ci + 1 < num_cells)
-          cell_stride.push_back(stride);
+          cell_index.push_back(stride);
         node_indx += num_face_nodes;
       }
-      surf_data.node_stride = node_stride;
-      surf_data.dir_stride = dir_stride;
+      surf_data.node_index = node_index;
+      surf_data.dir_index = dir_index;
 
       surf_flux.mapping = std::move(surf_map);
       surf_flux.data = std::move(surf_data);

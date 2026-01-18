@@ -126,7 +126,7 @@ ResponseEvaluator::GetBufferOptionsBlock()
   params.AddOptionalParameter<std::string>(
     "interior_surface",
     {},
-    "Optional list of internal surface ids."
+    "Optional list of interior surface ids."
   );
 
   return params;
@@ -164,8 +164,8 @@ ResponseEvaluator::SetBufferOptions(const InputParameters& input)
       surfaces.push_back(bndry_surf);
     else if (!inter_surf.empty())
     {
-      const std::string surf_u = inter_surf + "_u";
-      const std::string surf_d = inter_surf + "_d";
+      const std::string surf_u = inter_surf + "_u"; // Upwinding surfaces
+      const std::string surf_d = inter_surf + "_d"; // Downwinding Surfaces
       surfaces.insert(surfaces.end(), {surf_u, surf_d});
     }
     surf_psi = LBSSolverIO::ReadSurfaceAngularFluxes(
@@ -500,66 +500,65 @@ double
 ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_buffer,
                                            const std::string& adj_buffer) const
 {
+  // Read the surface data for the forward problem
   const auto& fwd_data = adjoint_buffers_.at(fwd_buffer);
   const auto& fwd_surfaces = fwd_data.surface_angular_fluxes;
   OpenSnLogicalErrorIf(fwd_surfaces.empty(),
                        "Surface flux data must be available "
                        "for a surface response evaluation.");
 
+  // Read the surface data for the adjoint problem
   const auto& adj_data = adjoint_buffers_.at(adj_buffer);
   const auto& adj_surfaces = adj_data.surface_angular_fluxes;
   OpenSnLogicalErrorIf(adj_surfaces.empty(),
                        "Surface adjoint flux data must be available "
                        "for a surface response evaluation.");
 
-  double response_u = 0.0;
-  double response_d = 0.0;
-  double surface_response = 0.0;
+  double response_u = 0.0; // Response for the upwinding faces
+  double response_d = 0.0; // Response for the downwinding faces
+  double surface_response = 0.0; // Total surface response
 
-  // std::cout << "Num Fwd Surfs : " << fwd_surfaces.size() << std::endl;
-  // std::cout << "Num Adj Surfs : " << adj_surfaces.size() << std::endl;
-  const auto& num_surfs = fwd_surfaces.size(); //- 1;
+  const auto& num_surfs = fwd_surfaces.size();
+  const auto& num_gsets = do_problem_->GetGroupsets().size();
+  bool isInter = false;
+  if (num_surfs > num_gsets) // Handle interior surface indexing
+    isInter = true;
 
-  // ONLY DO HALF DIRECTIONS IN BNDRY CASE!!!!!
   auto* fwd = &fwd_surfaces[0];
-  auto* adj = &adj_surfaces[0];
+  auto* adj = (isInter ? &adj_surfaces[1] : &adj_surfaces[0]);
+  const auto* base_surf = &fwd_surfaces[0];
 
-
-  auto& omega = fwd->data.omega;
-  auto& mu = fwd->data.mu;
-  auto& wt_d = fwd->data.wt_d;
-  
-  uint64_t mij = 0;
-  const auto& nodes_x = fwd->mapping.nodes_x;
-  uint64_t node_indx = 0;
+  // auto& mu = fwd->data.mu;
+  // auto& wt_d = fwd->data.wt_d;
+  // auto& mu = base_surf->data.mu;
+  // auto& wt_d = base_surf->data.wt_d;
+ 
+  size_t mij = 0; // Mass matrix indexing
+  size_t node_stride = 0; // Face node indexing
   const auto& num_cells = fwd->mapping.cell_ids.size();
+  // const auto& num_cells = base_surf->mapping.cell_ids.size();
   for (size_t ci = 0; ci < num_cells; ++ci)
   {
-    auto&num_face_nodes = fwd->mapping.num_face_nodes[ci];
+    const auto& num_face_nodes = fwd->mapping.num_face_nodes[ci];
+    // std::cout << "Num Face Nodes: " << num_face_nodes << std::endl;
+
     for (size_t ni = 0; ni < num_face_nodes; ++ni)
-    {
       for (size_t nj = 0; nj < num_face_nodes; ++nj)
       {
-        // std::cout << "Num Indx : " << node_indx << std::endl;
-        auto& M_ij = fwd->data.M_ij[mij];
-        // std::cout << "Mij : " << mij << " " << M_ij << std::endl;
-        int n = static_cast<int>(num_face_nodes);
-        uint64_t node_u = node_indx + ni;
-        uint64_t node_d; 
-        if (num_face_nodes <= 2)
-          node_d = node_indx + n - nj - 1;
-        else if (num_face_nodes > 2)
-          node_d = node_indx + (n - nj) % n;
+        // Get the mass matrix value
+        // auto& M_ij = fwd->data.M_ij[mij]; 
+        auto& M_ij = base_surf->data.M_ij[mij]; 
+        
+        // Index for the matching upwind and downwind facing cell nodes 
+        size_t node_u = node_stride + ni; // Upwind facing node index
+        size_t node_d; // Downwind facing node index
 
-        // std::cout << "Node U : " << node_u << " Node D : " << node_d << std::endl;
-        // std::cout << fwd->mapping.nodes_x[node_u] << " "
-        //           << fwd->mapping.nodes_y[node_u] << " "
-        //           << fwd->mapping.nodes_z[node_u] << std::endl;
-        // std::cout << adj->mapping.nodes_x[node_d] << " "
-        //           << adj->mapping.nodes_y[node_d] << " "
-        //           << adj->mapping.nodes_z[node_d] << std::endl;
+        int n = static_cast<int>(num_face_nodes); 
+        if (n <= 2)
+          node_d = node_stride + n - nj - 1;
+        else if (n > 2)
+          node_d = node_stride + (n - nj) % n;
 
-        const auto& num_gsets = do_problem_->GetGroupsets().size();
         for (const auto& groupset : do_problem_->GetGroupsets())
         {
           auto groupset_id = groupset.id;
@@ -567,92 +566,81 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_buffer,
           const auto& quadrature = groupset.quadrature;
           auto num_gs_dirs = quadrature->omegas.size();
 
-          auto& node_stride = fwd->data.node_stride;
-          auto& dir_stride = fwd->data.dir_stride;
-          for (size_t d = 0; d < num_gs_dirs; ++d)
+          size_t gset_index = groupset_id * 2;
+          const auto& mu = fwd_surfaces[gset_index].data.mu;
+          const auto& wt_d = fwd_surfaces[gset_index].data.wt_d;
+          auto& node_index = fwd->data.node_index;
+          for (size_t di = 0; di < num_gs_dirs; ++di)
           {
-            // std::cout << "NIndx : " << node_indx << " " << node_indx*num_gs_dirs+d << std::endl; 
-            auto& mu_d = mu[node_indx*num_gs_dirs+d];
-            if (num_surfs > num_gsets) // Get interior surfaces
+            // Get the matching direction index for the adjoint problem
+            size_t dj;
+            if (num_face_nodes == 2) // For 2D problems 
             {
-              size_t surf_indx = (mu_d > 0.0);
-              fwd = &fwd_surfaces[groupset_id * num_gsets + 1 - surf_indx];
-              adj = &adj_surfaces[groupset_id * num_gsets + surf_indx];
+              if (di < num_gs_dirs / 2) dj = di + 0.5 * num_gs_dirs;
+              else dj = di - 0.5 * num_gs_dirs;
             }
-            else // Get boundary surfaces
+            else dj = di;
+
+            size_t dir_index = node_stride * num_gs_dirs + di;
+
+            auto& mu_d = mu[dir_index]; 
+            const auto weight = mu_d * wt_d[dir_index] * M_ij; 
+
+            // Get the forward and adjoint surface data 
+            if (isInter) // Get interior surfaces
+            {
+              // Grab the upwind and downwind surfaces based on the sign of mu
+              size_t surf_indx = (mu_d > 0.0);
+              size_t fwd_index = groupset_id * 2 + 1 - surf_indx;
+              size_t adj_index = groupset_id * 2 + surf_indx;
+              
+              fwd = &fwd_surfaces[fwd_index];
+              adj = &adj_surfaces[adj_index];
+            }
+            else // Get the boundary surfaces
             {
               fwd = &fwd_surfaces[groupset_id];
               adj = &adj_surfaces[groupset_id];
             }
-
-            // Get the matching direction index for the adjoint 
-            size_t dj;
-            if (num_face_nodes == 2)
-            {
-              if (d < num_gs_dirs / 2) dj = d + 0.5 * num_gs_dirs;
-              else dj = d - 0.5 * num_gs_dirs;
-            }
-            else dj = d;
-           
-            // std::cout << "D : " << d << " Dj : " << dj << std::endl;
-            // std::cout << "MU : " << mu_d << std::endl;
-            // std::cout << "Omega d : " << omega[d*3] << " " 
-            //                           << omega[d*3+1] << " " 
-            //                           << omega[d*3+2] << std::endl;
-            // std::cout << "Omega dj : " << omega[dj*3] << " " 
-            //                            << omega[dj*3+1] << " " 
-            //                            << omega[dj*3+2] << std::endl;
             
+            // Get the index for the corresponding upwind and downwind direction
             size_t dir_u;
             size_t dir_d;
             if (mu_d > 0.0)
             {
-              dir_u = node_stride[node_u] + d*num_gs_groups;
-              dir_d = node_stride[node_d] + dj*num_gs_groups;
+              dir_u = node_index[node_u] + di * num_gs_groups;
+              dir_d = node_index[node_d] + dj * num_gs_groups;
             }
-            else if (num_surfs > num_gsets)
+            else if (isInter) // handling of mu < 0 on interrior surfaces
             {
-              dir_u = node_stride[node_d] + d*num_gs_groups;
-              dir_d = node_stride[node_u] + dj*num_gs_groups;
+              dir_u = node_index[node_d] + di * num_gs_groups;
+              dir_d = node_index[node_u] + dj * num_gs_groups;
             }
-            else continue;
-            
-            // std::cout << "Up " << node_stride[node_u] << " Down " << node_stride[node_d] << std::endl;
-            // std::cout << "Du : " << dir_u <<  " Dd : " << dir_d << std::endl;
+            else continue; // for boundary surfaces we do not consider mu < 0
+        
             for (size_t g = 0; g < num_gs_groups; ++g)
             {
               auto& psi = fwd->data.psi[dir_u + g];
               auto& psi_dagger = adj->data.psi[dir_d + g];
-              if (mu_d > 0.0)
-              {
-                // std::cout << "Pos MU" << std::endl;
-                // std::cout << "PSI " << psi << " PSI* " << psi_dagger << std::endl << std::endl;
-                response_u += mu_d * wt_d[d] * M_ij * psi * psi_dagger;
-              }
-              else
-              {
-                // std::cout << "Neg MU" << std::endl;
-                // std::cout << "PSI " << psi << " PSI* " << psi_dagger << std::endl << std::endl;
-                response_d += mu_d * wt_d[d] * M_ij * psi * psi_dagger;
-              }
-              // std::cout << "Size : " << fwd_surfaces[0].data.psi.size() << std::endl;
-              // for (size_t v=0; v<fwd_surfaces[0].data.psi.size(); ++v)
-                // std::cout << std::endl << fwd_surfaces[0].data.psi[v] << std::endl;
-              // if (ci > 0) exit(0);
+
+              // if (mu_d > 0.0)
+              //   response_u += weight * psi * psi_dagger;
+              // else
+              //   response_d += weight * psi * psi_dagger;
+
+              surface_response += weight * psi * psi_dagger;
             }
-          }
-        }
+          } // for direction
+        } // for groupset
         mij += 1;
-      }
-    }
-    node_indx += num_face_nodes;
-  }
+      } // for face node j
+    // for face node i
+    node_stride += num_face_nodes;
+  } // for cell
 
-  std::cout << "Resp U : " << response_u << std::endl;
-  std::cout << "Resp D : " << response_d << std::endl;
-  surface_response = response_u + response_d;
-  std::cout << "Resp : " << surface_response << std::endl;
-
+  // std::cout << "Resp U : " << response_u << std::endl;
+  // std::cout << "Resp D : " << response_d << std::endl;
+  // surface_response = response_u + response_d;
 
   double global_response = 0.0;
   mpi_comm.all_reduce(surface_response, global_response, mpi::op::sum<double>());
