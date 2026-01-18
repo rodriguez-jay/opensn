@@ -45,8 +45,6 @@ public:
     std::optional<std::reference_wrapper<std::vector<std::vector<double>>>> opt_dest =
       std::nullopt);
 
-
-  struct DirectionMap{};
   struct SurfaceMap {
     std::vector<double> cell_ids;
     std::vector<double> num_face_nodes;
@@ -61,8 +59,8 @@ public:
     std::vector<double> wt_d;
     std::vector<double> M_ij;
     std::vector<double> psi;
-    std::vector<double> node_stride;
-    std::vector<double> dir_stride;
+    std::vector<double> node_index;
+    std::vector<double> dir_index;
   };
 
   struct SurfaceAngularFlux {
