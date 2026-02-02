@@ -633,7 +633,7 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_buffer,
               dir_u = node_index[node_u] + di * num_gs_groups;
               dir_d = node_index[node_d] + dj * num_gs_groups;
             }
-            else if (isInter) // handling of mu < 0 on interrior surfaces
+            else if (isInter) // handling of mu < 0 on interior surfaces
             {
               dir_u = node_index[node_d] + di * num_gs_groups;
               dir_d = node_index[node_u] + dj * num_gs_groups;
