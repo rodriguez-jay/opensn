@@ -14,5 +14,21 @@
         "abs_tol": 1e-6
       }
     ]
+  },
+  {
+    "file": "volumetric_source_3d.py",
+    "num_procs": 1,
+    "checks": [
+      {
+        "type": "ErrorCode",
+        "error_code": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "FIXED_SOURCE_3D_RESPONSE=",
+        "goldvalue": 1.27925767e-05,
+        "abs_tol": 1e-10
+      }
+    ]
   }
 ]
