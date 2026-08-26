@@ -9,3 +9,4 @@ effect on convergence is separated from the final physical result.
    :maxdepth: 1
 
    wgdsa
+   wgdsa_multigroup

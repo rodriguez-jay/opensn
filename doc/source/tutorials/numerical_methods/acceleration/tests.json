@@ -14,5 +14,28 @@
         "abs_tol": 1.0e-5
       }
     ]
+  },
+  {
+    "file": "wgdsa_multigroup.py",
+    "comment": "12-group source-detector comparison with and without WGDSA",
+    "num_procs": 4,
+    "checks": [
+      {
+        "type": "ErrorCode",
+        "error_code": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Unaccelerated detector response=",
+        "goldvalue": 2.049340770273e-03,
+        "rel_tol": 1.0e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Detector response relative difference=",
+        "goldvalue": 0.0,
+        "abs_tol": 1.0e-6
+      }
+    ]
   }
 ]
