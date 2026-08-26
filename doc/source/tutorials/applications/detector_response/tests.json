@@ -1,0 +1,30 @@
+[
+  {
+    "file": "simple_forward_adjoint.py",
+    "num_procs": 1,
+    "checks": [
+      {
+        "type": "ErrorCode",
+        "error_code": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Forward detector response=",
+        "goldvalue": 1.095097e-04,
+        "abs_tol": 1.0e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Adjoint detector response=",
+        "goldvalue": 1.095097e-04,
+        "abs_tol": 1.0e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Forward-adjoint relative difference=",
+        "goldvalue": 3.589913e-08,
+        "abs_tol": 1.0e-6
+      }
+    ]
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "file": "particle_balance.py",
+    "num_procs": 1,
+    "checks": [
+      {
+        "type": "ErrorCode",
+        "error_code": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Balance residual=",
+        "goldvalue": 0.0,
+        "abs_tol": 1.0e-8
+      }
+    ]
+  }
+]
