@@ -1,0 +1,24 @@
+[
+  {
+    "file": "volume_postprocessors.py",
+    "num_procs": 1,
+    "checks": [
+      {
+        "type": "ErrorCode",
+        "error_code": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Whole-domain integral=",
+        "goldvalue": 4.0,
+        "abs_tol": 1.0e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Regional integral=",
+        "goldvalue": 1.5,
+        "abs_tol": 1.0e-6
+      }
+    ]
+  }
+]
