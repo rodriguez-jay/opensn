@@ -16,6 +16,66 @@
     ]
   },
   {
+    "file": "reed_problem.py",
+    "num_procs": 1,
+    "checks": [
+      {
+        "type": "ErrorCode",
+        "error_code": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "REED_MAX_FLUX=",
+        "goldvalue": 1.96717796,
+        "abs_tol": 1e-7
+      }
+    ]
+  },
+  {
+    "file": "reed_problem_2d.py",
+    "num_procs": 1,
+    "checks": [
+      {
+        "type": "ErrorCode",
+        "error_code": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "REED_2D_SOURCE_RATE=",
+        "goldvalue": 211.0,
+        "abs_tol": 1e-8
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "REED_2D_MAX_FLUX=",
+        "goldvalue": 2.24407128,
+        "abs_tol": 1e-7
+      }
+    ]
+  },
+  {
+    "file": "checkerboard.py",
+    "num_procs": 1,
+    "checks": [
+      {
+        "type": "ErrorCode",
+        "error_code": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "CHECKERBOARD_SOURCE_REGION_FLUX=",
+        "goldvalue": 0.902852105,
+        "abs_tol": 1e-7
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "CHECKERBOARD_BLACK_ABSORPTION_RATE=",
+        "goldvalue": 0.969008500,
+        "abs_tol": 1e-7
+      }
+    ]
+  },
+  {
     "file": "volumetric_source_3d.py",
     "num_procs": 1,
     "checks": [
