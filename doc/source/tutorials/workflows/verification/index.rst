@@ -9,3 +9,6 @@ small regression tests for established calculations.
    :maxdepth: 1
 
    particle_balance
+   transient_particle_balance
+   infinite_medium_eigenvalue
+   spatial_convergence
