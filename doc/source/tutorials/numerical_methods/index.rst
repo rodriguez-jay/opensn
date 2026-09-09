@@ -10,4 +10,3 @@ These tutorials examine the numerical choices behind an OpenSn calculation.
    angular_discretization/index
    iterative_methods/index
    acceleration/index
-   convergence_and_error/index
