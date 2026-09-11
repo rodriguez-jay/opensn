@@ -1,22 +1,6 @@
 [
   {
     "file": "wgdsa.py",
-    "num_procs": 1,
-    "checks": [
-      {
-        "type": "ErrorCode",
-        "error_code": 0
-      },
-      {
-        "type": "KeyValuePair",
-        "key": "WGDSA flux difference=",
-        "goldvalue": 0.0,
-        "abs_tol": 1.0e-5
-      }
-    ]
-  },
-  {
-    "file": "wgdsa_multigroup.py",
     "comment": "12-group source-detector comparison with and without WGDSA",
     "num_procs": 4,
     "checks": [
@@ -26,15 +10,27 @@
       },
       {
         "type": "KeyValuePair",
-        "key": "Unaccelerated detector response=",
-        "goldvalue": 2.049340770273e-03,
+        "key": "Unaccelerated total average flux=",
+        "goldvalue": 1.624157638081e-01,
         "rel_tol": 1.0e-6
       },
       {
         "type": "KeyValuePair",
-        "key": "Detector response relative difference=",
+        "key": "WGDSA total flux relative difference=",
         "goldvalue": 0.0,
         "abs_tol": 1.0e-6
+      },
+      {
+        "type": "IntCompareCheck",
+        "key": "Unaccelerated sweeps=",
+        "wordnum": 2,
+        "gold": 5598
+      },
+      {
+        "type": "IntCompareCheck",
+        "key": "WGDSA sweeps=",
+        "wordnum": 2,
+        "gold": 2033
       }
     ]
   },
