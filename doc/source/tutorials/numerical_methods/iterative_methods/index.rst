@@ -12,3 +12,5 @@ and convergence controls.
    :maxdepth: 1
 
    inner_solver_comparison
+   gmres_convergence
+   scattering_convergence
