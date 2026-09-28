@@ -151,10 +151,29 @@ if __name__ == "__main__":
     )
     adj_qoi = evaluator.EvaluateResponse("buff")
 
+    # The same adjoint registered with AddAdjoint folds identical data and must match exactly
+    add_evaluator = ResponseEvaluator(problem=phys)
+    add_evaluator.AddAdjoint("detector", flux_moments="adjoint_2d_1")
+    add_evaluator.SetSourceOptions(material=[{'block_id': 2, 'strength': [3.0]}])
+    add_adj_qoi = add_evaluator.EvaluateResponse("detector")
+    if add_adj_qoi != adj_qoi:
+        raise RuntimeError(
+            f"AddAdjoint response {add_adj_qoi} differs from buffer response {adj_qoi}"
+        )
+
+    duplicate_rejected = False
+    try:
+        add_evaluator.AddAdjoint("detector", flux_moments="adjoint_2d_1")
+    except ValueError as error:
+        duplicate_rejected = "already exists" in str(error)
+    if not duplicate_rejected:
+        raise RuntimeError("A duplicate adjoint response name was not rejected")
+
     # Print results
     if rank == 0:
         print(f"QoI Value={fwd_qoi:.5e}")
         print(f"Inner Product={adj_qoi:.5e}")
+        print(f"AddAdjoint Response={add_adj_qoi:.5e}")
 
     # Cleanup
     barrier()

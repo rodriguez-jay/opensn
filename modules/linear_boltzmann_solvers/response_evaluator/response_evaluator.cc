@@ -139,6 +139,19 @@ ResponseEvaluator::SetBufferOptions(const InputParameters& input)
   log.Log0Verbose1() << "Adjoint buffer " << name << " added to the stack.";
 }
 
+void
+ResponseEvaluator::AddAdjoint(const std::string& name, const std::string& flux_moments_prefix)
+{
+  OpenSnInvalidArgumentIf(adjoint_buffers_.count(name) > 0,
+                          "An adjoint response with name " + name + " already exists.");
+
+  std::vector<double> phi;
+  LBSSolverIO::ReadFluxMoments(*do_problem_, flux_moments_prefix, false, phi);
+
+  adjoint_buffers_[name] = {std::move(phi), {}};
+  log.Log0Verbose1() << "Adjoint response " << name << " added.";
+}
+
 InputParameters
 ResponseEvaluator::GetSourceOptionsBlock()
 {

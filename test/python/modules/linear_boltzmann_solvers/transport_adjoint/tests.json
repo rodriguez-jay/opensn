@@ -15,6 +15,12 @@
         "key": "Inner Product=",
         "goldvalue": 1.38405e-05,
         "abs_tol": 1e-08
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "AddAdjoint Response=",
+        "goldvalue": 1.38405e-05,
+        "abs_tol": 1e-08
       }
     ]
   },

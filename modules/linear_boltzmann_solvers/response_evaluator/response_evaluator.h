@@ -58,6 +58,19 @@ public:
 
   void SetBufferOptions(const InputParameters& input);
 
+  /**
+   * Add an adjoint solution for a named response from flux moments files.
+   *
+   * Reads `<flux_moments_prefix><rank>.h5` on each rank. The files must have been written with
+   * the same mesh partitioning, groups, and moments as the underlying problem. The stored adjoint
+   * contains flux moments only, so it supports material, point, and volumetric sources but not
+   * boundary sources.
+   *
+   * \param name Response name used by EvaluateResponse. Must not already exist.
+   * \param flux_moments_prefix File prefix of the adjoint flux moments.
+   */
+  void AddAdjoint(const std::string& name, const std::string& flux_moments_prefix);
+
   void SetSourceOptions(const InputParameters& input);
 
   void SetMaterialSourceOptions(const InputParameters& params);
