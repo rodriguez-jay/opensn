@@ -1,0 +1,181 @@
+from pathlib import Path
+
+from mpi4py import MPI
+
+from pyopensn.aquad import GLCProductQuadrature2DXY
+from pyopensn.context import Finalize, UseColor
+from pyopensn.fieldfunc import FieldFunctionGridBased
+from pyopensn.math import AngularFluxFunction
+from pyopensn.mesh import OrthogonalMeshGenerator
+from pyopensn.post import VolumePostprocessor
+from pyopensn.solver import DiscreteOrdinatesProblem, SteadyStateSourceSolver
+from pyopensn.xs import MultiGroupXS
+
+UseColor(False)
+comm = MPI.COMM_WORLD
+rank = comm.rank
+
+domain_length = 40.0
+num_cells = 40
+sigma_t = 1.5
+sigma_s = 1.0
+sigma_a = sigma_t - sigma_s
+maximum_order = 8
+mu_cutoff = 0.75
+
+nodes = [domain_length * i / num_cells for i in range(num_cells + 1)]
+mesh = OrthogonalMeshGenerator(node_sets=[nodes, nodes]).Execute()
+mesh.SetUniformBlockID(0)
+mesh.SetOrthogonalBoundaries()
+
+xs_filename = Path("anisotropic_boundary_delta_forward.xs")
+if rank == 0:
+    with xs_filename.open("w") as stream:
+        stream.write("NUM_GROUPS 1\n")
+        stream.write(f"NUM_MOMENTS {maximum_order + 1}\n\n")
+        stream.write("SIGMA_T_BEGIN\n")
+        stream.write(f"0 {sigma_t}\n")
+        stream.write("SIGMA_T_END\n\n")
+        stream.write("TRANSFER_MOMENTS_BEGIN\n")
+        for ell in range(maximum_order + 1):
+            stream.write(f"M_GFROM_GTO_VAL {ell} 0 0 {sigma_s}\n")
+        stream.write("TRANSFER_MOMENTS_END\n")
+comm.Barrier()
+
+boundary_quadrature = GLCProductQuadrature2DXY(
+    n_polar=4, n_azimuthal=12, scattering_order=maximum_order
+)
+selected_directions = {
+    index
+    for index, omega in enumerate(boundary_quadrature.omegas)
+    if omega.x >= mu_cutoff
+}
+if not selected_directions:
+    raise RuntimeError("The quadrature has no directions with mu >= 0.75.")
+
+incoming_current = sum(
+    boundary_quadrature.weights[index]
+    * boundary_quadrature.omegas[index].x
+    for index in selected_directions
+)
+boundary_strength = 1.0 / (domain_length * incoming_current)
+source_rate = domain_length * boundary_strength * incoming_current
+
+def boundary_flux(group_index, direction_index):
+    if group_index == 0 and direction_index in selected_directions:
+        return boundary_strength
+    return 0.0
+
+xmin_boundary = AngularFluxFunction(boundary_flux)
+if rank == 0:
+    print(f"BOUNDARY_DIRECTION_COUNT={len(selected_directions)}")
+    print(f"BOUNDARY_SOURCE_RATE={source_rate:.12e}")
+
+balance_residuals = []
+
+def solve(
+    operator_method, use_delta_forward=True, scattering_order=maximum_order
+):
+    cross_sections = MultiGroupXS()
+    if use_delta_forward:
+        cross_sections.LoadFromOpenSn(str(xs_filename))
+    else:
+        cross_sections.CreateSimpleOneGroup(sigma_t=sigma_a, c=0.0)
+    quadrature = GLCProductQuadrature2DXY(
+        n_polar=4,
+        n_azimuthal=12,
+        scattering_order=scattering_order if use_delta_forward else 0,
+        operator_method=operator_method,
+    )
+    groupset = {
+        "groups_from_to": (0, 0),
+        "angular_quadrature": quadrature,
+        "inner_linear_method": "petsc_gmres",
+        "l_abs_tol": 1.0e-10,
+        "l_max_its": 200,
+        "gmres_restart_interval": 30,
+    }
+
+    problem = DiscreteOrdinatesProblem(
+        mesh=mesh,
+        num_groups=1,
+        groupsets=[groupset],
+        xs_map=[{"block_ids": [0], "xs": cross_sections}],
+        boundary_conditions=[
+            {"name": "xmin", "type": "arbitrary",
+             "function": xmin_boundary},
+            {"name": "xmax", "type": "vacuum"},
+            {"name": "ymin", "type": "vacuum"},
+            {"name": "ymax", "type": "vacuum"},
+        ],
+        options={"verbose_inner_iterations": False},
+    )
+    solver = SteadyStateSourceSolver(problem=problem, compute_balance=True)
+    solver.Initialize()
+    solver.Execute()
+
+    total_flux = VolumePostprocessor(problem=problem, value_type="integral")
+    total_flux.Execute()
+    balance = solver.ComputeBalanceTable()
+    source_rate_for_balance = balance["production_rate"] + balance["inflow_rate"]
+    balance_residuals.append(abs(balance["balance"]) / abs(source_rate_for_balance))
+    return float(total_flux.GetValue()[0][0]), problem
+
+reference_flux, _ = solve("standard", use_delta_forward=False)
+standard_p3_flux, _ = solve("standard", scattering_order=3)
+standard_p4_flux, _ = solve("standard", scattering_order=4)
+standard_p5_flux, _ = solve("standard", scattering_order=5)
+standard_flux, _ = solve("standard", scattering_order=6)
+galerkin_one_flux, galerkin_one_problem = solve("galerkin_one")
+galerkin_three_flux, _ = solve("galerkin_three")
+standard_p3_relative_error = (
+    abs(standard_p3_flux - reference_flux) / reference_flux
+)
+standard_p4_relative_error = (
+    abs(standard_p4_flux - reference_flux) / reference_flux
+)
+standard_p5_relative_error = (
+    abs(standard_p5_flux - reference_flux) / reference_flux
+)
+standard_relative_error = abs(standard_flux - reference_flux) / reference_flux
+galerkin_one_relative_error = (
+    abs(galerkin_one_flux - reference_flux) / reference_flux
+)
+galerkin_three_relative_error = (
+    abs(galerkin_three_flux - reference_flux) / reference_flux
+)
+
+if rank == 0:
+    print(f"PURE_ABSORBER_TOTAL_FLUX={reference_flux:.12e}")
+    print(f"STANDARD_P3_TOTAL_FLUX={standard_p3_flux:.12e}")
+    print(f"STANDARD_P4_TOTAL_FLUX={standard_p4_flux:.12e}")
+    print(f"STANDARD_P5_TOTAL_FLUX={standard_p5_flux:.12e}")
+    print(f"STANDARD_TOTAL_FLUX={standard_flux:.12e}")
+    print(f"GALERKIN_ONE_TOTAL_FLUX={galerkin_one_flux:.12e}")
+    print(f"GALERKIN_THREE_TOTAL_FLUX={galerkin_three_flux:.12e}")
+    print(f"STANDARD_P3_RELATIVE_ERROR={standard_p3_relative_error:.12e}")
+    print(f"STANDARD_P4_RELATIVE_ERROR={standard_p4_relative_error:.12e}")
+    print(f"STANDARD_P5_RELATIVE_ERROR={standard_p5_relative_error:.12e}")
+    print(f"STANDARD_RELATIVE_ERROR={standard_relative_error:.12e}")
+    print(f"GALERKIN_ONE_RELATIVE_ERROR={galerkin_one_relative_error:.12e}")
+    print(f"GALERKIN_THREE_RELATIVE_ERROR={galerkin_three_relative_error:.12e}")
+    for name, residual in zip(
+        ("PURE_ABSORBER", "STANDARD_P3", "STANDARD_P4", "STANDARD_P5", "STANDARD_P6", "GALERKIN_ONE", "GALERKIN_THREE"),
+        balance_residuals,
+    ):
+        print(f"{name}_BALANCE_RESIDUAL={residual:.12e}")
+
+scalar_flux = galerkin_one_problem.GetScalarFluxFieldFunction()[0]
+FieldFunctionGridBased.ExportMultipleToPVTU(
+    [scalar_flux], "/tmp/anisotropic_product_24"
+)
+
+if rank == 0:
+    xs_filename.unlink(missing_ok=True)
+
+if "opensn_console" not in globals():
+    from IPython import get_ipython
+
+    if get_ipython() is not None:
+        Finalize()
+        MPI.Finalize()
