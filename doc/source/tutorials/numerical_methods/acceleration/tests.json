@@ -104,7 +104,7 @@
       {
         "type": "KeyValuePair",
         "key": "Unaccelerated CMFD comparison k-effective=",
-        "goldvalue": 5.963818195332e-01,
+        "goldvalue": 5.963819047666e-01,
         "rel_tol": 1.0e-6
       },
       {
@@ -145,6 +145,47 @@
       {
         "type": "KeyValuePair",
         "key": "SMM k-effective difference=",
+        "goldvalue": 0.0,
+        "abs_tol": 1.0e-6
+      }
+    ]
+  },
+  {
+    "file": "smm_wgdsa.py",
+    "comment": "84-group U-235 eigenvalue comparison without acceleration, with SMM, and with WGDSA",
+    "num_procs": 4,
+    "checks": [
+      {
+        "type": "ErrorCode",
+        "error_code": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Unaccelerated SMM comparison k-effective=",
+        "goldvalue": 2.280431715607,
+        "rel_tol": 1.0e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "SMM k-effective=",
+        "goldvalue": 2.280431778394,
+        "rel_tol": 1.0e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "SMM k-effective difference=",
+        "goldvalue": 0.0,
+        "abs_tol": 1.0e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "WGDSA k-effective=",
+        "goldvalue": 2.280431711335,
+        "rel_tol": 1.0e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "WGDSA k-effective difference=",
         "goldvalue": 0.0,
         "abs_tol": 1.0e-6
       }
