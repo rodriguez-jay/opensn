@@ -56,6 +56,8 @@ public:
 
   void SetOptions(const InputParameters& params);
 
+  void SetDataOptions(const InputParameters& input);
+
   void SetBufferOptions(const InputParameters& input);
 
   void SetSourceOptions(const InputParameters& input);
@@ -67,6 +69,8 @@ public:
   /// Clear the existing forward sources from the response evaluator.
   void ClearForwardSources();
 
+  void AddResponseData(const InputParameters& params);
+  
   void AddResponseBuffers(const InputParameters& params);
 
   void AddResponseSources(const InputParameters& params);
@@ -109,6 +113,7 @@ public:
 
   /// Return the schema for the options block, covering adjoint buffers and forward sources.
   static InputParameters GetOptionsBlock();
+  static InputParameters GetDataOptionsBlock();
   static InputParameters GetBufferOptionsBlock();
   static InputParameters GetSourceOptionsBlock();
   static InputParameters GetMaterialSourceOptionsBlock();

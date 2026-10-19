@@ -56,6 +56,9 @@ ResponseEvaluator::GetOptionsBlock()
   InputParameters params;
 
   params.AddOptionalParameterArray(
+    "data", {},  "An array of tables containing data specifications");
+
+  params.AddOptionalParameterArray(
     "buffers", {}, "An array of tables containing adjoint buffer specifications.");
   // Each "buffers" entry follows the "response::BufferOptionsBlock" parameter-block schema.
 
@@ -70,6 +73,17 @@ ResponseEvaluator::GetOptionsBlock()
 void
 ResponseEvaluator::SetOptions(const InputParameters& params)
 {
+  if (params.IsParameterValid("data"))
+  {
+    const auto& user_data_params = params.GetParam("buffers");
+    for (int p = 0; p < user_data_params.GetNumParameters(); ++p)
+    {
+      auto data_params = GetBufferOptionsBlock();
+      data_params.AssignParameters(user_buffer_params.GetParam(p));
+      SetBufferOptions(data_params);
+    }
+  }
+
   if (params.IsParameterValid("buffers"))
   {
     const auto& user_buffer_params = params.GetParam("buffers");
@@ -99,6 +113,22 @@ ResponseEvaluator::SetOptions(const InputParameters& params)
 }
 
 InputParameters
+ResponseEvaluator::GetDataOptionsBlock()
+{
+  InputParameters params;
+
+  params.AddRequiredParameter<std::string>(
+    "name",
+    "A name given to the buffer to identify it when querying the response evaluation routine.");
+  params.AddRequiredParameterBlock(
+    "file_prefixes",
+    "A table containing file prefixes for flux moments and angular flux binary files. "
+    "These are keyed by \"flux_moments\", \"angular_fluxes\" and \"surface_angular_fluxes\", respectively.");
+
+  return params;
+}
+
+InputParameters
 ResponseEvaluator::GetBufferOptionsBlock()
 {
   InputParameters params;
@@ -112,6 +142,32 @@ ResponseEvaluator::GetBufferOptionsBlock()
     "These are keyed by \"flux_moments\" and \"angular_fluxes\", respectively.");
 
   return params;
+}
+
+void
+ResponseEvaluator::SetDataOptions(const InputParameters& input)
+{
+  auto params = opensn::ResponseEvaluator::GetDataOptionsBlock();
+  params.AssignParameters(input);
+
+  const auto name = params.GetParamValue<std::string>("name");
+  OpenSnInvalidArgumentIf(adjoint_buffers_.count(name) > 0,
+                          "An adjoint buffer with name " + name + " already exists.");
+
+  const auto prefixes = params.GetParam("file_prefixes");
+
+  std::vector<double> phi;
+  if (prefixes.Has("flux_moments"))
+    LBSSolverIO::ReadFluxMoments(
+      *do_problem_, prefixes.GetParamValue<std::string>("flux_moments"), false, phi);
+
+  std::vector<std::vector<double>> psi;
+  if (prefixes.Has("angular_fluxes"))
+    DiscreteOrdinatesProblemIO::ReadAngularFluxes(
+      *do_problem_, prefixes.GetParamValue<std::string>("angular_fluxes"), psi);
+
+  adjoint_buffers_[name] = {phi, psi};
+  log.Log0Verbose1() << "Adjoint buffer " << name << " added to the stack.";
 }
 
 void
@@ -308,6 +364,18 @@ ResponseEvaluator::ClearForwardSources()
   point_sources_.clear();
   volumetric_sources_.clear();
   boundary_sources_.clear();
+}
+
+void
+ResponseEvaluator::AddResponseData(const InputParameters& params)
+{
+  params.RequireBlockTypeIs(ParameterBlockType::ARRAY);
+  for (size_t p = 0; p < params.GetNumParameters(); ++p)
+  {
+    auto spec = ResponseEvaluator::GetBufferOptionsBlock();
+    spec.AssignParameters(params.GetParam(p));
+    SetBufferOptions(spec);
+  }
 }
 
 void
