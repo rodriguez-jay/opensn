@@ -4,6 +4,7 @@
 #pragma once
 
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/discrete_ordinates_problem.h"
+#include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/io/discrete_ordinates_problem_io.h"
 #include "modules/linear_boltzmann_solvers/lbs_problem/lbs_problem.h"
 #include "framework/parameters/input_parameters.h"
 #include <memory>
@@ -37,6 +38,16 @@ namespace opensn
 class ResponseEvaluator
 {
 private:
+  using FluxMomentData = std::vector<double>;
+  using AngularFluxData = std::vector<std::vector<double>>;
+  using SurfaceAngularFluxData = std::vector<DiscreteOrdinatesProblemIO::SurfaceAngularFlux>;
+  struct FluxData
+  {
+    FluxMomentData phi;
+    AngularFluxData psi;
+    SurfaceAngularFluxData surf_psi;
+  };
+
   using FluxMomentBuffer = std::vector<double>;
   using AngularFluxBuffer = std::vector<std::vector<double>>;
   using AdjointBuffer = std::pair<FluxMomentBuffer, AngularFluxBuffer>;
@@ -100,6 +111,8 @@ private:
   std::shared_ptr<DiscreteOrdinatesProblem> do_problem_;
 
   std::map<std::string, AdjointBuffer> adjoint_buffers_;
+
+  std::map<std::string, FluxData> flux_data_;
 
   MaterialSources material_sources_;
   PointSources point_sources_;

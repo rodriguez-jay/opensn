@@ -75,12 +75,13 @@ ResponseEvaluator::SetOptions(const InputParameters& params)
 {
   if (params.IsParameterValid("data"))
   {
-    const auto& user_data_params = params.GetParam("buffers");
+    const auto& user_data_params = params.GetParam("data");
+    user_data_params.RequireBlockTypeIs(ParameterBlockType::ARRAY);
     for (int p = 0; p < user_data_params.GetNumParameters(); ++p)
     {
-      auto data_params = GetBufferOptionsBlock();
-      data_params.AssignParameters(user_buffer_params.GetParam(p));
-      SetBufferOptions(data_params);
+      auto data_params = GetDataOptionsBlock();
+      data_params.AssignParameters(user_data_params.GetParam(p));
+      SetDataOptions(data_params);
     }
   }
 
@@ -119,13 +120,51 @@ ResponseEvaluator::GetDataOptionsBlock()
 
   params.AddRequiredParameter<std::string>(
     "name",
-    "A name given to the buffer to identify it when querying the response evaluation routine.");
+    "A name given to the data to identify it when querying the response evaluation routine.");
   params.AddRequiredParameterBlock(
     "file_prefixes",
     "A table containing file prefixes for flux moments and angular flux binary files. "
     "These are keyed by \"flux_moments\", \"angular_fluxes\" and \"surface_angular_fluxes\", respectively.");
+  params.AddOptionalParameterArray<std::string>(
+    "surfaces", {}, "Surface tags to read from the surface angular flux files.");
 
   return params;
+}
+
+void
+ResponseEvaluator::SetDataOptions(const InputParameters& input)
+{
+  auto params = opensn::ResponseEvaluator::GetDataOptionsBlock();
+  params.AssignParameters(input);
+
+  const auto name = params.GetParamValue<std::string>("name");
+  OpenSnInvalidArgumentIf(flux_data_.count(name) > 0,
+                          "A data object with name " + name + " already exists.");
+
+  const auto prefixes = params.GetParam("file_prefixes");
+
+  FluxMomentData phi;
+  if (prefixes.Has("flux_moments"))
+    LBSSolverIO::ReadFluxMoments(
+      *do_problem_, prefixes.GetParamValue<std::string>("flux_moments"), false, phi);
+
+  AngularFluxData psi;
+  if (prefixes.Has("angular_fluxes"))
+    DiscreteOrdinatesProblemIO::ReadAngularFluxes(
+      *do_problem_, prefixes.GetParamValue<std::string>("angular_fluxes"), psi);
+
+  SurfaceAngularFluxData surf_psi;
+  if (prefixes.Has("surface_angular_fluxes"))
+  {
+    const auto surfaces = params.GetParamVectorValue<std::string>("surfaces");
+    OpenSnInvalidArgumentIf(surfaces.empty(),
+                            "\"surfaces\" must be specified when reading surface angular fluxes.");
+    surf_psi = DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(
+      *do_problem_, prefixes.GetParamValue<std::string>("surface_angular_fluxes"), surfaces);
+  }
+
+  flux_data_[name] = {std::move(phi), std::move(psi), std::move(surf_psi)};
+  log.Log0Verbose1() << "Flux data " << name << " added to the stack.";
 }
 
 InputParameters
@@ -142,32 +181,6 @@ ResponseEvaluator::GetBufferOptionsBlock()
     "These are keyed by \"flux_moments\" and \"angular_fluxes\", respectively.");
 
   return params;
-}
-
-void
-ResponseEvaluator::SetDataOptions(const InputParameters& input)
-{
-  auto params = opensn::ResponseEvaluator::GetDataOptionsBlock();
-  params.AssignParameters(input);
-
-  const auto name = params.GetParamValue<std::string>("name");
-  OpenSnInvalidArgumentIf(adjoint_buffers_.count(name) > 0,
-                          "An adjoint buffer with name " + name + " already exists.");
-
-  const auto prefixes = params.GetParam("file_prefixes");
-
-  std::vector<double> phi;
-  if (prefixes.Has("flux_moments"))
-    LBSSolverIO::ReadFluxMoments(
-      *do_problem_, prefixes.GetParamValue<std::string>("flux_moments"), false, phi);
-
-  std::vector<std::vector<double>> psi;
-  if (prefixes.Has("angular_fluxes"))
-    DiscreteOrdinatesProblemIO::ReadAngularFluxes(
-      *do_problem_, prefixes.GetParamValue<std::string>("angular_fluxes"), psi);
-
-  adjoint_buffers_[name] = {phi, psi};
-  log.Log0Verbose1() << "Adjoint buffer " << name << " added to the stack.";
 }
 
 void
@@ -372,9 +385,9 @@ ResponseEvaluator::AddResponseData(const InputParameters& params)
   params.RequireBlockTypeIs(ParameterBlockType::ARRAY);
   for (size_t p = 0; p < params.GetNumParameters(); ++p)
   {
-    auto spec = ResponseEvaluator::GetBufferOptionsBlock();
+    auto spec = ResponseEvaluator::GetDataOptionsBlock();
     spec.AssignParameters(params.GetParam(p));
-    SetBufferOptions(spec);
+    SetDataOptions(spec);
   }
 }
 
