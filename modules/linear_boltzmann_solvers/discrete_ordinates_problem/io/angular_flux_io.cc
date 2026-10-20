@@ -252,6 +252,7 @@ DiscreteOrdinatesProblemIO::ReadAngularFluxes(
     }
   }
 }
+
 void
 DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
   DiscreteOrdinatesProblem& do_problem,
