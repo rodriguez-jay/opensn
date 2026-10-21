@@ -4,6 +4,7 @@
 #pragma once
 
 #include "hdf5.h"
+#include <cstdint>
 #include <vector>
 #include <string>
 #include <type_traits>
@@ -307,6 +308,95 @@ H5ReadDataset1D(hid_t id, const std::string& name, std::vector<T>& data)
       }
       H5Aclose(attribute);
     }
+  }
+
+  return success;
+}
+
+/// Get the number of elements in the 1D dataset `name`. Returns false if it is not a 1D dataset.
+inline bool
+H5GetDataset1DSize(hid_t id, const std::string& name, std::uint64_t& size)
+{
+  bool success = false;
+
+  auto dataset = H5Dopen2(id, name.c_str(), H5P_DEFAULT);
+  if (dataset != H5I_INVALID_HID)
+  {
+    auto dataspace = H5Dget_space(dataset);
+    if (dataspace != H5I_INVALID_HID)
+    {
+      const auto npoints = H5Sget_simple_extent_npoints(dataspace);
+      if (H5Sget_simple_extent_ndims(dataspace) == 1 and npoints >= 0)
+      {
+        size = static_cast<std::uint64_t>(npoints);
+        success = true;
+      }
+      H5Sclose(dataspace);
+    }
+    H5Dclose(dataset);
+  }
+
+  return success;
+}
+
+/**
+ * Read the `count` elements starting at `offset` of the 1D dataset `name` into `data`. Returns
+ * false, leaving `data` empty, if the dataset is not 1D or the range exceeds its extent.
+ */
+template <typename T>
+bool
+H5ReadDataset1DSlab(hid_t id,
+                    const std::string& name,
+                    const std::uint64_t offset,
+                    const std::uint64_t count,
+                    std::vector<T>& data)
+{
+  static_assert(
+    !std::is_same_v<T, bool>,
+    "H5ReadDataset1DSlab does not support std::vector<bool>. Use std::vector<unsigned char>.");
+
+  bool success = false;
+
+  data.clear();
+
+  auto dataset = H5Dopen2(id, name.c_str(), H5P_DEFAULT);
+  if (dataset != H5I_INVALID_HID)
+  {
+    auto dataspace = H5Dget_space(dataset);
+    if (dataspace != H5I_INVALID_HID)
+    {
+      const auto npoints = H5Sget_simple_extent_npoints(dataspace);
+      if (H5Sget_simple_extent_ndims(dataspace) == 1 and npoints >= 0 and
+          offset <= static_cast<std::uint64_t>(npoints) and
+          count <= static_cast<std::uint64_t>(npoints) - offset)
+      {
+        data.resize(count);
+        if (count == 0)
+          success = true;
+        else
+        {
+          const hsize_t start[1] = {static_cast<hsize_t>(offset)};
+          const hsize_t block[1] = {static_cast<hsize_t>(count)};
+          auto memspace = H5Screate_simple(1, block, nullptr);
+          if (memspace != H5I_INVALID_HID)
+          {
+            if (H5Sselect_hyperslab(dataspace, H5S_SELECT_SET, start, nullptr, block, nullptr) >=
+                  0 and
+                H5Dread(
+                  dataset, get_datatype<T>(), memspace, dataspace, H5P_DEFAULT, data.data()) >= 0)
+              success = true;
+            H5Sclose(memspace);
+          }
+        }
+        if (not success)
+        {
+          data.clear();
+          data.shrink_to_fit();
+        }
+      }
+      H5Sclose(dataspace);
+    }
+    H5Dclose(dataset);
   }
 
   return success;

@@ -253,6 +253,39 @@ DiscreteOrdinatesProblemIO::ReadAngularFluxes(
   }
 }
 
+DiscreteOrdinatesProblemIO::FaceCentroidKey
+DiscreteOrdinatesProblemIO::MakeFaceCentroidKey(std::vector<Vector3> nodes,
+                                                const std::array<double, 3>& centroid_origin,
+                                                const double centroid_spacing,
+                                                const std::string& context)
+{
+  OpenSnLogicalErrorIf(nodes.empty(),
+                       "Cannot key a surface face without nodes in " + context + ".");
+  OpenSnLogicalErrorIf(not(centroid_spacing > 0.0) or not std::isfinite(centroid_spacing),
+                       "Invalid centroid spacing in " + context + ".");
+
+  // Sum in a canonical node order so that the same face yields a bit-identical centroid, and
+  // hence the same key, from either side of an interior surface and in every file.
+  std::sort(nodes.begin(),
+            nodes.end(),
+            [](const Vector3& a, const Vector3& b)
+            { return std::tie(a.x, a.y, a.z) < std::tie(b.x, b.y, b.z); });
+  Vector3 centroid;
+  for (const auto& node : nodes)
+    centroid += node;
+  centroid *= 1.0 / static_cast<double>(nodes.size());
+
+  const auto KeyComponent = [&](const double coordinate, const size_t dimension)
+  {
+    const double scaled = (coordinate - centroid_origin[dimension]) / centroid_spacing;
+    OpenSnLogicalErrorIf(not std::isfinite(scaled) or std::abs(scaled) > 4.0e18,
+                         "A surface face centroid is outside the supported key range in " +
+                           context + ".");
+    return static_cast<int64_t>(std::llround(scaled));
+  };
+  return {KeyComponent(centroid.x, 0), KeyComponent(centroid.y, 1), KeyComponent(centroid.z, 2)};
+}
+
 void
 DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
   DiscreteOrdinatesProblem& do_problem,
@@ -556,6 +589,11 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
                        "Failed to write the number of groupsets to " + file_name + ".");
   OpenSnLogicalErrorIf(not H5CreateAttribute<bool>(file.Id(), "adjoint", do_problem.IsAdjoint()),
                        "Failed to write the adjoint flag to " + file_name + ".");
+  // Readers that redistribute the surface data use this to discover all files of the set.
+  OpenSnLogicalErrorIf(not H5CreateAttribute(file.Id(),
+                                             "num_partitions",
+                                             static_cast<uint64_t>(opensn::mpi_comm.size())),
+                       "Failed to write the number of partitions to " + file_name + ".");
   // Origin and spacing used by readers to key surface faces by centroid. Subtracting the origin
   // keeps the keys independent of mesh translation.
   for (size_t d = 0; d < 3; ++d)
@@ -777,16 +815,19 @@ DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(DiscreteOrdinatesProblem& d
   uint64_t file_num_groupsets = 0;
   OpenSnLogicalErrorIf(not H5ReadAttribute(file.Id(), "num_groupsets", file_num_groupsets),
                        "Failed to read the number of groupsets from " + file_name + ".");
-  // Files written before the adjoint flag was introduced hold forward data.
+  // The adjoint flag and centroid key attributes are written by every supported version.
   bool file_adjoint = false;
-  H5ReadOptionalAttribute(file.Id(), "adjoint", file_adjoint);
-  // Files written before the centroid origin and spacing were recorded used an origin of zero and
-  // a fixed spacing of 1e-6.
+  OpenSnLogicalErrorIf(not H5ReadAttribute(file.Id(), "adjoint", file_adjoint),
+                       "Failed to read the adjoint flag from " + file_name +
+                         ". The file was written by an unsupported version of OpenSn.");
   std::array<double, 3> centroid_origin{};
   for (size_t d = 0; d < 3; ++d)
-    H5ReadOptionalAttribute(file.Id(), "centroid_origin_" + std::to_string(d), centroid_origin[d]);
-  double centroid_spacing = 1.0e-6;
-  H5ReadOptionalAttribute(file.Id(), "centroid_spacing", centroid_spacing);
+    OpenSnLogicalErrorIf(
+      not H5ReadAttribute(file.Id(), "centroid_origin_" + std::to_string(d), centroid_origin[d]),
+      "Failed to read the centroid origin from " + file_name + ".");
+  double centroid_spacing = 0.0;
+  OpenSnLogicalErrorIf(not H5ReadAttribute(file.Id(), "centroid_spacing", centroid_spacing),
+                       "Failed to read the centroid spacing from " + file_name + ".");
   OpenSnLogicalErrorIf(not(centroid_spacing > 0.0) or not std::isfinite(centroid_spacing),
                        "Invalid centroid spacing in " + file_name + ".");
 
@@ -799,15 +840,6 @@ DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(DiscreteOrdinatesProblem& d
                        "Incompatible number of groupsets found in file " + file_name + ".");
 
   surf_fluxes.reserve(groupsets.size() * surfaces.size());
-  const auto MakeFaceCentroidKeyComponent = [centroid_spacing, &centroid_origin, &file_name](
-                                              const double coordinate, const size_t dimension)
-  {
-    const double scaled = (coordinate - centroid_origin[dimension]) / centroid_spacing;
-    OpenSnLogicalErrorIf(not std::isfinite(scaled) or std::abs(scaled) > 4.0e18,
-                         "A surface face centroid is outside the supported key range in " +
-                           file_name + ".");
-    return static_cast<int64_t>(std::llround(scaled));
-  };
 
   for (const auto& groupset : groupsets)
   {
@@ -967,20 +999,8 @@ DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(DiscreteOrdinatesProblem& d
                              "Incompatible face-node count or locations for cell " +
                                std::to_string(cell_id) + " on surface " + surface + ".");
 
-        // Sum in a canonical node order so that the same face yields a bit-identical centroid,
-        // and hence the same key, from either side of an interior surface and in every file.
-        std::vector<Vector3> sorted_nodes = file_nodes;
-        std::sort(sorted_nodes.begin(),
-                  sorted_nodes.end(),
-                  [](const Vector3& a, const Vector3& b)
-                  { return std::tie(a.x, a.y, a.z) < std::tie(b.x, b.y, b.z); });
-        Vector3 centroid;
-        for (const auto& node : sorted_nodes)
-          centroid += node;
-        centroid *= 1.0 / static_cast<double>(num_face_nodes);
-        const FaceCentroidKey key = {MakeFaceCentroidKeyComponent(centroid.x, 0),
-                                     MakeFaceCentroidKeyComponent(centroid.y, 1),
-                                     MakeFaceCentroidKeyComponent(centroid.z, 2)};
+        const auto key =
+          MakeFaceCentroidKey(std::move(file_nodes), centroid_origin, centroid_spacing, file_name);
         OpenSnLogicalErrorIf(not cell_map.emplace(key, ci).second,
                              "Surface faces " + std::to_string(cell_map.at(key)) + " and " +
                                std::to_string(ci) + " on " + surface +

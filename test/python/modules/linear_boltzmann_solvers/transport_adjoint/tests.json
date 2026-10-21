@@ -151,6 +151,64 @@
         "key": "Surface QoI=",
         "goldvalue": 4.943814e-04,
         "rel_tol": 1e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Evaluator Surface QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      }
+    ]
+  },
+  {
+    "file": "response_2d_surf_repartition.py",
+    "outfileprefix": "response_2d_surf_repartition_2",
+    "comment": "Surface response from forward and adjoint surface data written on different partitions (forward cut at the interior plane), 2 ranks; equals forward and adjoint QoI",
+    "num_procs": 2,
+    "checks": [
+      {
+        "type": "KeyValuePair",
+        "key": "Forward QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Adjoint QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Repartitioned Surface QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      }
+    ]
+  },
+  {
+    "file": "response_2d_surf_repartition.py",
+    "outfileprefix": "response_2d_surf_repartition_4",
+    "comment": "Surface response from forward and adjoint surface data written on different partitions (forward cut at the interior plane), 4 ranks; equals forward and adjoint QoI",
+    "num_procs": 4,
+    "checks": [
+      {
+        "type": "KeyValuePair",
+        "key": "Forward QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Adjoint QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Repartitioned Surface QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
       }
     ]
   },

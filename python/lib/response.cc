@@ -3,6 +3,7 @@
 
 #include "python/lib/py_wrappers.h"
 #include "modules/linear_boltzmann_solvers/response_evaluator/response_evaluator.h"
+#include <pybind11/stl.h>
 #include <memory>
 
 namespace opensn
@@ -96,6 +97,67 @@ WrapResEval(py::module& response)
     py::arg("buffer_name")
   );
   res_eval.def(
+    "EvaluateSurfaceResponse",
+    &ResponseEvaluator::EvaluateSurfaceResponse,
+    R"(
+    Evaluate the surface inner product of forward and adjoint surface angular fluxes.
+
+    Both data sets must have been added with ``SetOptions(data=...)`` using the
+    ``surface_angular_fluxes`` prefix. Faces are matched by location, so the two data sets may have
+    been written by different numbers of ranks and partitions, and neither needs to match the
+    partitioning of the current run.
+
+    For a boundary with outward normal :math:`\hat{n}`, the response is
+
+    .. math::
+
+       R = \sum_{d:\, \mu_d > 0} \mu_d w_d \sum_{ij} M_{ij} \sum_g
+           \psi_{i,d,g}\, \psi^\dagger_{j,d,g},
+
+    with :math:`\mu_d = \Omega_d \cdot \hat{n}` and :math:`M_{ij}` the face mass matrix. An
+    interior surface stored under tags ``<name>_u`` and ``<name>_d`` takes, for each direction, the
+    forward flux from the side it leaves and the adjoint flux from the other side, with
+    :math:`\mu_d` measured against the ``_u`` normal (the positive axis):
+
+    .. math::
+
+       R = \sum_{d:\, \mu_d > 0} \mu_d w_d \sum_{ij} M_{ij} \sum_g
+           \psi^{u}_{i,d,g}\, \psi^{\dagger, d}_{j,d,g}
+         + \sum_{d:\, \mu_d < 0} \mu_d w_d \sum_{ij} M_{ij} \sum_g
+           \psi^{d}_{i,d,g}\, \psi^{\dagger, u}_{j,d,g}.
+
+    Forward and adjoint directions are paired by equal direction vectors. Per-surface terms are
+    logged at verbosity 1. This call is collective.
+
+    Parameters
+    ----------
+    fwd_data_name: str
+        Name of the forward data set. It must have been written from a forward problem.
+    adj_data_name: str
+        Name of the adjoint data set. It must have been written from an adjoint problem.
+    surfaces: List[str], default=[]
+        Boundary names and interior surface names (without ``_u``/``_d``) to evaluate. If empty,
+        every surface in the forward data is evaluated: tag pairs ``<name>_u``/``<name>_d`` form an
+        interior surface and any other tag is a boundary.
+
+    Returns
+    -------
+    float
+        The response summed over the selected surfaces.
+
+    Raises
+    ------
+    ValueError
+        If a data set or surface is unknown, a required tag is missing from the adjoint data, or
+        the data sets have incompatible quadratures, groupsets, adjoint flags, or face keys.
+    RuntimeError
+        If the forward and adjoint data do not cover the same faces.
+    )",
+    py::arg("fwd_data_name"),
+    py::arg("adj_data_name"),
+    py::arg("surfaces") = std::vector<std::string>{}
+  );
+  res_eval.def(
     "SetOptions",
     [](ResponseEvaluator& self, py::kwargs& params)
     {
@@ -108,6 +170,23 @@ WrapResEval(py::module& response)
 
     Parameters
     ----------
+    data: List[Dict], default=[]
+        A list of dictionaries containing data specifications. Each dictionary supports:
+          - name: str (required)
+              Data name used for response queries.
+          - file_prefixes: Dict (required)
+              Prefix map with optional keys:
+                - flux_moments: str
+                    Prefix for flux moments files.
+                - angular_fluxes: str
+                    Prefix for angular flux files.
+                - surface_angular_fluxes: str
+                    Prefix for the files written by ``WriteSurfaceAngularFluxes``. All files of the
+                    prefix are read, whatever number of ranks wrote them, and their faces are
+                    distributed over the current ranks. Reading them is collective.
+          - surfaces: List[str], default=[]
+              Stored surface tags to read. Required with ``surface_angular_fluxes``. Interior
+              surfaces are stored as ``<name>_u`` and ``<name>_d``.
     buffers: List[Dict], default=[]
         A list of dictionaries containing adjoint buffer specifications. Each dictionary supports:
           - name: str (required)

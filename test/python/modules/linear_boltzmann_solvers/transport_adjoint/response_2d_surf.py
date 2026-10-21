@@ -334,10 +334,46 @@ if __name__ == "__main__":
         m_offset += num_nodes * num_nodes
     surface_qoi = global_sum(local_surface_qoi)
 
+    # The evaluator matches faces by location and redistributes them over the ranks, so it does not
+    # require both sides of the plane on one rank.
+    interior_tags = ["inter_x_u", "inter_x_d"]
+    evaluator.SetOptions(
+        data=[
+            {
+                "name": "forward_all",
+                "file_prefixes": {"surface_angular_fluxes": forward_surface_prefix},
+                "surfaces": ["xmin", "xmax", "ymin", "ymax"] + interior_tags,
+            },
+            {
+                "name": "adjoint_interior",
+                "file_prefixes": {"surface_angular_fluxes": adjoint_surface_prefix},
+                "surfaces": interior_tags,
+            },
+        ]
+    )
+    evaluator_surface_qoi = evaluator.EvaluateSurfaceResponse(
+        "forward_all", "adjoint_interior", surfaces=["inter_x"]
+    )
+
+    # By default every forward surface is evaluated; the adjoint data lack the boundary tags.
+    try:
+        evaluator.EvaluateSurfaceResponse("forward_all", "adjoint_interior")
+        raise RuntimeError("A surface missing from the adjoint data was not rejected")
+    except ValueError as error:
+        if "requires tag" not in str(error):
+            raise
+    try:
+        evaluator.EvaluateSurfaceResponse("adjoint_interior", "forward_all", surfaces=["inter_x"])
+        raise RuntimeError("Swapped forward and adjoint data were not rejected")
+    except ValueError as error:
+        if "adjoint mode" not in str(error):
+            raise
+
     if rank == 0:
         print(f"Forward QoI={forward_qoi:.8e}")
         print(f"Adjoint QoI={adjoint_qoi:.8e}")
         print(f"Surface QoI={surface_qoi:.8e}")
+        print(f"Evaluator Surface QoI={evaluator_surface_qoi:.8e}")
 
     barrier()
     for file_prefix in (
