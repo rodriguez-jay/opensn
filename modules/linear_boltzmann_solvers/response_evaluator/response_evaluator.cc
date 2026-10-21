@@ -55,8 +55,7 @@ ResponseEvaluator::GetOptionsBlock()
 {
   InputParameters params;
 
-  params.AddOptionalParameterArray(
-    "data", {},  "An array of tables containing data specifications");
+  params.AddOptionalParameterArray("data", {}, "An array of tables containing data specifications");
 
   params.AddOptionalParameterArray(
     "buffers", {}, "An array of tables containing adjoint buffer specifications.");
@@ -124,7 +123,8 @@ ResponseEvaluator::GetDataOptionsBlock()
   params.AddRequiredParameterBlock(
     "file_prefixes",
     "A table containing file prefixes for flux moments and angular flux binary files. "
-    "These are keyed by \"flux_moments\", \"angular_fluxes\" and \"surface_angular_fluxes\", respectively.");
+    "These are keyed by \"flux_moments\", \"angular_fluxes\" and \"surface_angular_fluxes\", "
+    "respectively.");
   params.AddOptionalParameterArray<std::string>(
     "surfaces", {}, "Surface tags to read from the surface angular flux files.");
 
@@ -159,8 +159,8 @@ ResponseEvaluator::SetDataOptions(const InputParameters& input)
     const auto surfaces = params.GetParamVectorValue<std::string>("surfaces");
     OpenSnInvalidArgumentIf(surfaces.empty(),
                             "\"surfaces\" must be specified when reading surface angular fluxes.");
-    surf_psi = DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(
-      *do_problem_, prefixes.GetParamValue<std::string>("surface_angular_fluxes"), surfaces);
+    surf_psi = ReadDistributedSurfaceAngularFluxes(
+      prefixes.GetParamValue<std::string>("surface_angular_fluxes"), surfaces, mpi_comm);
   }
 
   flux_data_[name] = {std::move(phi), std::move(psi), std::move(surf_psi)};
@@ -567,6 +567,38 @@ ResponseEvaluator::EvaluateResponse(const std::string& buffer) const
   double global_response = 0.0;
   mpi_comm.all_reduce(local_response, global_response, mpi::op::sum<double>());
   return global_response;
+}
+
+double
+ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_data,
+                                           const std::string& adj_data,
+                                           const std::vector<std::string>& surfaces) const
+{
+  const auto GetSurfaceData = [this](const std::string& name) -> const SurfaceAngularFluxData&
+  {
+    const auto it = flux_data_.find(name);
+    OpenSnInvalidArgumentIf(it == flux_data_.end(), "No data named " + name + " exist.");
+    OpenSnInvalidArgumentIf(it->second.surf_psi.surfaces.empty(),
+                            "Data " + name + " contain no surface angular fluxes.");
+    return it->second.surf_psi;
+  };
+  const auto& fwd_surf_psi = GetSurfaceData(fwd_data);
+  const auto& adj_surf_psi = GetSurfaceData(adj_data);
+
+  const auto terms = EvaluateSurfaceResponseTerms(fwd_surf_psi, adj_surf_psi, surfaces, mpi_comm);
+
+  double response = 0.0;
+  for (const auto& term : terms)
+  {
+    const auto total = term.upwind + term.downwind;
+    response += total;
+    if (term.interior)
+      log.Log0Verbose1() << "Surface " << term.surface << ": upwind " << term.upwind
+                         << ", downwind " << term.downwind << ", total " << total;
+    else
+      log.Log0Verbose1() << "Boundary " << term.surface << ": " << total;
+  }
+  return response;
 }
 
 std::vector<double>

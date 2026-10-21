@@ -4,6 +4,7 @@
 #pragma once
 
 #include "modules/linear_boltzmann_solvers/lbs_problem/io/lbs_problem_io.h"
+#include "framework/data_types/vector3.h"
 #include "hdf5.h"
 #include <array>
 #include <cstdint>
@@ -88,6 +89,22 @@ public:
    */
   using FaceCentroidKey = std::tuple<int64_t, int64_t, int64_t>;
 
+  /**
+   * Key a surface face by its centroid. The centroid is summed over the nodes in a canonical
+   * (sorted) order, so the same face yields a bit-identical key from either side of an interior
+   * surface and in every file written for the same mesh. Each component is
+   * `llround((centroid - centroid_origin) / centroid_spacing)`.
+   *
+   * \param nodes Face node locations, in any order. Must not be empty.
+   * \param centroid_origin Origin subtracted from the centroid.
+   * \param centroid_spacing Key spacing. Must be positive and finite.
+   * \param context Description of the face source, used in error messages.
+   */
+  static FaceCentroidKey MakeFaceCentroidKey(std::vector<Vector3> nodes,
+                                             const std::array<double, 3>& centroid_origin,
+                                             double centroid_spacing,
+                                             const std::string& context);
+
   struct SurfaceMap
   {
     std::vector<uint64_t> cell_ids;
@@ -165,7 +182,7 @@ public:
    *
    * Collective over all ranks. Surface selections may differ by rank. Plane-matching tolerances
    * are relative to the global mesh extent. Each rank writes `<file_base><rank>.h5`, which records
-   * whether the problem is in adjoint mode.
+   * whether the problem is in adjoint mode and the number of files written (`num_partitions`).
    */
   static void WriteSurfaceAngularFluxes(
     DiscreteOrdinatesProblem& do_problem,

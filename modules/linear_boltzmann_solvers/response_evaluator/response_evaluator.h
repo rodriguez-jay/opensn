@@ -4,8 +4,8 @@
 #pragma once
 
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/discrete_ordinates_problem.h"
-#include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/io/discrete_ordinates_problem_io.h"
 #include "modules/linear_boltzmann_solvers/lbs_problem/lbs_problem.h"
+#include "modules/linear_boltzmann_solvers/response_evaluator/surface_response_data.h"
 #include "framework/parameters/input_parameters.h"
 #include <memory>
 
@@ -40,7 +40,8 @@ class ResponseEvaluator
 private:
   using FluxMomentData = std::vector<double>;
   using AngularFluxData = std::vector<std::vector<double>>;
-  using SurfaceAngularFluxData = std::vector<DiscreteOrdinatesProblemIO::SurfaceAngularFlux>;
+  /// Surface angular fluxes distributed by face over the ranks; see SurfaceShard.
+  using SurfaceAngularFluxData = DistributedSurfaceData;
   struct FluxData
   {
     FluxMomentData phi;
@@ -67,6 +68,11 @@ public:
 
   void SetOptions(const InputParameters& params);
 
+  /**
+   * Add a named data set. When `file_prefixes` contains `surface_angular_fluxes`, the listed
+   * `surfaces` are read from all files of that prefix, whatever number of ranks wrote them, and
+   * distributed by face over the current ranks. This is collective in that case.
+   */
   void SetDataOptions(const InputParameters& input);
 
   void SetBufferOptions(const InputParameters& input);
@@ -81,7 +87,7 @@ public:
   void ClearForwardSources();
 
   void AddResponseData(const InputParameters& params);
-  
+
   void AddResponseBuffers(const InputParameters& params);
 
   void AddResponseSources(const InputParameters& params);
@@ -93,6 +99,25 @@ public:
    * the solver.
    */
   double EvaluateResponse(const std::string& buffer_name) const;
+
+  /**
+   * Evaluate the surface response of forward and adjoint surface angular fluxes added with
+   * SetDataOptions.
+   *
+   * Returns the sum over the selected surfaces of the terms defined in
+   * EvaluateSurfaceResponseTerms. Per-surface upwind and downwind terms are logged at verbosity 1.
+   *
+   * \param fwd_data_name Name of the forward data set.
+   * \param adj_data_name Name of the adjoint data set.
+   * \param surfaces Boundary names and interior surface names (without `_u`/`_d`) to evaluate. If
+   *        empty, every surface in the forward data is evaluated.
+   *
+   * Collective. Throws `std::invalid_argument` for unknown data sets or surfaces and incompatible
+   * data, and `std::logic_error` if the forward and adjoint data do not cover the same faces.
+   */
+  double EvaluateSurfaceResponse(const std::string& fwd_data_name,
+                                 const std::string& adj_data_name,
+                                 const std::vector<std::string>& surfaces = {}) const;
 
 private:
   /**
