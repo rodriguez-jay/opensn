@@ -193,7 +193,7 @@ if __name__ == "__main__":
         raise RuntimeError("Rejected surface selection created an output file")
 
     invalid_interior_cases = [
-        ({"cuts_cells": ("x", 6.25)}, "cuts through mesh cells"),
+        ({"cuts_cells": ("x", 6.25)}, "matches no mesh faces"),
         ({"outside": ("x", 12.0)}, "lies outside the mesh"),
         ({"first": ("y", 4.0), "second": ("y", 4.0)}, "defined on the same plane"),
     ]

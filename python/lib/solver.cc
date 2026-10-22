@@ -592,8 +592,9 @@ WrapLBS(py::module& slv)
         Interior surfaces in the form {'name': ('axis', value)}, where axis is 'x', 'y', or 'z'.
         Each interior surface is written under two tags: '<name>_u' for faces whose outward normal
         aligns with the positive axis and '<name>_d' for faces with the opposite orientation.
-        An interior surface must match at least one cell face, must lie on cell faces inside the
-        mesh, and may not share a plane with another interior surface. Its generated tags may not
+        An interior surface must lie inside the mesh, must match at least one cell face, and may
+        not share a plane with another interior surface. Cells the surface cuts through contribute
+        no faces; only faces lying on the surface are written. Its generated tags may not
         equal a requested boundary name. It may not coincide with an exterior boundary; export
         that boundary by name using boundary_surfaces instead.
 

@@ -7,8 +7,10 @@
 #include "framework/utils/hdf_utils.h"
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <limits>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 
 namespace opensn
@@ -20,7 +22,14 @@ namespace
 using FaceCentroidKey = DiscreteOrdinatesProblemIO::FaceCentroidKey;
 
 /// Tolerance for comparing quadrature values and direction cosines written by one problem.
-const double SAME_PROBLEM_TOLERANCE = 1.0e-12;
+const double same_problem_tolerance = 1.0e-12;
+
+/**
+ * Largest forward-to-adjoint direction distance, relative to the distance from the adjoint
+ * direction to its nearest neighbor, at which the two are taken as the same direction. This is the
+ * angular analog of matching face nodes within 1e-6 times the face size.
+ */
+const double direction_match_tolerance = 1.0e-6;
 
 /// Throw on every rank if any rank recorded an error. Collective.
 void
@@ -280,7 +289,7 @@ SameQuadrature(const std::vector<SurfaceQuadrature>& a, const std::vector<Surfac
     if (x.size() != y.size())
       return false;
     for (size_t i = 0; i < x.size(); ++i)
-      if (std::abs(x[i] - y[i]) > SAME_PROBLEM_TOLERANCE)
+      if (std::abs(x[i] - y[i]) > same_problem_tolerance)
         return false;
     return true;
   };
@@ -308,7 +317,7 @@ struct FaceChunk
 };
 
 /// Number of int64 header values per face: three key components and the node count.
-const size_t FACE_HEADER_SIZE = 4;
+const size_t face_header_size = 4;
 
 /// Number of payload doubles of a face with `n` nodes.
 std::uint64_t
@@ -357,7 +366,7 @@ public:
       while (end < layout_.num_face_nodes.size())
       {
         const auto n = layout_.num_face_nodes[end];
-        const auto bytes = sizeof(std::int64_t) * FACE_HEADER_SIZE +
+        const auto bytes = sizeof(std::int64_t) * face_header_size +
                            sizeof(double) * FacePayloadSize(n, quadratures_);
         if ((not chunk.keys.empty() or end > face_) and chunk.bytes + bytes > budget)
           break;
@@ -442,7 +451,7 @@ private:
         for (std::uint64_t k = 1; k < n; ++k)
           for (std::uint64_t d = 0; d < num_dirs; ++d)
             OpenSnLogicalErrorIf(std::abs(mu[(row + k) * num_dirs + d] - mu[row * num_dirs + d]) >
-                                   SAME_PROBLEM_TOLERANCE,
+                                   same_problem_tolerance,
                                  "Direction cosines vary across the nodes of face " +
                                    std::to_string(f) + " of " + group + " in " + file_name_ + ".");
         chunk.mu[gs].insert(chunk.mu[gs].end(),
@@ -503,7 +512,7 @@ ExchangeChunk(const mpi::Communicator& comm,
   for (size_t f = 0; f < num_faces; ++f)
   {
     owner[f] = SurfaceFaceOwner(chunk.keys[f], num_ranks);
-    send_counts[2 * owner[f]] += FACE_HEADER_SIZE;
+    send_counts[2 * owner[f]] += face_header_size;
     send_counts[2 * owner[f] + 1] += FacePayloadSize(chunk.num_nodes[f], quadratures);
   }
   std::vector<std::uint64_t> recv_counts(2 * num_ranks, 0);
@@ -541,7 +550,7 @@ ExchangeChunk(const mpi::Communicator& comm,
   const auto payload_offsets = MakeOffsets(payload_counts);
 
   // Pack in destination order.
-  std::vector<std::int64_t> headers(num_faces * FACE_HEADER_SIZE);
+  std::vector<std::int64_t> headers(num_faces * face_header_size);
   std::vector<double> payload(send_payload);
   {
     auto header_cursor = header_offsets;
@@ -557,7 +566,7 @@ ExchangeChunk(const mpi::Communicator& comm,
       h[1] = std::get<1>(chunk.keys[f]);
       h[2] = std::get<2>(chunk.keys[f]);
       h[3] = static_cast<std::int64_t>(n);
-      header_cursor[owner[f]] += static_cast<int>(FACE_HEADER_SIZE);
+      header_cursor[owner[f]] += static_cast<int>(face_header_size);
 
       auto* out = &payload[payload_cursor[owner[f]]];
       out = std::copy_n(&chunk.coords[3 * node], 3 * n, out);
@@ -597,7 +606,7 @@ ExchangeChunk(const mpi::Communicator& comm,
   // Unpack in arrival order.
   const double* in = recv_payload_values.data();
   const double* const in_end = in + recv_payload_values.size();
-  for (size_t h = 0; h < recv_header_values.size(); h += FACE_HEADER_SIZE)
+  for (size_t h = 0; h < recv_header_values.size(); h += face_header_size)
   {
     const auto n = static_cast<std::uint64_t>(recv_header_values[h + 3]);
     if (n == 0 or static_cast<std::uint64_t>(in_end - in) < FacePayloadSize(n, quadratures))
@@ -925,7 +934,85 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
 namespace
 {
 
-/// Map each direction of `from` to the direction of `to` with the same direction vector.
+/// Indices of the directions of `omega`, three components per direction, sorted by z component.
+std::vector<std::uint64_t>
+SortDirectionsByZ(const std::vector<double>& omega)
+{
+  std::vector<std::uint64_t> order(omega.size() / 3);
+  for (std::uint64_t i = 0; i < order.size(); ++i)
+    order[i] = i;
+  std::sort(order.begin(),
+            order.end(),
+            [&omega](const std::uint64_t a, const std::uint64_t b)
+            { return omega[3 * a + 2] < omega[3 * b + 2]; });
+  return order;
+}
+
+/**
+ * Return the direction of `omega` nearest to `query` in Euclidean distance, skipping `exclude`, and
+ * that distance. `order` is `SortDirectionsByZ(omega)`; the search scans outward from the z
+ * component of `query` and stops once the z difference alone exceeds the best distance.
+ */
+std::pair<std::uint64_t, double>
+NearestDirection(const std::vector<double>& omega,
+                 const std::vector<std::uint64_t>& order,
+                 const double* query,
+                 const std::uint64_t exclude)
+{
+  std::pair<std::uint64_t, double> best = {exclude, std::numeric_limits<double>::infinity()};
+  const auto Visit = [&](const std::uint64_t j)
+  {
+    if (j == exclude)
+      return;
+    const double* w = &omega[3 * j];
+    const double distance =
+      std::sqrt((w[0] - query[0]) * (w[0] - query[0]) + (w[1] - query[1]) * (w[1] - query[1]) +
+                (w[2] - query[2]) * (w[2] - query[2]));
+    if (distance < best.second)
+      best = {j, distance};
+  };
+  const auto start =
+    static_cast<size_t>(std::lower_bound(order.begin(),
+                                         order.end(),
+                                         query[2],
+                                         [&omega](const std::uint64_t j, const double z)
+                                         { return omega[3 * j + 2] < z; }) -
+                        order.begin());
+  for (size_t k = start; k < order.size() and omega[3 * order[k] + 2] - query[2] <= best.second;
+       ++k)
+    Visit(order[k]);
+  for (size_t k = start; k > 0 and query[2] - omega[3 * order[k - 1] + 2] <= best.second; --k)
+    Visit(order[k - 1]);
+  return best;
+}
+
+/**
+ * Distance from each direction of `omega` to its nearest other direction, capped at 2, the largest
+ * distance between unit vectors. Throws if two directions coincide.
+ */
+std::vector<double>
+DirectionSpacing(const std::vector<double>& omega,
+                 const std::vector<std::uint64_t>& order,
+                 const std::string& description)
+{
+  std::vector<double> spacing(order.size());
+  for (std::uint64_t j = 0; j < spacing.size(); ++j)
+  {
+    spacing[j] = std::min(2.0, NearestDirection(omega, order, &omega[3 * j], j).second);
+    OpenSnInvalidArgumentIf(not(spacing[j] > 0.0),
+                            "The " + description + " contains duplicate directions.");
+  }
+  return spacing;
+}
+
+/**
+ * Map each direction of `from` to the direction of `to` with the same direction vector.
+ *
+ * Forward direction `d` maps to its nearest adjoint direction `j` when |omega_d - omega_j| is at
+ * most direction_match_tolerance times the distance from `j` to its nearest other adjoint
+ * direction. Every other adjoint direction is then nearly that full spacing from `omega_d`, so the
+ * match is unambiguous however closely the quadrature places its directions.
+ */
 std::vector<std::uint64_t>
 BuildSameDirectionMap(const SurfaceQuadrature& from,
                       const SurfaceQuadrature& to,
@@ -935,47 +1022,32 @@ BuildSameDirectionMap(const SurfaceQuadrature& from,
                           "The forward and adjoint data have different direction or group counts "
                           "in " +
                             context + ".");
-  // Directions are matched by rounding to 1e-10, with a 5e-10 fallback for values that round
-  // differently.
-  const auto Key = [](const double* omega)
-  {
-    return std::array<std::int64_t, 3>{static_cast<std::int64_t>(std::llround(omega[0] * 1.0e10)),
-                                       static_cast<std::int64_t>(std::llround(omega[1] * 1.0e10)),
-                                       static_cast<std::int64_t>(std::llround(omega[2] * 1.0e10))};
-  };
-  std::map<std::array<std::int64_t, 3>, std::uint64_t> lookup;
-  for (std::uint64_t j = 0; j < to.num_dirs; ++j)
-    OpenSnInvalidArgumentIf(not lookup.emplace(Key(&to.omega[3 * j]), j).second,
-                            "The adjoint quadrature of " + context +
-                              " contains duplicate directions.");
+  for (const auto* omega : {&from.omega, &to.omega})
+    OpenSnInvalidArgumentIf(
+      omega->size() != 3 * from.num_dirs or
+        not std::all_of(
+          omega->begin(), omega->end(), [](const double value) { return std::isfinite(value); }),
+      "The forward or adjoint directions of " + context + " are missing or not finite.");
+
+  const auto from_order = SortDirectionsByZ(from.omega);
+  const auto to_order = SortDirectionsByZ(to.omega);
+  DirectionSpacing(from.omega, from_order, "forward quadrature of " + context);
+  const auto to_spacing = DirectionSpacing(to.omega, to_order, "adjoint quadrature of " + context);
 
   std::vector<std::uint64_t> map(from.num_dirs);
   std::vector<bool> used(to.num_dirs, false);
   for (std::uint64_t d = 0; d < from.num_dirs; ++d)
   {
-    const double* omega = &from.omega[3 * d];
-    std::uint64_t match = 0;
-    const auto it = lookup.find(Key(omega));
-    if (it != lookup.end())
-      match = it->second;
-    else
+    const auto [match, distance] =
+      NearestDirection(to.omega, to_order, &from.omega[3 * d], to.num_dirs);
+    if (not(distance <= direction_match_tolerance * to_spacing[match]))
     {
-      std::uint64_t num_candidates = 0;
-      for (std::uint64_t j = 0; j < to.num_dirs; ++j)
-      {
-        double distance = 0.0;
-        for (size_t c = 0; c < 3; ++c)
-          distance = std::max(distance, std::abs(to.omega[3 * j + c] - omega[c]));
-        if (distance <= 5.0e-10)
-        {
-          match = j;
-          ++num_candidates;
-        }
-      }
-      OpenSnInvalidArgumentIf(num_candidates != 1,
-                              "Forward direction " + std::to_string(d) + " of " + context +
-                                " has " + std::to_string(num_candidates) +
-                                " adjoint matches; expected exactly one.");
+      std::ostringstream message;
+      message << std::setprecision(3) << "Forward direction " << d << " of " << context
+              << " has no matching adjoint direction. The nearest, adjoint direction " << match
+              << ", is " << distance << " away, more than " << direction_match_tolerance
+              << " times its spacing " << to_spacing[match] << " to the next adjoint direction.";
+      OpenSnInvalidArgument(message.str());
     }
     OpenSnInvalidArgumentIf(used[match],
                             "The direction mapping of " + context + " is not one-to-one.");
