@@ -107,15 +107,11 @@ int SurfaceFaceOwner(const DiscreteOrdinatesProblemIO::FaceCentroidKey& key, int
  * and distribute their faces across the ranks of `comm`.
  *
  * The files `<file_base>0.h5`, ..., `<file_base>(N-1).h5` are found from the `num_partitions`
- * attribute of `<file_base>0.h5`. Every file must carry the `num_partitions`, `adjoint`,
- * `centroid_origin_*`, and `centroid_spacing` attributes written by the current
- * WriteSurfaceAngularFluxes; files from earlier versions of OpenSn are rejected. N need not equal
- * the size of `comm`, and the data need not match the partitioning of any current mesh. File k is
- * read by rank k modulo the size of `comm`. A planning pass reads each file's face-node counts and
- * node coordinates (32 bytes per node at most) to size the owner storage exactly. The angular
- * fluxes, direction cosines, and mass matrices are then read and sent to their owner ranks (see
- * SurfaceFaceOwner) in rounds of at most `max_send_bytes` packed bytes per rank, with at least one
- * face per round, so no rank holds a whole file's angular flux.
+ * attribute or, for files written without it, from a directory listing. N need not equal the
+ * size of `comm`, and the data need not match the partitioning of any current mesh. File k is read
+ * by rank k modulo the size of `comm`, in rounds of at most `max_send_bytes` packed bytes per rank
+ * (at least one face), so no rank reads a whole file at once. Each face is sent to its owner rank
+ * (see SurfaceFaceOwner). The owner storage is sized exactly before the data are sent.
  *
  * \param file_base File name base.
  * \param surfaces Stored surface tags to read. Must be non-empty and unique. Boundary tags are
