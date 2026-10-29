@@ -141,9 +141,10 @@ public:
    * requested surface has no local faces.
    *
    * `psi` holds the face-node values of the problem's stored angular flux on the cell that owns the
-   * face; the two sides of an interior surface are stored under separate tags. After an adjoint
-   * steady-state solve the stored angular flux is the adjoint flux for the listed direction, so
-   * forward and adjoint data with the same indices refer to the same direction.
+   * face; the two sides of an interior surface are stored under separate tags. For an adjoint
+   * problem the writer requires the physical orientation that an adjoint solve leaves, so the
+   * stored angular flux is the adjoint flux for the listed direction and forward and adjoint data
+   * with the same indices refer to the same direction.
    */
   struct SurfaceData
   {
@@ -176,13 +177,18 @@ public:
    * \param interior_surfs Interior surface definitions, keyed by name, as an axis ("x", "y", or
    * "z") and a coordinate. Each surface must lie inside the mesh, must match at least one cell
    * face, must not coincide with an exterior boundary, and must not share a plane with another
-   * requested surface. Cells the surface cuts through contribute no faces. Each surface is written with an `_u` tag for face normals aligned
-   * with the positive specified axis and a `_d` tag for the opposite orientation; these tags must
-   * not equal a requested boundary name.
+   * requested surface. Cells the surface cuts through contribute no faces. Each surface is written
+   * with an `_u` tag for face normals aligned with the positive specified axis and a `_d` tag for
+   * the opposite orientation; these tags must not equal a requested boundary name.
    *
    * Collective over all ranks. Surface selections may differ by rank. Plane-matching tolerances
    * are relative to the global mesh extent. Each rank writes `<file_base><rank>.h5`, which records
    * whether the problem is in adjoint mode and the number of files written (`num_partitions`).
+   *
+   * Requires `options.save_angular_flux=true`. An adjoint problem must hold its solution in the
+   * physical orientation (`IsAdjointSolutionReoriented()`), which an adjoint steady-state or
+   * k-eigenvalue solve leaves. Restart data are loaded in the internal sweep orientation, so an
+   * adjoint solver must be executed after a restart read. Throws `std::invalid_argument` otherwise.
    */
   static void WriteSurfaceAngularFluxes(
     DiscreteOrdinatesProblem& do_problem,

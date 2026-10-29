@@ -126,8 +126,9 @@ WrapResEval(py::module& response)
          + \sum_{d:\, \mu_d < 0} \mu_d w_d \sum_{ij} M_{ij} \sum_g
            \psi^{d}_{i,d,g}\, \psi^{\dagger, u}_{j,d,g}.
 
-    Forward and adjoint directions are paired by equal direction vectors. Per-surface terms are
-    logged at verbosity 1. This call is collective.
+    Forward and adjoint directions are paired by equal direction vectors. Per-surface outgoing
+    (:math:`\mu_d > 0`) and incoming (:math:`\mu_d < 0`) contributions are logged at verbosity 1.
+    This call is collective.
 
     Parameters
     ----------

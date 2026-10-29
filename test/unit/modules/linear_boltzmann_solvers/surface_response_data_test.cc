@@ -304,28 +304,30 @@ TEST_F(SurfaceResponseDataTest, MatchesClosedFormAcrossPartitions)
     EXPECT_EQ(GlobalFaces(adjoint, tag), static_cast<std::uint64_t>(num_faces));
   }
 
-  const auto terms = EvaluateSurfaceResponseTerms(forward, adjoint, {}, mpi_comm);
-  ASSERT_EQ(terms.size(), 2u);
+  const auto surface_responses = ComputeSurfaceResponses(forward, adjoint, {}, mpi_comm);
+  ASSERT_EQ(surface_responses.size(), 2u);
   // Name order: "plane" (interior) before "right" (boundary).
-  EXPECT_EQ(terms[0].surface, "plane");
-  EXPECT_TRUE(terms[0].interior);
-  EXPECT_EQ(terms[1].surface, "right");
-  EXPECT_FALSE(terms[1].interior);
-  EXPECT_EQ(terms[1].downwind, 0.0);
+  EXPECT_EQ(surface_responses[0].name, "plane");
+  EXPECT_TRUE(surface_responses[0].interior);
+  EXPECT_EQ(surface_responses[1].name, "right");
+  EXPECT_FALSE(surface_responses[1].interior);
+  EXPECT_EQ(surface_responses[1].incoming, 0.0);
 
   // Sums of a few hundred O(1) products: allow a small multiple of machine precision.
   const double interior = ExpectedResponse(true);
   const double boundary = ExpectedResponse(false);
-  EXPECT_NEAR(terms[0].upwind + terms[0].downwind, interior, 1.0e-13 * std::abs(interior));
-  EXPECT_NEAR(terms[1].upwind, boundary, 1.0e-13 * std::abs(boundary));
+  EXPECT_NEAR(surface_responses[0].outgoing + surface_responses[0].incoming,
+              interior,
+              1.0e-13 * std::abs(interior));
+  EXPECT_NEAR(surface_responses[1].outgoing, boundary, 1.0e-13 * std::abs(boundary));
   // Both interior directions contribute, with opposite signs of mu.
-  EXPECT_GT(terms[0].upwind, 0.0);
-  EXPECT_LT(terms[0].downwind, 0.0);
+  EXPECT_GT(surface_responses[0].outgoing, 0.0);
+  EXPECT_LT(surface_responses[0].incoming, 0.0);
 
-  // Selecting one surface gives the same term.
-  const auto selected = EvaluateSurfaceResponseTerms(forward, adjoint, {"right"}, mpi_comm);
+  // Selecting one surface gives the same surface response.
+  const auto selected = ComputeSurfaceResponses(forward, adjoint, {"right"}, mpi_comm);
   ASSERT_EQ(selected.size(), 1u);
-  EXPECT_DOUBLE_EQ(selected[0].upwind, terms[1].upwind);
+  EXPECT_DOUBLE_EQ(selected[0].outgoing, surface_responses[1].outgoing);
 }
 
 TEST_F(SurfaceResponseDataTest, SmallSendBudgetGivesSameResult)
@@ -336,21 +338,20 @@ TEST_F(SurfaceResponseDataTest, SmallSendBudgetGivesSameResult)
   // A one-byte budget sends one face per rank per round.
   const auto forward = ReadDistributedSurfaceAngularFluxes(forward_base, all_tags, mpi_comm, 1);
   const auto adjoint = ReadDistributedSurfaceAngularFluxes(adjoint_base, all_tags, mpi_comm, 1);
-  const auto small = EvaluateSurfaceResponseTerms(forward, adjoint, {}, mpi_comm);
+  const auto small = ComputeSurfaceResponses(forward, adjoint, {}, mpi_comm);
 
   const auto forward_default =
     ReadDistributedSurfaceAngularFluxes(forward_base, all_tags, mpi_comm);
   const auto adjoint_default =
     ReadDistributedSurfaceAngularFluxes(adjoint_base, all_tags, mpi_comm);
-  const auto reference =
-    EvaluateSurfaceResponseTerms(forward_default, adjoint_default, {}, mpi_comm);
+  const auto reference = ComputeSurfaceResponses(forward_default, adjoint_default, {}, mpi_comm);
 
   // Owned faces are evaluated in key order, so the chunking does not change the sum.
   ASSERT_EQ(small.size(), reference.size());
   for (size_t s = 0; s < small.size(); ++s)
   {
-    EXPECT_EQ(small[s].upwind, reference[s].upwind);
-    EXPECT_EQ(small[s].downwind, reference[s].downwind);
+    EXPECT_EQ(small[s].outgoing, reference[s].outgoing);
+    EXPECT_EQ(small[s].incoming, reference[s].incoming);
   }
 }
 
@@ -378,10 +379,9 @@ TEST_F(SurfaceResponseDataTest, RejectsMissingFace)
 
   const auto forward = ReadDistributedSurfaceAngularFluxes(forward_base, all_tags, mpi_comm);
   const auto adjoint = ReadDistributedSurfaceAngularFluxes(adjoint_base, all_tags, mpi_comm);
-  EXPECT_THROW(EvaluateSurfaceResponseTerms(forward, adjoint, {"plane"}, mpi_comm),
-               std::logic_error);
+  EXPECT_THROW(ComputeSurfaceResponses(forward, adjoint, {"plane"}, mpi_comm), std::logic_error);
   // The boundary is complete.
-  EXPECT_NO_THROW(EvaluateSurfaceResponseTerms(forward, adjoint, {"right"}, mpi_comm));
+  EXPECT_NO_THROW(ComputeSurfaceResponses(forward, adjoint, {"right"}, mpi_comm));
 }
 
 TEST_F(SurfaceResponseDataTest, RejectsDuplicateFace)
@@ -415,11 +415,11 @@ TEST_F(SurfaceResponseDataTest, RejectsIncompatibleDataSets)
   const auto forward = ReadDistributedSurfaceAngularFluxes(forward_base, all_tags, mpi_comm);
   const auto adjoint = ReadDistributedSurfaceAngularFluxes(adjoint_base, all_tags, mpi_comm);
   // Keys of different spacings cannot be matched.
-  EXPECT_THROW(EvaluateSurfaceResponseTerms(forward, adjoint, {}, mpi_comm), std::invalid_argument);
+  EXPECT_THROW(ComputeSurfaceResponses(forward, adjoint, {}, mpi_comm), std::invalid_argument);
   // Forward data in the adjoint role.
-  EXPECT_THROW(EvaluateSurfaceResponseTerms(forward, forward, {}, mpi_comm), std::invalid_argument);
+  EXPECT_THROW(ComputeSurfaceResponses(forward, forward, {}, mpi_comm), std::invalid_argument);
   // Unknown surface.
-  EXPECT_THROW(EvaluateSurfaceResponseTerms(forward, adjoint, {"left"}, mpi_comm),
+  EXPECT_THROW(ComputeSurfaceResponses(forward, adjoint, {"left"}, mpi_comm),
                std::invalid_argument);
 
   // One side of an interior surface alone is rejected rather than treated as a boundary.
@@ -427,7 +427,7 @@ TEST_F(SurfaceResponseDataTest, RejectsIncompatibleDataSets)
     ReadDistributedSurfaceAngularFluxes(forward_base, {"plane_u"}, mpi_comm);
   const auto lone_adjoint =
     ReadDistributedSurfaceAngularFluxes(Write("adjoint_ok", AdjointSpec()), {"plane_u"}, mpi_comm);
-  EXPECT_THROW(EvaluateSurfaceResponseTerms(lone_forward, lone_adjoint, {}, mpi_comm),
+  EXPECT_THROW(ComputeSurfaceResponses(lone_forward, lone_adjoint, {}, mpi_comm),
                std::invalid_argument);
 }
 
@@ -441,7 +441,7 @@ TEST_F(SurfaceResponseDataTest, MatchesDirectionsRelativeToQuadratureSpacing)
   const auto Shift = [](DistributedSurfaceData data, const std::uint64_t d, const double delta)
   {
     for (auto& quadrature : data.groupsets)
-      quadrature.omega[3 * d] += delta;
+      quadrature.omegas[3 * d] += delta;
     return data;
   };
   const double interior = ExpectedResponse(true);
@@ -450,23 +450,24 @@ TEST_F(SurfaceResponseDataTest, MatchesDirectionsRelativeToQuadratureSpacing)
   // Within the tolerance: every direction, stored in reverse order, still finds its match.
   auto close = adjoint;
   for (auto& quadrature : close.groupsets)
-    for (auto& component : quadrature.omega)
+    for (auto& component : quadrature.omegas)
       component += 1.0e-9;
-  const auto terms = EvaluateSurfaceResponseTerms(forward, close, {}, mpi_comm);
-  ASSERT_EQ(terms.size(), 2u);
-  EXPECT_NEAR(terms[0].upwind + terms[0].downwind, interior, 1.0e-13 * std::abs(interior));
-  EXPECT_NEAR(terms[1].upwind, boundary, 1.0e-13 * std::abs(boundary));
+  const auto surface_responses = ComputeSurfaceResponses(forward, close, {}, mpi_comm);
+  ASSERT_EQ(surface_responses.size(), 2u);
+  EXPECT_NEAR(surface_responses[0].outgoing + surface_responses[0].incoming,
+              interior,
+              1.0e-13 * std::abs(interior));
+  EXPECT_NEAR(surface_responses[1].outgoing, boundary, 1.0e-13 * std::abs(boundary));
 
   // Beyond the tolerance.
-  EXPECT_THROW(EvaluateSurfaceResponseTerms(forward, Shift(adjoint, 0, 1.2e-4), {}, mpi_comm),
+  EXPECT_THROW(ComputeSurfaceResponses(forward, Shift(adjoint, 0, 1.2e-4), {}, mpi_comm),
                std::invalid_argument);
 
   // Duplicate adjoint directions.
   auto duplicate = adjoint;
   for (auto& quadrature : duplicate.groupsets)
-    std::copy_n(quadrature.omega.begin(), 3, quadrature.omega.begin() + 3);
-  EXPECT_THROW(EvaluateSurfaceResponseTerms(forward, duplicate, {}, mpi_comm),
-               std::invalid_argument);
+    std::copy_n(quadrature.omegas.begin(), 3, quadrature.omegas.begin() + 3);
+  EXPECT_THROW(ComputeSurfaceResponses(forward, duplicate, {}, mpi_comm), std::invalid_argument);
 }
 
 TEST_F(SurfaceResponseDataTest, MatchesCloselySpacedDirections)
@@ -482,24 +483,26 @@ TEST_F(SurfaceResponseDataTest, MatchesCloselySpacedDirections)
   {
     for (auto& quadrature : data.groupsets)
     {
-      std::copy_n(quadrature.omega.begin() + 3 * to, 3, quadrature.omega.begin() + 3 * d);
-      quadrature.omega[3 * d + 2] += 1.0e-12;
+      std::copy_n(quadrature.omegas.begin() + 3 * to, 3, quadrature.omegas.begin() + 3 * d);
+      quadrature.omegas[3 * d + 2] += 1.0e-12;
     }
   };
   Place(forward, 1, 0);
   Place(adjoint, 2, 3);
 
-  const auto terms = EvaluateSurfaceResponseTerms(forward, adjoint, {}, mpi_comm);
-  ASSERT_EQ(terms.size(), 2u);
+  const auto surface_responses = ComputeSurfaceResponses(forward, adjoint, {}, mpi_comm);
+  ASSERT_EQ(surface_responses.size(), 2u);
   const double interior = ExpectedResponse(true);
   const double boundary = ExpectedResponse(false);
-  EXPECT_NEAR(terms[0].upwind + terms[0].downwind, interior, 1.0e-13 * std::abs(interior));
-  EXPECT_NEAR(terms[1].upwind, boundary, 1.0e-13 * std::abs(boundary));
+  EXPECT_NEAR(surface_responses[0].outgoing + surface_responses[0].incoming,
+              interior,
+              1.0e-13 * std::abs(interior));
+  EXPECT_NEAR(surface_responses[1].outgoing, boundary, 1.0e-13 * std::abs(boundary));
 
   // At this spacing, a 1e-15 difference is 1e-3 of the spacing and no longer a match.
   for (auto& quadrature : adjoint.groupsets)
-    quadrature.omega[3 * 2] += 1.0e-15;
-  EXPECT_THROW(EvaluateSurfaceResponseTerms(forward, adjoint, {}, mpi_comm), std::invalid_argument);
+    quadrature.omegas[3 * 2] += 1.0e-15;
+  EXPECT_THROW(ComputeSurfaceResponses(forward, adjoint, {}, mpi_comm), std::invalid_argument);
 }
 
 TEST(SurfaceFaceOwnerTest, IsInRangeAndDeterministic)

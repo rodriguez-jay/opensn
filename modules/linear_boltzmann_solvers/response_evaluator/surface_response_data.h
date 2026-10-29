@@ -17,7 +17,7 @@ namespace opensn
 {
 
 /// Default per-rank send budget, in bytes, of one surface-data redistribution round.
-const std::uint64_t SURFACE_REDISTRIBUTION_BYTES = std::uint64_t{64} << 20;
+const std::uint64_t surface_redistribution_bytes = std::uint64_t{64} << 20;
 
 /// Quadrature of one groupset of a surface angular-flux file set.
 struct SurfaceQuadrature
@@ -25,7 +25,7 @@ struct SurfaceQuadrature
   std::uint64_t num_dirs = 0;
   std::uint64_t num_groups = 0;
   /// Direction vectors, three Cartesian components per direction.
-  std::vector<double> omega;
+  std::vector<double> omegas;
   /// Quadrature weights, one per direction.
   std::vector<double> weights;
 };
@@ -88,15 +88,18 @@ struct DistributedSurfaceData
 };
 
 /// The surface response of one boundary or interior surface.
-struct SurfaceResponseTerm
+struct SurfaceResponse
 {
   /// Boundary name or interior surface name (without the `_u`/`_d` suffix).
-  std::string surface;
+  std::string name;
   bool interior = false;
-  /// Contribution of directions with positive cosine with the `_u` (boundary: outward) normal.
-  double upwind = 0.0;
-  /// Contribution of directions with negative cosine with the `_u` normal. Zero for a boundary.
-  double downwind = 0.0;
+  /// Contribution of directions leaving the `_u` cell, with positive cosine with the `_u` normal
+  /// (the positive axis). For a boundary, the outflow directions, with positive cosine with the
+  /// outward normal.
+  double outgoing = 0.0;
+  /// Contribution of directions entering the `_u` cell, with negative cosine with the `_u` normal;
+  /// these leave the `_d` cell. Zero for a boundary.
+  double incoming = 0.0;
 };
 
 /// Rank that owns the face with `key` on a communicator with `num_ranks` ranks.
@@ -107,11 +110,12 @@ int SurfaceFaceOwner(const DiscreteOrdinatesProblemIO::FaceCentroidKey& key, int
  * and distribute their faces across the ranks of `comm`.
  *
  * The files `<file_base>0.h5`, ..., `<file_base>(N-1).h5` are found from the `num_partitions`
- * attribute or, for files written without it, from a directory listing. N need not equal the
- * size of `comm`, and the data need not match the partitioning of any current mesh. File k is read
- * by rank k modulo the size of `comm`, in rounds of at most `max_send_bytes` packed bytes per rank
- * (at least one face), so no rank reads a whole file at once. Each face is sent to its owner rank
- * (see SurfaceFaceOwner). The owner storage is sized exactly before the data are sent.
+ * attribute of the first file; files without it were written by an unsupported version of OpenSn
+ * and are rejected. N need not equal the size of `comm`, and the data need not match the
+ * partitioning of any current mesh. File k is read by rank k modulo the size of `comm`, in rounds
+ * of at most `max_send_bytes` packed bytes per rank (at least one face), so no rank reads a whole
+ * file at once. Each face is sent to its owner rank (see SurfaceFaceOwner). The owner storage is
+ * sized exactly before the data are sent.
  *
  * \param file_base File name base.
  * \param surfaces Stored surface tags to read. Must be non-empty and unique. Boundary tags are
@@ -127,7 +131,7 @@ DistributedSurfaceData
 ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
                                     const std::vector<std::string>& surfaces,
                                     const mpi::Communicator& comm,
-                                    std::uint64_t max_send_bytes = SURFACE_REDISTRIBUTION_BYTES);
+                                    std::uint64_t max_send_bytes = surface_redistribution_bytes);
 
 /**
  * Evaluate the surface inner products of forward and adjoint angular fluxes.
@@ -147,17 +151,16 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
  *        the forward data is evaluated. Interior surfaces are identified by tag pairs `X_u` and
  *        `X_d`; any other tag is a boundary.
  * \param comm Communicator both data sets were distributed over.
- * \return One term per surface, in name order when `surfaces` is empty and in the given order
- *         otherwise. Values are global sums.
+ * \return One surface response per surface, in name order when `surfaces` is empty and in the given
+ * order otherwise. Values are global sums.
  *
  * Collective over `comm`. Throws `std::invalid_argument` for incompatible data sets or unknown
  * surfaces and `std::logic_error`, on all ranks, if any face lacks a matching face in another
  * required tag or matching faces have different node locations.
  */
-std::vector<SurfaceResponseTerm>
-EvaluateSurfaceResponseTerms(const DistributedSurfaceData& forward,
-                             const DistributedSurfaceData& adjoint,
-                             const std::vector<std::string>& surfaces,
-                             const mpi::Communicator& comm);
+std::vector<SurfaceResponse> ComputeSurfaceResponses(const DistributedSurfaceData& forward,
+                                                     const DistributedSurfaceData& adjoint,
+                                                     const std::vector<std::string>& surfaces,
+                                                     const mpi::Communicator& comm);
 
 } // namespace opensn

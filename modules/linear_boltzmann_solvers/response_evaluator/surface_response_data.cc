@@ -86,26 +86,28 @@ struct FileMetadata
 FileMetadata
 ReadFileMetadata(const hid_t file, const std::string& file_name)
 {
-  FileMetadata meta;
+  FileMetadata meta_data;
   std::uint64_t num_groupsets = 0;
   OpenSnLogicalErrorIf(not H5ReadAttribute(file, "num_groupsets", num_groupsets) or
                          num_groupsets == 0,
                        "Failed to read a positive number of groupsets from " + file_name + ".");
   // Every attribute below is written by the current WriteSurfaceAngularFluxes. Files without them
   // were written by an unsupported version of OpenSn.
-  OpenSnLogicalErrorIf(not H5ReadAttribute(file, "num_partitions", meta.num_partitions) or
-                         meta.num_partitions == 0,
+  OpenSnLogicalErrorIf(not H5ReadAttribute(file, "num_partitions", meta_data.num_partitions) or
+                         meta_data.num_partitions == 0,
                        "Failed to read a positive number of partitions from " + file_name +
                          ". The file was written by an unsupported version of OpenSn.");
-  OpenSnLogicalErrorIf(not H5ReadAttribute(file, "adjoint", meta.adjoint),
+  OpenSnLogicalErrorIf(not H5ReadAttribute(file, "adjoint", meta_data.adjoint),
                        "Failed to read the adjoint flag from " + file_name + ".");
   for (size_t d = 0; d < 3; ++d)
-    OpenSnLogicalErrorIf(
-      not H5ReadAttribute(file, "centroid_origin_" + std::to_string(d), meta.centroid_origin[d]),
-      "Failed to read the centroid origin from " + file_name + ".");
-  OpenSnLogicalErrorIf(not H5ReadAttribute(file, "centroid_spacing", meta.centroid_spacing),
+    OpenSnLogicalErrorIf(not H5ReadAttribute(file,
+                                             "centroid_origin_" + std::to_string(d),
+                                             meta_data.centroid_origin[d]),
+                         "Failed to read the centroid origin from " + file_name + ".");
+  OpenSnLogicalErrorIf(not H5ReadAttribute(file, "centroid_spacing", meta_data.centroid_spacing),
                        "Failed to read the centroid spacing from " + file_name + ".");
-  OpenSnLogicalErrorIf(not(meta.centroid_spacing > 0.0) or not std::isfinite(meta.centroid_spacing),
+  OpenSnLogicalErrorIf(not(meta_data.centroid_spacing > 0.0) or
+                         not std::isfinite(meta_data.centroid_spacing),
                        "Invalid centroid spacing in " + file_name + ".");
 
   // Read one groupset at a time so a corrupt count fails at the first missing attribute rather
@@ -121,46 +123,77 @@ ReadFileMetadata(const hid_t file, const std::string& file_name)
     OpenSnLogicalErrorIf(
       not H5ReadAttribute(file, group_name + "/num_groups", num_groups) or num_groups == 0,
       "Failed to read a positive group count for " + group_name + " from " + file_name + ".");
-    meta.num_dirs.push_back(num_dirs);
-    meta.num_groups.push_back(num_groups);
+    meta_data.num_dirs.push_back(num_dirs);
+    meta_data.num_groups.push_back(num_groups);
   }
-  return meta;
+  return meta_data;
 }
 
-/// Return a description of how `meta` differs from `reference`, or an empty string.
+/// Return a description of how `meta_data` differs from `reference_data`, or an empty string.
 std::string
-CompareFileMetadata(const FileMetadata& reference, const FileMetadata& meta)
+CompareFileMetadata(const FileMetadata& reference_data, const FileMetadata& meta_data)
 {
-  if (meta.num_partitions != reference.num_partitions)
-    return "it records " + std::to_string(meta.num_partitions) +
+  if (meta_data.num_partitions != reference_data.num_partitions)
+    return "it records " + std::to_string(meta_data.num_partitions) +
            " partitions, but partition 0 "
            "records " +
-           std::to_string(reference.num_partitions);
-  if (meta.adjoint != reference.adjoint)
+           std::to_string(reference_data.num_partitions);
+  if (meta_data.adjoint != reference_data.adjoint)
     return "its adjoint flag differs from partition 0";
-  if (meta.centroid_origin != reference.centroid_origin or
-      meta.centroid_spacing != reference.centroid_spacing)
+  if (meta_data.centroid_origin != reference_data.centroid_origin or
+      meta_data.centroid_spacing != reference_data.centroid_spacing)
     return "its centroid origin or spacing differs from partition 0";
-  if (meta.num_dirs != reference.num_dirs or meta.num_groups != reference.num_groups)
+  if (meta_data.num_dirs != reference_data.num_dirs or
+      meta_data.num_groups != reference_data.num_groups)
     return "its groupset, direction, or group counts differ from partition 0";
   return {};
 }
 
-std::vector<std::uint64_t>
-PackMetadata(const FileMetadata& meta, const std::uint64_t num_partitions)
+/// Broadcast `meta_data` from rank 0 to every rank of `comm`. Collective.
+void
+BroadcastFileMetadata(const mpi::Communicator& comm, FileMetadata& meta_data)
 {
-  std::vector<std::uint64_t> packed = {num_partitions, meta.adjoint ? 1u : 0u};
-  packed.insert(packed.end(), meta.num_dirs.begin(), meta.num_dirs.end());
-  packed.insert(packed.end(), meta.num_groups.begin(), meta.num_groups.end());
-  return packed;
+  std::vector<std::uint64_t> ints;
+  std::vector<double> reals;
+  if (comm.rank() == 0)
+  {
+    ints = {meta_data.num_partitions, meta_data.adjoint ? 1u : 0u};
+    ints.insert(ints.end(), meta_data.num_dirs.begin(), meta_data.num_dirs.end());
+    ints.insert(ints.end(), meta_data.num_groups.begin(), meta_data.num_groups.end());
+    reals = {meta_data.centroid_origin[0],
+             meta_data.centroid_origin[1],
+             meta_data.centroid_origin[2],
+             meta_data.centroid_spacing};
+  }
+  BroadcastVector(comm, ints, 0);
+  BroadcastVector(comm, reals, 0);
+
+  meta_data.num_partitions = ints[0];
+  meta_data.adjoint = ints[1] != 0;
+  const auto num_groupsets = static_cast<std::ptrdiff_t>((ints.size() - 2) / 2);
+  meta_data.num_dirs.assign(ints.begin() + 2, ints.begin() + 2 + num_groupsets);
+  meta_data.num_groups.assign(ints.begin() + 2 + num_groupsets, ints.end());
+  meta_data.centroid_origin = {reals[0], reals[1], reals[2]};
+  meta_data.centroid_spacing = reals[3];
 }
 
-/// Sizes of one surface tag in one file.
+/**
+ * Sizes of one surface tag in one file. Face f has nodes [node_offset[f], node_offset[f + 1]) and
+ * mass-matrix entries [mass_offset[f], mass_offset[f + 1]).
+ */
 struct TagLayout
 {
-  std::vector<std::uint64_t> num_face_nodes;
-  std::uint64_t num_nodes = 0;
-  std::uint64_t mass_size = 0;
+  std::vector<std::uint64_t> node_offset = {0};
+  std::vector<std::uint64_t> mass_offset = {0};
+
+  std::uint64_t GetNumFaces() const { return node_offset.size() - 1; }
+
+  std::uint64_t GetNumNodes() const { return node_offset.back(); }
+
+  std::uint64_t GetNumFaceNodes(const std::uint64_t face) const
+  {
+    return node_offset[face + 1] - node_offset[face];
+  }
 };
 
 /// Read the face-node counts of `tag` and check every dataset size against them.
@@ -168,35 +201,36 @@ TagLayout
 ReadTagLayout(const hid_t file,
               const std::string& file_name,
               const std::string& tag,
-              const FileMetadata& meta)
+              const FileMetadata& meta_data)
 {
   const std::string context = tag + " in " + file_name;
   const std::string mesh = "mesh/" + tag;
   OpenSnLogicalErrorIf(not H5Has(file, mesh), "Surface " + context + " was not found.");
 
-  TagLayout layout;
   std::uint64_t num_cells = 0;
-  OpenSnLogicalErrorIf(
-    not H5GetDataset1DSize(file, mesh + "/cell_ids", num_cells) or
-      not H5ReadDataset1D(file, mesh + "/num_face_nodes", layout.num_face_nodes) or
-      layout.num_face_nodes.size() != num_cells,
-    "Failed to read consistent face metadata for " + context + ".");
+  std::vector<std::uint64_t> num_face_nodes;
+  OpenSnLogicalErrorIf(not H5GetDataset1DSize(file, mesh + "/cell_ids", num_cells) or
+                         not H5ReadDataset1D(file, mesh + "/num_face_nodes", num_face_nodes) or
+                         num_face_nodes.size() != num_cells,
+                       "Failed to read consistent face metadata for " + context + ".");
 
-  for (const auto n : layout.num_face_nodes)
+  TagLayout layout;
+  layout.node_offset.reserve(num_face_nodes.size() + 1);
+  layout.mass_offset.reserve(num_face_nodes.size() + 1);
+  for (const auto n : num_face_nodes)
   {
+
     OpenSnLogicalErrorIf(n == 0, "Encountered a surface face without nodes for " + context + ".");
-    OpenSnLogicalErrorIf(layout.num_nodes > std::numeric_limits<std::uint64_t>::max() - n,
-                         "Size overflow for " + context + ".");
-    layout.num_nodes += n;
-  }
-  for (const auto n : layout.num_face_nodes)
-  {
-    // n <= num_nodes, which is checked against the coordinate datasets below.
+    // An oversized n makes the node total disagree with the coordinate datasets checked below.
     const auto n_sq = CheckedMultiply(n, n, context);
-    OpenSnLogicalErrorIf(layout.mass_size > std::numeric_limits<std::uint64_t>::max() - n_sq,
-                         "Size overflow for " + context + ".");
-    layout.mass_size += n_sq;
+    OpenSnLogicalErrorIf(
+      layout.node_offset.back() > std::numeric_limits<std::uint64_t>::max() - n or
+        layout.mass_offset.back() > std::numeric_limits<std::uint64_t>::max() - n_sq,
+      "Size overflow for " + context + ".");
+    layout.node_offset.push_back(layout.node_offset.back() + n);
+    layout.mass_offset.push_back(layout.mass_offset.back() + n_sq);
   }
+  const auto num_nodes = layout.GetNumNodes();
 
   const auto CheckSize = [&](const std::string& name, const std::uint64_t expected)
   {
@@ -205,33 +239,37 @@ ReadTagLayout(const hid_t file,
                          "Dataset " + name + " in " + file_name + " has an inconsistent size.");
   };
   for (const auto* axis : {"/nodes_x", "/nodes_y", "/nodes_z"})
-    CheckSize(mesh + axis, layout.num_nodes);
-  CheckSize("groupset_0/" + tag + "/M_ij", layout.mass_size);
-  for (size_t gs = 0; gs < meta.num_dirs.size(); ++gs)
+    CheckSize(mesh + axis, num_nodes);
+  CheckSize("groupset_0/" + tag + "/M_ij", layout.mass_offset.back());
+  for (size_t gs = 0; gs < meta_data.num_dirs.size(); ++gs)
   {
     const std::string group = "groupset_" + std::to_string(gs) + "/" + tag;
-    const auto num_node_dirs = CheckedMultiply(layout.num_nodes, meta.num_dirs[gs], context);
+    const auto num_node_dirs = CheckedMultiply(num_nodes, meta_data.num_dirs[gs], context);
     CheckSize(group + "/mu", num_node_dirs);
     CheckSize(group + "/wt_d", num_node_dirs);
     CheckSize(group + "/omega", CheckedMultiply(num_node_dirs, 3, context));
-    CheckSize(group + "/surf_flux", CheckedMultiply(num_node_dirs, meta.num_groups[gs], context));
+    CheckSize(group + "/surf_flux",
+              CheckedMultiply(num_node_dirs, meta_data.num_groups[gs], context));
   }
   return layout;
 }
 
-/// Read and key `count` faces starting at face `face`, node `node`, of `tag`.
+/**
+ * Read and key faces [face, face + count) of `tag`. If `coords` is given, append their node
+ * coordinates to it, three per node.
+ */
 std::vector<FaceCentroidKey>
 ReadFaceKeys(const hid_t file,
              const std::string& file_name,
              const std::string& tag,
-             const std::vector<std::uint64_t>& num_face_nodes,
+             const TagLayout& layout,
              const std::uint64_t face,
              const std::uint64_t count,
-             const std::uint64_t node,
-             const std::uint64_t num_nodes,
-             const FileMetadata& meta,
+             const FileMetadata& meta_data,
              std::vector<double>* coords)
 {
+  const auto node = layout.node_offset[face];
+  const auto num_nodes = layout.node_offset[face + count] - node;
   const std::string mesh = "mesh/" + tag;
   std::array<std::vector<double>, 3> xyz;
   const std::array<std::string, 3> axes = {"/nodes_x", "/nodes_y", "/nodes_z"};
@@ -239,23 +277,26 @@ ReadFaceKeys(const hid_t file,
     OpenSnLogicalErrorIf(not H5ReadDataset1DSlab(file, mesh + axes[d], node, num_nodes, xyz[d]),
                          "Failed to read node coordinates for " + tag + " in " + file_name + ".");
 
-  std::vector<FaceCentroidKey> keys;
-  keys.reserve(count);
+  std::vector<FaceCentroidKey> face_keys;
+  face_keys.reserve(count);
   std::uint64_t i = 0;
   for (std::uint64_t f = face; f < face + count; ++f)
   {
+    const auto n = layout.GetNumFaceNodes(f);
     std::vector<Vector3> nodes;
-    nodes.reserve(num_face_nodes[f]);
-    for (std::uint64_t k = 0; k < num_face_nodes[f]; ++k, ++i)
+    nodes.reserve(n);
+    for (std::uint64_t k = 0; k < n; ++k, ++i)
     {
       nodes.emplace_back(xyz[0][i], xyz[1][i], xyz[2][i]);
       if (coords)
         coords->insert(coords->end(), {xyz[0][i], xyz[1][i], xyz[2][i]});
     }
-    keys.push_back(DiscreteOrdinatesProblemIO::MakeFaceCentroidKey(
-      std::move(nodes), meta.centroid_origin, meta.centroid_spacing, tag + " in " + file_name));
+    face_keys.push_back(DiscreteOrdinatesProblemIO::MakeFaceCentroidKey(std::move(nodes),
+                                                                        meta_data.centroid_origin,
+                                                                        meta_data.centroid_spacing,
+                                                                        tag + " in " + file_name));
   }
-  return keys;
+  return face_keys;
 }
 
 /// Read the quadrature of every groupset from the first node of `tag`, which must have faces.
@@ -263,18 +304,18 @@ std::vector<SurfaceQuadrature>
 ReadQuadrature(const hid_t file,
                const std::string& file_name,
                const std::string& tag,
-               const FileMetadata& meta)
+               const FileMetadata& meta_data)
 {
-  std::vector<SurfaceQuadrature> quadratures(meta.num_dirs.size());
+  std::vector<SurfaceQuadrature> quadratures(meta_data.num_dirs.size());
   for (size_t gs = 0; gs < quadratures.size(); ++gs)
   {
     auto& quadrature = quadratures[gs];
-    quadrature.num_dirs = meta.num_dirs[gs];
-    quadrature.num_groups = meta.num_groups[gs];
+    quadrature.num_dirs = meta_data.num_dirs[gs];
+    quadrature.num_groups = meta_data.num_groups[gs];
     const std::string group = "groupset_" + std::to_string(gs) + "/" + tag;
     OpenSnLogicalErrorIf(
       not H5ReadDataset1DSlab(
-        file, group + "/omega", 0, 3 * quadrature.num_dirs, quadrature.omega) or
+        file, group + "/omega", 0, 3 * quadrature.num_dirs, quadrature.omegas) or
         not H5ReadDataset1DSlab(file, group + "/wt_d", 0, quadrature.num_dirs, quadrature.weights),
       "Failed to read the quadrature of " + group + " in " + file_name + ".");
   }
@@ -297,7 +338,7 @@ SameQuadrature(const std::vector<SurfaceQuadrature>& a, const std::vector<Surfac
     return false;
   for (size_t gs = 0; gs < a.size(); ++gs)
     if (a[gs].num_dirs != b[gs].num_dirs or a[gs].num_groups != b[gs].num_groups or
-        not Close(a[gs].omega, b[gs].omega) or not Close(a[gs].weights, b[gs].weights))
+        not Close(a[gs].omegas, b[gs].omegas) or not Close(a[gs].weights, b[gs].weights))
       return false;
   return true;
 }
@@ -354,33 +395,27 @@ public:
         Open();
         continue;
       }
-      if (face_ == layout_.num_face_nodes.size())
+      if (face_ == layout_.GetNumFaces())
       {
         file_.reset();
         continue;
       }
 
       std::uint64_t end = face_;
-      std::uint64_t num_nodes = 0;
-      std::uint64_t mass_size = 0;
-      while (end < layout_.num_face_nodes.size())
+      while (end < layout_.GetNumFaces())
       {
-        const auto n = layout_.num_face_nodes[end];
-        const auto bytes = sizeof(std::int64_t) * face_header_size +
-                           sizeof(double) * FacePayloadSize(n, quadratures_);
+        const auto bytes =
+          sizeof(std::int64_t) * face_header_size +
+          sizeof(double) * FacePayloadSize(layout_.GetNumFaceNodes(end), quadratures_);
         if ((not chunk.keys.empty() or end > face_) and chunk.bytes + bytes > budget)
           break;
         chunk.bytes += bytes;
-        num_nodes += n;
-        mass_size += n * n;
         ++end;
       }
       if (end == face_)
         return;
-      ReadSegment(end - face_, num_nodes, mass_size, chunk);
+      ReadSegment(end - face_, chunk);
       face_ = end;
-      node_ += num_nodes;
-      mass_ += mass_size;
     }
   }
 
@@ -391,7 +426,7 @@ private:
     file_.emplace(H5Fopen(file_name_.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
     OpenSnLogicalErrorIf(file_->Id() < 0, "Failed to open " + file_name_ + ".");
     layout_ = ReadTagLayout(file_->Id(), file_name_, tag_, meta_);
-    face_ = node_ = mass_ = 0;
+    face_ = 0;
   }
 
   template <typename T>
@@ -403,31 +438,23 @@ private:
       destination.insert(destination.end(), source.begin(), source.end());
   }
 
-  void ReadSegment(const std::uint64_t count,
-                   const std::uint64_t num_nodes,
-                   const std::uint64_t mass_size,
-                   FaceChunk& chunk)
+  /// Read faces [face_, face_ + count) into `chunk`.
+  void ReadSegment(const std::uint64_t count, FaceChunk& chunk)
   {
     const auto id = file_->Id();
-    auto keys = ReadFaceKeys(id,
-                             file_name_,
-                             tag_,
-                             layout_.num_face_nodes,
-                             face_,
-                             count,
-                             node_,
-                             num_nodes,
-                             meta_,
-                             &chunk.coords);
+    const auto node = layout_.node_offset[face_];
+    const auto num_nodes = layout_.node_offset[face_ + count] - node;
+    const auto mass_start = layout_.mass_offset[face_];
+    const auto mass_size = layout_.mass_offset[face_ + count] - mass_start;
+
+    auto keys = ReadFaceKeys(id, file_name_, tag_, layout_, face_, count, meta_, &chunk.coords);
     chunk.keys.insert(chunk.keys.end(), keys.begin(), keys.end());
-    chunk.num_nodes.insert(chunk.num_nodes.end(),
-                           layout_.num_face_nodes.begin() + static_cast<std::ptrdiff_t>(face_),
-                           layout_.num_face_nodes.begin() +
-                             static_cast<std::ptrdiff_t>(face_ + count));
+    for (std::uint64_t f = face_; f < face_ + count; ++f)
+      chunk.num_nodes.push_back(layout_.GetNumFaceNodes(f));
 
     std::vector<double> mass;
     OpenSnLogicalErrorIf(
-      not H5ReadDataset1DSlab(id, "groupset_0/" + tag_ + "/M_ij", mass_, mass_size, mass),
+      not H5ReadDataset1DSlab(id, "groupset_0/" + tag_ + "/M_ij", mass_start, mass_size, mass),
       "Failed to read the mass matrix of " + tag_ + " in " + file_name_ + ".");
     Append(chunk.mass, std::move(mass));
 
@@ -441,13 +468,13 @@ private:
 
       std::vector<double> mu;
       OpenSnLogicalErrorIf(
-        not H5ReadDataset1DSlab(id, group + "/mu", node_ * num_dirs, num_nodes * num_dirs, mu),
+        not H5ReadDataset1DSlab(id, group + "/mu", node * num_dirs, num_nodes * num_dirs, mu),
         "Failed to read direction cosines of " + group + " in " + file_name_ + ".");
       // The cosine depends only on the face normal; keep the first node's row of each face.
       std::uint64_t row = 0;
       for (std::uint64_t f = face_; f < face_ + count; ++f)
       {
-        const auto n = layout_.num_face_nodes[f];
+        const auto n = layout_.GetNumFaceNodes(f);
         for (std::uint64_t k = 1; k < n; ++k)
           for (std::uint64_t d = 0; d < num_dirs; ++d)
             OpenSnLogicalErrorIf(std::abs(mu[(row + k) * num_dirs + d] - mu[row * num_dirs + d]) >
@@ -463,7 +490,7 @@ private:
       std::vector<double> psi;
       const auto stride = num_dirs * num_groups;
       OpenSnLogicalErrorIf(
-        not H5ReadDataset1DSlab(id, group + "/surf_flux", node_ * stride, num_nodes * stride, psi),
+        not H5ReadDataset1DSlab(id, group + "/surf_flux", node * stride, num_nodes * stride, psi),
         "Failed to read the angular flux of " + group + " in " + file_name_ + ".");
       Append(chunk.psi[gs], std::move(psi));
     }
@@ -480,8 +507,6 @@ private:
   std::string file_name_;
   TagLayout layout_;
   std::uint64_t face_ = 0;
-  std::uint64_t node_ = 0;
-  std::uint64_t mass_ = 0;
 };
 
 std::vector<int>
@@ -684,8 +709,7 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
   const auto num_ranks = comm.size();
 
   // Rank 0 discovers the file set and its reference metadata.
-  FileMetadata reference;
-  std::uint64_t num_partitions = 0;
+  FileMetadata reference_data;
   std::vector<char> root_error;
   if (rank == 0)
   {
@@ -694,8 +718,7 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
       const auto file_name = PartitionFileName(file_base, 0);
       const H5FileHandle file(H5Fopen(file_name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
       OpenSnLogicalErrorIf(file.Id() < 0, "Failed to open " + file_name + ".");
-      reference = ReadFileMetadata(file.Id(), file_name);
-      num_partitions = reference.num_partitions;
+      reference_data = ReadFileMetadata(file.Id(), file_name);
     }
     catch (const std::exception& error)
     {
@@ -708,34 +731,15 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
     throw std::logic_error(operation +
                            " failed: " + std::string(root_error.begin(), root_error.end()));
 
-  std::vector<std::uint64_t> packed_ints;
-  std::vector<double> packed_reals;
-  if (rank == 0)
-  {
-    packed_ints = PackMetadata(reference, num_partitions);
-    packed_reals = {reference.centroid_origin[0],
-                    reference.centroid_origin[1],
-                    reference.centroid_origin[2],
-                    reference.centroid_spacing};
-  }
-  BroadcastVector(comm, packed_ints, 0);
-  BroadcastVector(comm, packed_reals, 0);
-  num_partitions = packed_ints[0];
-  reference.num_partitions = num_partitions;
-  reference.adjoint = packed_ints[1] != 0;
-  const auto num_groupsets = (packed_ints.size() - 2) / 2;
-  reference.num_dirs.assign(packed_ints.begin() + 2,
-                            packed_ints.begin() + 2 + static_cast<std::ptrdiff_t>(num_groupsets));
-  reference.num_groups.assign(packed_ints.begin() + 2 + static_cast<std::ptrdiff_t>(num_groupsets),
-                              packed_ints.end());
-  reference.centroid_origin = {packed_reals[0], packed_reals[1], packed_reals[2]};
-  reference.centroid_spacing = packed_reals[3];
+  BroadcastFileMetadata(comm, reference_data);
+  const auto num_partitions = reference_data.num_partitions;
+  const auto num_groupsets = reference_data.num_dirs.size();
 
   DistributedSurfaceData data;
-  data.adjoint = reference.adjoint;
+  data.adjoint = reference_data.adjoint;
   data.num_partitions = num_partitions;
-  data.centroid_origin = reference.centroid_origin;
-  data.centroid_spacing = reference.centroid_spacing;
+  data.centroid_origin = reference_data.centroid_origin;
+  data.centroid_spacing = reference_data.centroid_spacing;
 
   // File k is read by rank k mod P.
   std::vector<std::uint64_t> file_ids;
@@ -755,39 +759,42 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
     {
       const H5FileHandle file(H5Fopen(file_name.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT));
       OpenSnLogicalErrorIf(file.Id() < 0, "Failed to open " + file_name + ".");
-      const auto mismatch = CompareFileMetadata(reference, ReadFileMetadata(file.Id(), file_name));
+      const auto mismatch =
+        CompareFileMetadata(reference_data, ReadFileMetadata(file.Id(), file_name));
       OpenSnLogicalErrorIf(not mismatch.empty(),
                            file_name + " does not belong to the file set: " + mismatch + ".");
 
       for (size_t s = 0; s < surfaces.size(); ++s)
       {
-        const auto& tag = surfaces[s];
-        const auto layout = ReadTagLayout(file.Id(), file_name, tag, reference);
-        if (layout.num_face_nodes.empty())
+        const auto& surface_tag = surfaces[s];
+        const auto layout = ReadTagLayout(file.Id(), file_name, surface_tag, reference_data);
+        if (layout.GetNumFaces() == 0)
           continue;
 
-        auto quadrature = ReadQuadrature(file.Id(), file_name, tag, reference);
+        // Every non-empty tag of every file must use the same quadrature per groupset. The
+        // quadrature is read from the first node of each tag only; the writer stores identical
+        // copies at every node.
+        auto quadrature = ReadQuadrature(file.Id(), file_name, surface_tag, reference_data);
         if (not local_quadrature.has_value())
           local_quadrature = std::move(quadrature);
         else
           OpenSnLogicalErrorIf(not SameQuadrature(*local_quadrature, quadrature),
-                               "The quadrature of " + tag + " in " + file_name +
+                               "The quadrature of " + surface_tag + " in " + file_name +
                                  " differs from the rest of the file set.");
 
-        const auto keys = ReadFaceKeys(file.Id(),
-                                       file_name,
-                                       tag,
-                                       layout.num_face_nodes,
-                                       0,
-                                       layout.num_face_nodes.size(),
-                                       0,
-                                       layout.num_nodes,
-                                       reference,
-                                       nullptr);
-        for (size_t f = 0; f < keys.size(); ++f)
+        const auto face_keys = ReadFaceKeys(file.Id(),
+                                            file_name,
+                                            surface_tag,
+                                            layout,
+                                            0,
+                                            layout.GetNumFaces(),
+                                            reference_data,
+                                            nullptr);
+        for (size_t f = 0; f < face_keys.size(); ++f)
         {
-          const auto n = layout.num_face_nodes[f];
-          auto* totals = &send_totals[3 * (s * num_ranks + SurfaceFaceOwner(keys[f], num_ranks))];
+          const auto n = layout.GetNumFaceNodes(f);
+          auto* totals =
+            &send_totals[3 * (s * num_ranks + SurfaceFaceOwner(face_keys[f], num_ranks))];
           totals[0] += 1;
           totals[1] += n;
           totals[2] += n * n;
@@ -845,12 +852,12 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
         quadrature = (*local_quadrature)[gs];
       else
       {
-        quadrature.num_dirs = reference.num_dirs[gs];
-        quadrature.num_groups = reference.num_groups[gs];
-        quadrature.omega.resize(3 * quadrature.num_dirs);
+        quadrature.num_dirs = reference_data.num_dirs[gs];
+        quadrature.num_groups = reference_data.num_groups[gs];
+        quadrature.omegas.resize(3 * quadrature.num_dirs);
         quadrature.weights.resize(quadrature.num_dirs);
       }
-      comm.broadcast(quadrature.omega.data(), static_cast<int>(quadrature.omega.size()), source);
+      comm.broadcast(quadrature.omegas.data(), static_cast<int>(quadrature.omegas.size()), source);
       comm.broadcast(
         quadrature.weights.data(), static_cast<int>(quadrature.weights.size()), source);
     }
@@ -865,8 +872,8 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
   // Streaming pass: send bounded chunks of faces to their owners.
   for (size_t s = 0; s < surfaces.size(); ++s)
   {
-    const auto& tag = surfaces[s];
-    auto& shard = data.surfaces[tag];
+    const auto& surface_tag = surfaces[s];
+    auto& shard = data.surfaces[surface_tag];
     const auto num_faces = recv_totals[3 * s];
     const auto num_nodes = recv_totals[3 * s + 1];
     shard.index.reserve(num_faces);
@@ -882,7 +889,7 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
       shard.groupsets[gs].psi.reserve(num_nodes * quadrature.num_dirs * quadrature.num_groups);
     }
 
-    TagReader reader(file_base, file_ids, tag, reference, data.groupsets);
+    TagReader reader(file_base, file_ids, surface_tag, reference_data, data.groupsets);
     while (true)
     {
       FaceChunk chunk;
@@ -910,12 +917,12 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
     }
 
     if (shard.GetNumFaces() != num_faces)
-      error = "received " + std::to_string(shard.GetNumFaces()) + " faces of " + tag +
+      error = "received " + std::to_string(shard.GetNumFaces()) + " faces of " + surface_tag +
               ", expected " + std::to_string(num_faces);
     std::sort(shard.index.begin(), shard.index.end());
     for (size_t i = 1; i < shard.index.size() and error.empty(); ++i)
       if (shard.index[i].first == shard.index[i - 1].first)
-        error = "surface " + tag +
+        error = "surface " + surface_tag +
                 " contains two faces with the same centroid key. Face centroids must differ by "
                 "more than the centroid spacing " +
                 std::to_string(data.centroid_spacing) + ".";
@@ -934,27 +941,27 @@ ReadDistributedSurfaceAngularFluxes(const std::string& file_base,
 namespace
 {
 
-/// Indices of the directions of `omega`, three components per direction, sorted by z component.
+/// Indices of the directions of `omegas`, three components per direction, sorted by z component.
 std::vector<std::uint64_t>
-SortDirectionsByZ(const std::vector<double>& omega)
+SortDirectionsByZ(const std::vector<double>& omegas)
 {
-  std::vector<std::uint64_t> order(omega.size() / 3);
+  std::vector<std::uint64_t> order(omegas.size() / 3);
   for (std::uint64_t i = 0; i < order.size(); ++i)
     order[i] = i;
   std::sort(order.begin(),
             order.end(),
-            [&omega](const std::uint64_t a, const std::uint64_t b)
-            { return omega[3 * a + 2] < omega[3 * b + 2]; });
+            [&omegas](const std::uint64_t a, const std::uint64_t b)
+            { return omegas[3 * a + 2] < omegas[3 * b + 2]; });
   return order;
 }
 
 /**
- * Return the direction of `omega` nearest to `query` in Euclidean distance, skipping `exclude`, and
- * that distance. `order` is `SortDirectionsByZ(omega)`; the search scans outward from the z
+ * Return the direction of `omegas` nearest to `query` in Euclidean distance, skipping `exclude`,
+ * and that distance. `order` is `SortDirectionsByZ(omegas)`; the search scans outward from the z
  * component of `query` and stops once the z difference alone exceeds the best distance.
  */
 std::pair<std::uint64_t, double>
-NearestDirection(const std::vector<double>& omega,
+NearestDirection(const std::vector<double>& omegas,
                  const std::vector<std::uint64_t>& order,
                  const double* query,
                  const std::uint64_t exclude)
@@ -964,7 +971,7 @@ NearestDirection(const std::vector<double>& omega,
   {
     if (j == exclude)
       return;
-    const double* w = &omega[3 * j];
+    const double* w = &omegas[3 * j];
     const double distance =
       std::sqrt((w[0] - query[0]) * (w[0] - query[0]) + (w[1] - query[1]) * (w[1] - query[1]) +
                 (w[2] - query[2]) * (w[2] - query[2]));
@@ -975,30 +982,30 @@ NearestDirection(const std::vector<double>& omega,
     static_cast<size_t>(std::lower_bound(order.begin(),
                                          order.end(),
                                          query[2],
-                                         [&omega](const std::uint64_t j, const double z)
-                                         { return omega[3 * j + 2] < z; }) -
+                                         [&omegas](const std::uint64_t j, const double z)
+                                         { return omegas[3 * j + 2] < z; }) -
                         order.begin());
-  for (size_t k = start; k < order.size() and omega[3 * order[k] + 2] - query[2] <= best.second;
+  for (size_t k = start; k < order.size() and omegas[3 * order[k] + 2] - query[2] <= best.second;
        ++k)
     Visit(order[k]);
-  for (size_t k = start; k > 0 and query[2] - omega[3 * order[k - 1] + 2] <= best.second; --k)
+  for (size_t k = start; k > 0 and query[2] - omegas[3 * order[k - 1] + 2] <= best.second; --k)
     Visit(order[k - 1]);
   return best;
 }
 
 /**
- * Distance from each direction of `omega` to its nearest other direction, capped at 2, the largest
+ * Distance from each direction of `omegas` to its nearest other direction, capped at 2, the largest
  * distance between unit vectors. Throws if two directions coincide.
  */
 std::vector<double>
-DirectionSpacing(const std::vector<double>& omega,
+DirectionSpacing(const std::vector<double>& omegas,
                  const std::vector<std::uint64_t>& order,
                  const std::string& description)
 {
   std::vector<double> spacing(order.size());
   for (std::uint64_t j = 0; j < spacing.size(); ++j)
   {
-    spacing[j] = std::min(2.0, NearestDirection(omega, order, &omega[3 * j], j).second);
+    spacing[j] = std::min(2.0, NearestDirection(omegas, order, &omegas[3 * j], j).second);
     OpenSnInvalidArgumentIf(not(spacing[j] > 0.0),
                             "The " + description + " contains duplicate directions.");
   }
@@ -1022,24 +1029,24 @@ BuildSameDirectionMap(const SurfaceQuadrature& from,
                           "The forward and adjoint data have different direction or group counts "
                           "in " +
                             context + ".");
-  for (const auto* omega : {&from.omega, &to.omega})
+  for (const auto* omegas : {&from.omegas, &to.omegas})
     OpenSnInvalidArgumentIf(
-      omega->size() != 3 * from.num_dirs or
+      omegas->size() != 3 * from.num_dirs or
         not std::all_of(
-          omega->begin(), omega->end(), [](const double value) { return std::isfinite(value); }),
+          omegas->begin(), omegas->end(), [](const double value) { return std::isfinite(value); }),
       "The forward or adjoint directions of " + context + " are missing or not finite.");
 
-  const auto from_order = SortDirectionsByZ(from.omega);
-  const auto to_order = SortDirectionsByZ(to.omega);
-  DirectionSpacing(from.omega, from_order, "forward quadrature of " + context);
-  const auto to_spacing = DirectionSpacing(to.omega, to_order, "adjoint quadrature of " + context);
+  const auto from_order = SortDirectionsByZ(from.omegas);
+  const auto to_order = SortDirectionsByZ(to.omegas);
+  DirectionSpacing(from.omegas, from_order, "forward quadrature of " + context);
+  const auto to_spacing = DirectionSpacing(to.omegas, to_order, "adjoint quadrature of " + context);
 
   std::vector<std::uint64_t> map(from.num_dirs);
   std::vector<bool> used(to.num_dirs, false);
   for (std::uint64_t d = 0; d < from.num_dirs; ++d)
   {
     const auto [match, distance] =
-      NearestDirection(to.omega, to_order, &from.omega[3 * d], to.num_dirs);
+      NearestDirection(to.omegas, to_order, &from.omegas[3 * d], to.num_dirs);
     if (not(distance <= direction_match_tolerance * to_spacing[match]))
     {
       std::ostringstream message;
@@ -1160,11 +1167,11 @@ EndsWith(const std::string& value, const std::string& suffix)
 
 } // namespace
 
-std::vector<SurfaceResponseTerm>
-EvaluateSurfaceResponseTerms(const DistributedSurfaceData& forward,
-                             const DistributedSurfaceData& adjoint,
-                             const std::vector<std::string>& surfaces,
-                             const mpi::Communicator& comm)
+std::vector<SurfaceResponse>
+ComputeSurfaceResponses(const DistributedSurfaceData& forward,
+                        const DistributedSurfaceData& adjoint,
+                        const std::vector<std::string>& surfaces,
+                        const mpi::Communicator& comm)
 {
   OpenSnInvalidArgumentIf(forward.surfaces.empty() or adjoint.surfaces.empty(),
                           "Both data sets must contain surface angular fluxes.");
@@ -1186,62 +1193,68 @@ EvaluateSurfaceResponseTerms(const DistributedSurfaceData& forward,
     direction_maps.push_back(BuildSameDirectionMap(
       forward.groupsets[gs], adjoint.groupsets[gs], "groupset " + std::to_string(gs)));
 
+  // Map the available surfaces by name from the forward data.
   // Interior surfaces are stored as <name>_u and <name>_d; any other tag is a boundary.
-  std::map<std::string, bool> available;
-  for (const auto& entry : forward.surfaces)
+  // ex; available_surfs = { "inter_x" -> true, "xmax" -> false, "xmin" -> false }
+  std::map<std::string, bool> available_surfs;
+  for (const auto& surface : forward.surfaces)
   {
-    const auto& tag = entry.first;
-    std::string name = tag;
+    const auto& surface_tag = surface.first;
+    std::string name = surface_tag;
     bool interior = false;
-    if (EndsWith(tag, "_u") or EndsWith(tag, "_d"))
+    if (EndsWith(surface_tag, "_u") or EndsWith(surface_tag, "_d"))
     {
-      name = tag.substr(0, tag.size() - 2);
-      const auto other = name + (EndsWith(tag, "_u") ? "_d" : "_u");
+      name = surface_tag.substr(0, surface_tag.size() - 2);
+      const auto other = name + (EndsWith(surface_tag, "_u") ? "_d" : "_u");
       OpenSnInvalidArgumentIf(forward.surfaces.count(other) == 0,
-                              "Interior surface tag " + tag + " was read without " + other +
+                              "Interior surface tag " + surface_tag + " was read without " + other +
                                 ". Both sides of an interior surface are required.");
       interior = true;
     }
-    const auto [it, inserted] = available.emplace(name, interior);
+    const auto [it, inserted] = available_surfs.emplace(name, interior);
     OpenSnInvalidArgumentIf(not inserted and it->second != interior,
                             "Surface name " + name +
                               " refers to both a boundary and an interior surface.");
   }
 
-  std::vector<std::pair<std::string, bool>> selected;
+  std::vector<std::pair<std::string, bool>> selected_surfs;
   if (surfaces.empty())
-    selected.assign(available.begin(), available.end());
+    // If no surfaces are specified all are used.
+    selected_surfs.assign(available_surfs.begin(), available_surfs.end());
   else
   {
-    std::set<std::string> seen;
-    for (const auto& name : surfaces)
+    // Guard for when a surface is requested multiple times.
+    std::set<std::string> parsed_surfs;
+    for (const auto& surface : surfaces)
     {
-      const auto it = available.find(name);
-      OpenSnInvalidArgumentIf(it == available.end(),
-                              "Surface " + name + " is not in the forward data.");
-      OpenSnInvalidArgumentIf(not seen.insert(name).second,
-                              "Surface " + name + " was requested more than once.");
-      selected.emplace_back(*it);
+      const auto it = available_surfs.find(surface);
+      OpenSnInvalidArgumentIf(it == available_surfs.end(),
+                              "Surface " + surface + " is not in the forward data.");
+      OpenSnInvalidArgumentIf(not parsed_surfs.insert(surface).second,
+                              "Surface " + surface + " was requested more than once.");
+      selected_surfs.emplace_back(*it);
     }
   }
-  for (const auto& [name, interior] : selected)
-    for (const auto& tag : interior ? std::vector<std::string>{name + "_u", name + "_d"}
-                                    : std::vector<std::string>{name})
-      OpenSnInvalidArgumentIf(adjoint.surfaces.count(tag) == 0,
-                              "Surface " + name + " requires tag " + tag + " in the adjoint data.");
 
-  // Per surface: upwind and downwind terms, and counts of anchor faces without a partner, partner
-  // faces without an anchor, and matched faces with different node locations.
-  const auto num_surfaces = selected.size();
-  std::vector<double> local_terms(2 * num_surfaces, 0.0);
+  for (const auto& [name, interior] : selected_surfs)
+    for (const auto& surface_tag : interior ? std::vector<std::string>{name + "_u", name + "_d"}
+                                            : std::vector<std::string>{name})
+      OpenSnInvalidArgumentIf(adjoint.surfaces.count(surface_tag) == 0,
+                              "Surface " + name + " requires tag " + surface_tag +
+                                " in the adjoint data.");
+
+  // Per surface: outgoing and incoming contributions, and counts of anchor faces without a partner,
+  // partner faces without an anchor, and matched faces with different node locations.
+  const auto num_surfaces = selected_surfs.size();
+  std::vector<double> local_responses(2 * num_surfaces, 0.0);
   std::vector<std::uint64_t> local_counts(3 * num_surfaces, 0);
   std::vector<std::uint64_t> perm_fd, perm_au, perm_ad;
 
   for (size_t s = 0; s < num_surfaces; ++s)
   {
-    const auto& [name, interior] = selected[s];
-    double& upwind = local_terms[2 * s];
-    double& downwind = local_terms[2 * s + 1];
+    const auto& [name, interior] = selected_surfs[s];
+    double& outgoing = local_responses[2 * s];
+    double& incoming = local_responses[2 * s + 1];
     std::uint64_t& missing = local_counts[3 * s];
     std::uint64_t& extra = local_counts[3 * s + 1];
     std::uint64_t& mismatched = local_counts[3 * s + 2];
@@ -1277,17 +1290,17 @@ EvaluateSurfaceResponseTerms(const DistributedSurfaceData& forward,
           const double* psi_adj = FacePsi(partner, *fp, gs, adjoint.groupsets[gs]);
           for (std::uint64_t d = 0; d < num_dirs; ++d)
             if (mu[d] > 0.0)
-              upwind += mu[d] * quadrature.weights[d] *
-                        FaceProduct(mass,
-                                    n,
-                                    psi,
-                                    nullptr,
-                                    d,
-                                    psi_adj,
-                                    perm_ad,
-                                    direction_maps[gs][d],
-                                    num_dirs,
-                                    quadrature.num_groups);
+              outgoing += mu[d] * quadrature.weights[d] *
+                          FaceProduct(mass,
+                                      n,
+                                      psi,
+                                      nullptr,
+                                      d,
+                                      psi_adj,
+                                      perm_ad,
+                                      direction_maps[gs][d],
+                                      num_dirs,
+                                      quadrature.num_groups);
         }
       }
       extra += partner.GetNumFaces() - matched;
@@ -1341,11 +1354,11 @@ EvaluateSurfaceResponseTerms(const DistributedSurfaceData& forward,
           // Forward leaves the `_u` cell and the adjoint leaves the `_d` cell for mu > 0, and the
           // reverse for mu < 0.
           if (mu[d] > 0.0)
-            upwind +=
+            outgoing +=
               weight *
               FaceProduct(mass, n, psi_u, nullptr, d, psi_adj_d, perm_ad, da, num_dirs, num_groups);
           else if (mu[d] < 0.0)
-            downwind +=
+            incoming +=
               weight * FaceProduct(
                          mass, n, psi_d, &perm_fd, d, psi_adj_u, perm_au, da, num_dirs, num_groups);
         }
@@ -1355,11 +1368,11 @@ EvaluateSurfaceResponseTerms(const DistributedSurfaceData& forward,
              (adj_d.GetNumFaces() - matched[2]);
   }
 
-  std::vector<double> global_terms(local_terms.size(), 0.0);
+  std::vector<double> global_responses(local_responses.size(), 0.0);
   std::vector<std::uint64_t> global_counts(local_counts.size(), 0);
-  comm.all_reduce(local_terms.data(),
-                  static_cast<int>(local_terms.size()),
-                  global_terms.data(),
+  comm.all_reduce(local_responses.data(),
+                  static_cast<int>(local_responses.size()),
+                  global_responses.data(),
                   mpi::op::sum<double>());
   comm.all_reduce(local_counts.data(),
                   static_cast<int>(local_counts.size()),
@@ -1373,7 +1386,7 @@ EvaluateSurfaceResponseTerms(const DistributedSurfaceData& forward,
     const auto* counts = &global_counts[3 * s];
     if (counts[0] == 0 and counts[1] == 0 and counts[2] == 0)
       continue;
-    message += " Surface " + selected[s].first + ": " + std::to_string(counts[0]) +
+    message += " Surface " + selected_surfs[s].first + ": " + std::to_string(counts[0]) +
                " forward faces without a matching face, " + std::to_string(counts[1]) +
                " faces without a matching forward face, and " + std::to_string(counts[2]) +
                " matched faces with different node locations.";
@@ -1382,12 +1395,14 @@ EvaluateSurfaceResponseTerms(const DistributedSurfaceData& forward,
                        "The forward and adjoint surface data do not cover the same faces." +
                          message);
 
-  std::vector<SurfaceResponseTerm> terms;
-  terms.reserve(num_surfaces);
+  std::vector<SurfaceResponse> surface_responses;
+  surface_responses.reserve(num_surfaces);
   for (size_t s = 0; s < num_surfaces; ++s)
-    terms.push_back(
-      {selected[s].first, selected[s].second, global_terms[2 * s], global_terms[2 * s + 1]});
-  return terms;
+    surface_responses.push_back({selected_surfs[s].first,
+                                 selected_surfs[s].second,
+                                 global_responses[2 * s],
+                                 global_responses[2 * s + 1]});
+  return surface_responses;
 }
 
 } // namespace opensn

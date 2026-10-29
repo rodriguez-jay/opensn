@@ -602,9 +602,17 @@ WrapLBS(py::module& slv)
     -----
     Requires ``options.save_angular_flux=True``. Collective over all ranks; surface selections may
     differ by rank. Each rank writes ``<file_base><rank>.h5``. The file records whether the problem
-    is in adjoint mode. After an adjoint steady-state solve, the stored angular flux is the adjoint
-    flux for the listed direction, so forward and adjoint data with the same indices refer to the
-    same direction.
+    is in adjoint mode. An adjoint problem must have completed an adjoint steady-state or
+    k-eigenvalue solve, which leaves the stored angular flux as the adjoint flux for the listed
+    direction, so forward and adjoint data with the same indices refer to the same direction.
+    Restart data are loaded in the internal sweep orientation, so execute an adjoint solver after
+    a restart read before writing.
+
+    Raises
+    ------
+    ValueError
+        If ``options.save_angular_flux`` is false, or if the problem is in adjoint mode and its
+        solution is not in the physical orientation left by an adjoint solve.
     )",
     py::arg("file_base"),
     py::arg("boundary_surfaces") = std::vector<std::string>{},

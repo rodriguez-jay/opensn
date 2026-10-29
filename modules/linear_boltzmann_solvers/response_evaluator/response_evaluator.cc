@@ -585,18 +585,20 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_data,
   const auto& fwd_surf_psi = GetSurfaceData(fwd_data);
   const auto& adj_surf_psi = GetSurfaceData(adj_data);
 
-  const auto terms = EvaluateSurfaceResponseTerms(fwd_surf_psi, adj_surf_psi, surfaces, mpi_comm);
+  const auto surface_responses =
+    ComputeSurfaceResponses(fwd_surf_psi, adj_surf_psi, surfaces, mpi_comm);
 
   double response = 0.0;
-  for (const auto& term : terms)
+  for (const auto& surface_response : surface_responses)
   {
-    const auto total = term.upwind + term.downwind;
+    const auto total = surface_response.outgoing + surface_response.incoming;
     response += total;
-    if (term.interior)
-      log.Log0Verbose1() << "Surface " << term.surface << ": upwind " << term.upwind
-                         << ", downwind " << term.downwind << ", total " << total;
+    if (surface_response.interior)
+      log.Log0Verbose1() << "Surface " << surface_response.name << ": outgoing "
+                         << surface_response.outgoing << ", incoming " << surface_response.incoming
+                         << ", total " << total;
     else
-      log.Log0Verbose1() << "Boundary " << term.surface << ": " << total;
+      log.Log0Verbose1() << "Boundary " << surface_response.name << ": " << total;
   }
   return response;
 }

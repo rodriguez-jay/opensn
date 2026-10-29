@@ -368,6 +368,13 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
 {
   OpenSnInvalidArgumentIf(not do_problem.SaveAngularFluxEnabled(),
                           "WriteSurfaceAngularFluxes requires `options.save_angular_flux=true`.");
+  // Adjoint data are paired with forward data by direction, so the adjoint flux must be in the
+  // physical orientation that an adjoint solve leaves. Restart data are loaded in the internal
+  // sweep orientation.
+  OpenSnInvalidArgumentIf(do_problem.IsAdjoint() and not do_problem.IsAdjointSolutionReoriented(),
+                          "WriteSurfaceAngularFluxes requires the adjoint solution in physical "
+                          "orientation. Execute an adjoint solver before writing; restart data are "
+                          "loaded in the internal sweep orientation.");
 
   // Get problem information
   const auto& grid = do_problem.GetGrid();

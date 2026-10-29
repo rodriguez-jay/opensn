@@ -104,8 +104,9 @@ public:
    * Evaluate the surface response of forward and adjoint surface angular fluxes added with
    * SetDataOptions.
    *
-   * Returns the sum over the selected surfaces of the terms defined in
-   * EvaluateSurfaceResponseTerms. Per-surface upwind and downwind terms are logged at verbosity 1.
+   * Returns the sum over the selected surfaces of the surface responses defined in
+   * ComputeSurfaceResponses. Per-surface outgoing and incoming contributions are logged at
+   * verbosity 1.
    *
    * \param fwd_data_name Name of the forward data set.
    * \param adj_data_name Name of the adjoint data set.

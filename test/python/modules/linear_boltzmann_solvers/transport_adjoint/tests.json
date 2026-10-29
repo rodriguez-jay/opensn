@@ -213,6 +213,31 @@
     ]
   },
   {
+    "file": "response_2d_surf_restart.py",
+    "comment": "Adjoint surface export is rejected after a restart read until the adjoint solver executes; surface response from a restart-writing solve and from the restarted solve equals the forward QoI",
+    "num_procs": 2,
+    "checks": [
+      {
+        "type": "KeyValuePair",
+        "key": "Forward QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Surface QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Restarted Surface QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      }
+    ]
+  },
+  {
     "file": "response_2d_boundary_source.py",
     "comment": "2D adjoint response to an isotropic boundary source equals the forward QoI",
     "num_procs": 2,
