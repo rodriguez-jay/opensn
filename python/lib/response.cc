@@ -288,10 +288,13 @@ WrapResEval(py::module& response)
         Prefix map with optional keys:
           - flux_moments: str
               Prefix for the adjoint flux-moment files that :py:meth:`EvaluateResponse` folds
-              against the forward sources. Written with the current rank count and partitioning.
+              against the forward sources.
           - angular_fluxes: str
-              Prefix for the adjoint angular-flux files needed for boundary sources. Written with
-              the current rank count and partitioning.
+              Prefix for the adjoint angular-flux files needed for boundary sources.
+
+              Like the surface files, flux-moment and angular-flux files may have been written by
+              any number of ranks with any partitioning of the same mesh. Each rank of this run
+              receives the values of its own cells and evaluates its part of the response.
           - surface_angular_fluxes: str
               Prefix for the files written by ``WriteSurfaceAngularFluxes``, used by
               :py:meth:`EvaluateSurfaceResponse`. All files of the prefix are read, whatever

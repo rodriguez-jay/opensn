@@ -15,8 +15,10 @@ this identity is exact when each trace is taken from its upwind side.
 The forward solution is computed on a mesh partitioned at x = 6, so the two sides of every face of
 the plane are written by different ranks. The adjoint solution is computed on a mesh of the same
 geometry partitioned in y. ResponseEvaluator.EvaluateSurfaceResponse must match the faces by
-location across the two file sets and reproduce the volumetric QoIs. All three values are checked
-against the response_2d_surf.py gold value.
+location across the two file sets and reproduce the volumetric QoIs. A second evaluator on the
+forward partition reads the adjoint flux moments written on the adjoint partition, so each cell's
+values must reach the rank that owns it there, and its adjoint response must equal the volumetric
+QoI as well. All four values are checked against the response_2d_surf.py gold value.
 """
 
 import os
@@ -188,12 +190,30 @@ if __name__ == "__main__":
     adjoint_qoi = evaluator.EvaluateResponse("detector")
     surface_qoi = evaluator.EvaluateSurfaceResponse("forward", "adjoint")
 
+    # The adjoint flux moments were written on the adjoint partition; read them on the forward one.
+    cross_evaluator = ResponseEvaluator(problem=forward_problem)
+    cross_evaluator.SetOptions(
+        sources={
+            "material": [
+                {"block_id": source_block_id, "strength": [source_strength / source_area]}
+            ]
+        },
+        data=[{"name": "detector", "file_prefixes": {"flux_moments": adjoint_flux_prefix}}],
+    )
+    cross_partition_qoi = cross_evaluator.EvaluateResponse("detector")
+
     if rank == 0:
         print(f"Forward QoI={forward_qoi:.8e}")
         print(f"Adjoint QoI={adjoint_qoi:.8e}")
         print(f"Repartitioned Surface QoI={surface_qoi:.8e}")
         # Relative error of the surface identity: the surface QoI must equal the forward QoI.
         print(f"Repartitioned identity error={abs(surface_qoi / forward_qoi - 1.0):.3e}")
+        print(f"Cross-partition QoI={cross_partition_qoi:.8e}")
+        # The same adjoint flux on another partition: only the summation order differs.
+        print(
+            "Cross-partition difference="
+            f"{abs(cross_partition_qoi / adjoint_qoi - 1.0):.3e}"
+        )
 
     barrier()
     for file_prefix in (forward_surface_prefix, adjoint_surface_prefix, adjoint_flux_prefix):
