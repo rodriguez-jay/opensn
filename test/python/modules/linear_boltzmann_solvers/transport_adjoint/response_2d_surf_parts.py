@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-2D half-range surface response with no return flux across the surface.
+2D surface response parts with no return flux across the surface.
 
 The interior plane x = 6 separates a pure-scattering source region (x < 1, 4 < y < 6) from a purely
 absorbing detector facing it (x > 9.5, 4 < y < 6) in a void background, and all exterior boundaries
@@ -12,13 +12,13 @@ forward angular flux leaving the inter_x_d side is zero. The surface response ac
 
     QoI = int_S int_4pi (Omega . n) psi(r, Omega) psi^dagger(r, Omega) dOmega dA,   n = +x,
 
-then has only its positive-x half. This test checks that
+then has only its positive-x part. This test checks that, for the interior surface inter_x,
 
-* the full-range interior response (data read as "inter_x") equals the volumetric forward QoI;
-* the half-range response of the forward inter_x_u side against the adjoint inter_x_d side, the
-  part carried in the positive x direction, also equals the volumetric forward QoI;
-* the half-range response of the forward inter_x_d side against the adjoint inter_x_u side, the
-  part carried in the negative x direction, is zero.
+* the total response equals the volumetric forward QoI;
+* the outgoing part, carried in the positive x direction (the forward inter_x_u side against the
+  adjoint inter_x_d side), also equals the volumetric forward QoI;
+* the incoming part, carried in the negative x direction (the forward inter_x_d side against the
+  adjoint inter_x_u side), is zero.
 
 The mesh is partitioned at the plane, so the two sides of every face are on different ranks.
 """
@@ -114,9 +114,9 @@ if __name__ == "__main__":
             options={"save_angular_flux": True},
         )
 
-    forward_surface_prefix = "HalfRangeFwdSurf_p"
-    adjoint_surface_prefix = "HalfRangeAdjSurf_p"
-    adjoint_flux_prefix = "HalfRangeAdjFluxMoments_p"
+    forward_surface_prefix = "SurfPartsFwdSurf_p"
+    adjoint_surface_prefix = "SurfPartsAdjSurf_p"
+    adjoint_flux_prefix = "SurfPartsAdjFluxMoments_p"
     interior_surfaces = {"inter_x": ("x", plane)}
 
     # Forward solve, volumetric QoI, and forward surface data.
@@ -164,7 +164,7 @@ if __name__ == "__main__":
             "surfaces": [surface],
         }
 
-    # "inter_x" reads both sides; a single side's tag reads that side as a half-range surface.
+    # "inter_x" reads both sides.
     evaluator = ResponseEvaluator(problem=adjoint_problem)
     evaluator.SetOptions(
         sources={
@@ -176,27 +176,33 @@ if __name__ == "__main__":
             {"name": "detector", "file_prefixes": {"flux_moments": adjoint_flux_prefix}},
             surface_data("forward", forward_surface_prefix, "inter_x"),
             surface_data("adjoint", adjoint_surface_prefix, "inter_x"),
-            surface_data("forward_u", forward_surface_prefix, "inter_x_u"),
-            surface_data("adjoint_d", adjoint_surface_prefix, "inter_x_d"),
-            surface_data("forward_d", forward_surface_prefix, "inter_x_d"),
-            surface_data("adjoint_u", adjoint_surface_prefix, "inter_x_u"),
         ],
     )
     adjoint_qoi = evaluator.EvaluateResponse("detector")
-    full_range_qoi = evaluator.EvaluateSurfaceResponse("forward", "adjoint")
-    outgoing_qoi = evaluator.EvaluateSurfaceResponse("forward_u", "adjoint_d")
-    returning_qoi = evaluator.EvaluateSurfaceResponse("forward_d", "adjoint_u")
+    surface = evaluator.EvaluateSurfaceResponse("forward", "adjoint", ["inter_x"])["inter_x"]
+    total_qoi = surface["total"]
+    outgoing_qoi = surface["outgoing"]
+    # The part carried in the negative x direction; incoming is its negative along +x.
+    returning_qoi = -surface["incoming"]
+
+    # A single side of an interior surface is rejected: a response needs both sides.
+    lone_side_rejected = 0
+    try:
+        evaluator.SetOptions(data=[surface_data("lone", forward_surface_prefix, "inter_x_u")])
+    except ValueError as error:
+        lone_side_rejected = int("without its other side" in str(error))
 
     if rank == 0:
         print(f"Forward QoI={forward_qoi:.8e}")
         print(f"Adjoint QoI={adjoint_qoi:.8e}")
-        print(f"Full-range QoI={full_range_qoi:.8e}")
-        print(f"Outgoing half-range QoI={outgoing_qoi:.8e}")
-        print(f"Returning half-range QoI={returning_qoi:.8e}")
+        print(f"Total QoI={total_qoi:.8e}")
+        print(f"Outgoing part QoI={outgoing_qoi:.8e}")
+        print(f"Returning part QoI={returning_qoi:.8e}")
         # Relative errors of the surface identity, and the returning part relative to the QoI.
-        print(f"Full-range identity error={abs(full_range_qoi / forward_qoi - 1.0):.3e}")
-        print(f"Half-range identity error={abs(outgoing_qoi / forward_qoi - 1.0):.3e}")
+        print(f"Total identity error={abs(total_qoi / forward_qoi - 1.0):.3e}")
+        print(f"Outgoing part identity error={abs(outgoing_qoi / forward_qoi - 1.0):.3e}")
         print(f"Returning fraction={abs(returning_qoi / forward_qoi):.3e}")
+        print(f"Lone side rejected={lone_side_rejected}")
 
     barrier()
     for file_prefix in (forward_surface_prefix, adjoint_surface_prefix, adjoint_flux_prefix):

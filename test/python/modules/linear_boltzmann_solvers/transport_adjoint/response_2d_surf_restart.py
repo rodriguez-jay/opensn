@@ -207,8 +207,12 @@ if __name__ == "__main__":
             surface_data("restarted_adjoint", restarted_surface_prefix),
         ]
     )
-    surface_qoi = evaluator.EvaluateSurfaceResponse("forward", "adjoint")
-    restarted_surface_qoi = evaluator.EvaluateSurfaceResponse("forward", "restarted_adjoint")
+    (surface,) = evaluator.EvaluateSurfaceResponse("forward", "adjoint").values()
+    (restarted_surface,) = evaluator.EvaluateSurfaceResponse(
+        "forward", "restarted_adjoint"
+    ).values()
+    surface_qoi = surface["total"]
+    restarted_surface_qoi = restarted_surface["total"]
 
     if rank == 0:
         print(f"Forward QoI={forward_qoi:.8e}")

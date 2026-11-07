@@ -243,8 +243,8 @@
     ]
   },
   {
-    "file": "response_2d_surf_half_range.py",
-    "comment": "Half-range surface responses with no return flux (void background, pure-scattering source, absorbing detector), partitioned at the plane; full-range and positive-x half-range responses equal the forward QoI and the negative-x half-range response is zero",
+    "file": "response_2d_surf_parts.py",
+    "comment": "Outgoing and incoming parts of an interior surface response with no return flux (void background, pure-scattering source, absorbing detector), partitioned at the plane; the total and the positive-x part equal the forward QoI and the negative-x part is zero; a lone side is rejected",
     "num_procs": 2,
     "checks": [
       {
@@ -261,13 +261,13 @@
       },
       {
         "type": "KeyValuePair",
-        "key": "Full-range identity error=",
+        "key": "Total identity error=",
         "goldvalue": 0.0,
         "abs_tol": 1e-10
       },
       {
         "type": "KeyValuePair",
-        "key": "Half-range identity error=",
+        "key": "Outgoing part identity error=",
         "goldvalue": 0.0,
         "abs_tol": 1e-10
       },
@@ -276,6 +276,12 @@
         "key": "Returning fraction=",
         "goldvalue": 0.0,
         "abs_tol": 1e-12
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Lone side rejected=",
+        "goldvalue": 1,
+        "abs_tol": 0.5
       }
     ]
   },
@@ -358,6 +364,144 @@
         "key": "ADJOINT_GALERKIN_REJECTED=",
         "goldvalue": 1,
         "abs_tol": 0
+      }
+    ]
+  },
+  {
+    "file": "response_surf_boundary.py",
+    "comment": "Boundary surface responses use the adjoint boundary-condition values: 2D, one group, reflecting ymin; vacuum boundaries give zero, an angle-dependent adjoint boundary source on xmax and the interior plane give the volumetric response",
+    "num_procs": 2,
+    "checks": [
+      {
+        "type": "KeyValuePair",
+        "key": "A plane identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "A vacuum boundary fraction=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-12
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "B plane identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "B boundary identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Reflected upwind mismatch=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-12
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "C xmin incoming identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "C boundary total identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "C reflecting total fraction=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "C plane identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Stray surfaces rejected=",
+        "goldvalue": 1,
+        "abs_tol": 0.5
+      }
+    ]
+  },
+  {
+    "file": "response_surf_boundary.py",
+    "outfileprefix": "response_surf_boundary_3d",
+    "args": [
+      "case=\"3d\""
+    ],
+    "comment": "Boundary surface responses in 3D with three groups (upscatter) in two groupsets; same identities as the 2D case",
+    "num_procs": 4,
+    "checks": [
+      {
+        "type": "KeyValuePair",
+        "key": "A plane identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "A vacuum boundary fraction=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-12
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "B plane identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "B boundary identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Reflected upwind mismatch=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-12
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "C xmin incoming identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "C boundary total identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "C reflecting total fraction=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "C plane identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Stray surfaces rejected=",
+        "goldvalue": 1,
+        "abs_tol": 0.5
       }
     ]
   },

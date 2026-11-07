@@ -3,6 +3,7 @@
 
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/io/discrete_ordinates_problem_io.h"
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/discrete_ordinates_problem.h"
+#include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/sweep/boundary/sweep_boundary.h"
 #include "framework/logging/log.h"
 #include "framework/runtime.h"
 #include "framework/mesh/mesh/mesh.h"
@@ -15,6 +16,9 @@
 #include <cmath>
 #include <iterator>
 #include <limits>
+#include <memory>
+#include <optional>
+#include <random>
 #include <set>
 #include <tuple>
 
@@ -447,19 +451,18 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
   OpenSnInvalidArgumentIf(invalid_interior_axis,
                           "An interior surface has an invalid axis. Expected 'x', 'y', or 'z'.");
 
-  // Interior surfaces must lie inside the mesh and be distinct. A surface may cut through some
-  // cells; those cells contribute no faces, and only faces lying on the surface are written. A
-  // surface that matches no faces at all is rejected below. Surface selections may differ by rank,
-  // so each rank checks its own selections and a single flag reduction reports the failure on all
-  // ranks.
+  // Interior surfaces must lie inside the mesh, on cell faces, and be distinct. A surface that cuts
+  // through a cell would have a hole there, so it would no longer separate the two sides and its
+  // response would be wrong. Surface selections may differ by rank, so each rank checks its own
+  // selections and a single flag reduction reports the failure on all ranks.
   enum InteriorSurfaceError
   {
     outside_mesh = 0,
     duplicate_plane = 1,
-    num_errors = 2
+    cuts_cell = 2,
+    num_errors = 3
   };
   std::array<int, num_errors> local_surface_errors{};
-  int partially_cut = 0;
   for (auto it = interior_surfs.begin(); it != interior_surfs.end(); ++it)
   {
     const auto& [axis, slice] = it->second;
@@ -474,8 +477,6 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
 
     for (const auto& cell : grid->GetLocalCells())
     {
-      if (partially_cut)
-        break;
       double cell_min = std::numeric_limits<double>::max();
       double cell_max = std::numeric_limits<double>::lowest();
       for (const auto vid : cell->vertex_ids)
@@ -485,17 +486,22 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
         cell_max = std::max(cell_max, coordinate);
       }
       if (cell_min < slice - surface_tolerance and cell_max > slice + surface_tolerance)
-        partially_cut = 1;
+      {
+        local_surface_errors[cuts_cell] = 1;
+        break;
+      }
     }
   }
   std::array<int, num_errors> surface_errors{};
   mpi_comm.all_reduce(
     local_surface_errors.data(), num_errors, surface_errors.data(), mpi::op::max<int>());
-  mpi_comm.all_reduce(partially_cut, mpi::op::max<int>());
   OpenSnInvalidArgumentIf(surface_errors[outside_mesh],
                           "An interior surface lies outside the mesh.");
   OpenSnInvalidArgumentIf(surface_errors[duplicate_plane],
                           "Two interior surfaces are defined on the same plane.");
+  OpenSnInvalidArgumentIf(
+    surface_errors[cuts_cell],
+    "An interior surface cuts through mesh cells. Interior surfaces must lie on cell faces.");
 
   // An interior surface must not alias an exterior boundary. Without this check, a face selected
   // by both definitions is assigned only the boundary tag below, leaving the requested interior
@@ -589,9 +595,6 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
                           unmatched_surface_message.empty()
                             ? std::string("An interior surface matches no mesh faces.")
                             : unmatched_surface_message);
-  if (partially_cut)
-    log.Log0Warning() << "WriteSurfaceAngularFluxes: An interior surface cuts through some mesh "
-                         "cells; only faces lying on the surface are written.";
 
   // This is collective and must be called even on ranks with no requested boundary surfaces.
   const auto unique_bids = grid->GetUniqueBoundaryIDs();
@@ -663,6 +666,15 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
                                           "boundary name on another rank.")
                             : tag_collision_message);
 
+  // A random identifier shared by every file of this set. Collective.
+  uint64_t file_set_id = 0;
+  if (opensn::mpi_comm.rank() == 0)
+  {
+    std::random_device device;
+    file_set_id = (static_cast<uint64_t>(device()) << 32) ^ static_cast<uint64_t>(device());
+  }
+  opensn::mpi_comm.broadcast(file_set_id, 0);
+
   // Open the HDF5 file
   const std::string file_name = file_base + std::to_string(opensn::mpi_comm.rank()) + ".h5";
   const H5FileHandle file(H5Fcreate(file_name.c_str(), H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT));
@@ -683,6 +695,10 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
 
   OpenSnLogicalErrorIf(not H5CreateAttribute(file.Id(), "num_groupsets", num_groupsets),
                        "Failed to write the number of groupsets to " + file_name + ".");
+  // Identifies the files written by this call, so that readers reject a file left over from
+  // another set written to the same prefix.
+  OpenSnLogicalErrorIf(not H5CreateAttribute(file.Id(), "file_set_id", file_set_id),
+                       "Failed to write the file-set identifier to " + file_name + ".");
   OpenSnLogicalErrorIf(not H5CreateAttribute<bool>(file.Id(), "adjoint", do_problem.IsAdjoint()),
                        "Failed to write the adjoint flag to " + file_name + ".");
   // Readers that redistribute the surface data use this to discover all files of the set.
@@ -705,17 +721,28 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
   struct SurfaceFaceInfo
   {
     uint64_t cell_local_id;
+    unsigned int face_index;
+    /// Boundary ID of a boundary face; unset for a face of an interior surface.
+    std::optional<uint64_t> boundary_id;
     std::string surface_name;
     Vector3 normal;
     std::vector<size_t> node_indices;
+  };
+
+  /// Face geometry and finite-element data of one tag, shared by all groupsets.
+  struct TagMesh
+  {
+    std::vector<uint64_t> cell_ids;
+    std::vector<uint64_t> num_face_nodes;
+    std::vector<double> x, y, z;
+    std::vector<double> normals;
     std::vector<double> fe_shape;
     std::vector<double> mass_matrix;
   };
 
   // Surface selection, geometry, and finite-element data are shared by all groupsets.
   std::vector<SurfaceFaceInfo> surface_faces;
-  std::map<std::string, std::vector<uint64_t>> cell_map, node_map;
-  std::map<std::string, std::vector<double>> x_map, y_map, z_map;
+  std::map<std::string, TagMesh> tag_meshes;
   const auto& unit_cell_matrices = do_problem.GetUnitCellMatrices();
   const double measure_scale = IntegralMeasureScale(grid->GetCoordinateSystem());
 
@@ -729,6 +756,7 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
     {
       const auto& face = cell->faces[f];
       bool is_surface = false;
+      std::optional<uint64_t> boundary_id;
       std::string surface_name;
 
       // Interior surface mapping
@@ -757,6 +785,7 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
         if (tag != bndry_tags.end())
         {
           surface_name = tag->second;
+          boundary_id = face.neighbor_id;
           is_surface = true;
         }
       }
@@ -765,13 +794,15 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
         continue;
 
       const auto num_face_nodes = cell_mapping.GetNumFaceNodes(f);
-      SurfaceFaceInfo surface_face{cell->local_id, surface_name, face.normal, {}, {}, {}};
+      SurfaceFaceInfo surface_face{
+        cell->local_id, static_cast<unsigned int>(f), boundary_id, surface_name, face.normal, {}};
       surface_face.node_indices.reserve(num_face_nodes);
-      surface_face.fe_shape.reserve(num_face_nodes);
-      surface_face.mass_matrix.reserve(num_face_nodes * num_face_nodes);
 
-      cell_map[surface_name].push_back(cell->global_id);
-      node_map[surface_name].push_back(num_face_nodes);
+      auto& tag_mesh = tag_meshes[surface_name];
+      tag_mesh.cell_ids.push_back(cell->global_id);
+      tag_mesh.num_face_nodes.push_back(num_face_nodes);
+      tag_mesh.normals.insert(tag_mesh.normals.end(),
+                              {face.normal.x, face.normal.y, face.normal.z});
 
       // Physical face integrals: curvilinear unit integrals omit the angular extent (2*pi in RZ).
       const auto& int_f_shape_i = fe_values.intS_shapeI[f];
@@ -781,15 +812,15 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
         const auto i = cell_mapping.MapFaceNode(f, fi);
         const auto& node = node_locations[i];
         surface_face.node_indices.push_back(i);
-        surface_face.fe_shape.push_back(measure_scale * int_f_shape_i(i));
-        x_map[surface_name].push_back(node.x);
-        y_map[surface_name].push_back(node.y);
-        z_map[surface_name].push_back(node.z);
+        tag_mesh.fe_shape.push_back(measure_scale * int_f_shape_i(i));
+        tag_mesh.x.push_back(node.x);
+        tag_mesh.y.push_back(node.y);
+        tag_mesh.z.push_back(node.z);
 
         for (size_t fj = 0; fj < num_face_nodes; ++fj)
         {
           const auto j = cell_mapping.MapFaceNode(f, fj);
-          surface_face.mass_matrix.push_back(measure_scale * mass_matrix(i, j));
+          tag_mesh.mass_matrix.push_back(measure_scale * mass_matrix(i, j));
         }
       }
       surface_faces.push_back(std::move(surface_face));
@@ -798,12 +829,7 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
 
   for (const auto& surface_id : surface_tags)
   {
-    const auto& cell_ids = cell_map[surface_id];
-    const auto& num_face_nodes = node_map[surface_id];
-    const auto& x_surface = x_map[surface_id];
-    const auto& y_surface = y_map[surface_id];
-    const auto& z_surface = z_map[surface_id];
-
+    const auto& tag_mesh = tag_meshes[surface_id];
     const std::string surface_mesh = "mesh/" + surface_id;
     OpenSnLogicalErrorIf(not H5CreateGroup(file.Id(), surface_mesh),
                          CreateGroupError(surface_mesh));
@@ -812,18 +838,23 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
                                                      surface_mesh + "/interior",
                                                      interior_tags.count(surface_id) > 0),
                          "Failed to write the surface kind for " + surface_id + ".");
-    OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surface_mesh + "/cell_ids", cell_ids),
-                         "Failed to write cell IDs for " + surface_id + ".");
-    OpenSnLogicalErrorIf(
-      not H5WriteDataset1D(file.Id(), surface_mesh + "/num_face_nodes", num_face_nodes),
-      "Failed to write face-node counts for " + surface_id + ".");
-    OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surface_mesh + "/nodes_x", x_surface),
-                         "Failed to write x-coordinates for " + surface_id + ".");
-    OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surface_mesh + "/nodes_y", y_surface),
-                         "Failed to write y-coordinates for " + surface_id + ".");
-    OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surface_mesh + "/nodes_z", z_surface),
-                         "Failed to write z-coordinates for " + surface_id + ".");
+    const auto WriteMesh = [&](const std::string& dataset, const auto& values)
+    {
+      const auto path = std::string(surface_mesh).append("/").append(dataset);
+      OpenSnLogicalErrorIf(
+        not H5WriteDataset1D(file.Id(), path, values),
+        std::string("Failed to write ").append(path).append(" to ").append(file_name).append("."));
+    };
+    WriteMesh("cell_ids", tag_mesh.cell_ids);
+    WriteMesh("num_face_nodes", tag_mesh.num_face_nodes);
+    WriteMesh("nodes_x", tag_mesh.x);
+    WriteMesh("nodes_y", tag_mesh.y);
+    WriteMesh("nodes_z", tag_mesh.z);
+    WriteMesh("normals", tag_mesh.normals);
+    WriteMesh("fe_shape", tag_mesh.fe_shape);
+    WriteMesh("M_ij", tag_mesh.mass_matrix);
   }
+  tag_meshes.clear();
 
   for (const auto& groupset : groupsets)
   {
@@ -835,37 +866,98 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
     const auto num_gs_dirs = quadrature->GetNumAngles();
     const auto num_gs_groups = groupset.GetNumGroups();
 
+    // On a boundary face, a direction that enters the domain takes its upwind value from the
+    // boundary condition: mu_d < 0 for a forward problem, and mu_d > 0 for an adjoint problem in
+    // physical orientation, whose transport direction is -Omega_d. The boundaries hold the values
+    // the sweeps used, indexed by sweep direction, which for an adjoint problem is the direction
+    // opposite to the physical one.
+    const bool adjoint = do_problem.IsAdjoint();
+    const auto opposite = adjoint ? quadrature->MapOppositeDirections() : std::vector<size_t>{};
+    const auto& sweep_boundaries = do_problem.GetSweepBoundaries();
+    // A reflecting boundary returns the angular flux of the reflected direction, which the stored
+    // angular flux already holds; map each direction to its reflection once per boundary.
+    std::map<uint64_t, std::vector<size_t>> reflected_directions;
+    const auto ReflectedDirections = [&](const uint64_t bid,
+                                         const Vector3& normal) -> const std::vector<size_t>&
+    {
+      auto [it, inserted] = reflected_directions.try_emplace(bid);
+      if (not inserted)
+        return it->second;
+      auto& reflected = it->second;
+      reflected.resize(num_gs_dirs);
+      for (size_t d = 0; d < num_gs_dirs; ++d)
+      {
+        const auto& omega_d = quadrature->GetOmega(d);
+        const auto omega_r = omega_d - normal * (2.0 * omega_d.Dot(normal));
+        bool found = false;
+        for (size_t r = 0; r < num_gs_dirs and not found; ++r)
+          if ((quadrature->GetOmega(r) - omega_r).NormSquare() < 1.0e-16)
+          {
+            reflected[d] = r;
+            found = true;
+          }
+        OpenSnLogicalErrorIf(not found,
+                             "The quadrature of groupset " + std::to_string(groupset_id) +
+                               " has no reflection of direction " + std::to_string(d) +
+                               " on reflecting boundary " + std::to_string(bid) + ".");
+      }
+      return it->second;
+    };
+
     for (const auto& surface_face : surface_faces)
     {
       const auto& cell = grid->GetLocalCell(surface_face.cell_local_id);
       auto& surface_data = data_map[surface_face.surface_name];
+
+      SweepBoundary* boundary = nullptr;
+      const std::vector<size_t>* reflected = nullptr;
+      if (surface_face.boundary_id.has_value())
+      {
+        const auto bid = *surface_face.boundary_id;
+        const auto it = sweep_boundaries.find(bid);
+        OpenSnLogicalErrorIf(it == sweep_boundaries.end(),
+                             "No sweep boundary for boundary ID " + std::to_string(bid) + ".");
+        boundary = it->second.get();
+        if (boundary->IsReflecting())
+          reflected = &ReflectedDirections(bid, surface_face.normal);
+      }
 
       for (size_t fi = 0; fi < surface_face.node_indices.size(); ++fi)
       {
         const auto i = surface_face.node_indices[fi];
         for (size_t d = 0; d < num_gs_dirs; ++d)
         {
-          const auto& omega_d = quadrature->GetOmega(d);
-          const auto weight_d = quadrature->GetWeight(d);
-          const auto mu_d = omega_d.Dot(surface_face.normal);
-
-          surface_data.omega.insert(surface_data.omega.end(), {omega_d.x, omega_d.y, omega_d.z});
-          surface_data.mu.push_back(mu_d);
-          surface_data.wt_d.push_back(weight_d);
-          surface_data.fe_shape.push_back(surface_face.fe_shape[fi]);
+          const auto mu_d = quadrature->GetOmega(d).Dot(surface_face.normal);
+          const bool enters = adjoint ? mu_d > 0.0 : mu_d < 0.0;
           for (unsigned int g = 0; g < num_gs_groups; ++g)
           {
             const auto dof_map = discretization.MapDOFLocal(cell, i, uk_man, d, g);
             surface_data.psi.push_back(psi[groupset_id][dof_map]);
+            if (boundary == nullptr)
+              continue;
+            if (not enters)
+              surface_data.upwind_psi.push_back(psi[groupset_id][dof_map]);
+            else if (reflected != nullptr)
+              surface_data.upwind_psi.push_back(
+                psi[groupset_id][discretization.MapDOFLocal(cell, i, uk_man, (*reflected)[d], g)]);
+            else
+            {
+              const auto sweep_dir = adjoint ? opposite[d] : d;
+              const double* incoming =
+                boundary->PsiIncoming(static_cast<std::uint32_t>(surface_face.cell_local_id),
+                                      surface_face.face_index,
+                                      static_cast<unsigned int>(fi),
+                                      static_cast<unsigned int>(sweep_dir),
+                                      groupset_id,
+                                      g);
+              surface_data.upwind_psi.push_back(incoming != nullptr ? *incoming : 0.0);
+            }
           }
         }
       }
-      surface_data.mass_matrix.insert(surface_data.mass_matrix.end(),
-                                      surface_face.mass_matrix.begin(),
-                                      surface_face.mass_matrix.end());
     }
 
-    // Export data to HDF5
+    // Export data to HDF5. The quadrature is stored once per groupset.
     const std::string group_name = "groupset_" + std::to_string(groupset_id);
     OpenSnLogicalErrorIf(not H5CreateGroup(file.Id(), group_name), CreateGroupError(group_name));
     OpenSnLogicalErrorIf(
@@ -874,6 +966,21 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
     OpenSnLogicalErrorIf(
       not H5CreateAttribute(file.Id(), group_name + "/num_groups", num_gs_groups),
       "Failed to write the group count for " + group_name + ".");
+    OpenSnLogicalErrorIf(not H5CreateAttribute(file.Id(),
+                                               group_name + "/first_group",
+                                               static_cast<uint64_t>(groupset.first_group)),
+                         "Failed to write the first group for " + group_name + ".");
+    std::vector<double> omegas, weights;
+    for (size_t d = 0; d < num_gs_dirs; ++d)
+    {
+      const auto& omega_d = quadrature->GetOmega(d);
+      omegas.insert(omegas.end(), {omega_d.x, omega_d.y, omega_d.z});
+      weights.push_back(quadrature->GetWeight(d));
+    }
+    OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), group_name + "/omega", omegas),
+                         "Failed to write the directions of " + group_name + ".");
+    OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), group_name + "/weights", weights),
+                         "Failed to write the quadrature weights of " + group_name + ".");
 
     for (const auto& surf_id : surface_tags)
     {
@@ -882,18 +989,12 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
       OpenSnLogicalErrorIf(not H5CreateGroup(file.Id(), surf_group), CreateGroupError(surf_group));
 
       const auto& data = data_map[surf_id];
-      OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surf_group + "/omega", data.omega),
-                           "Failed to write omega for " + surf_group + ".");
-      OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surf_group + "/wt_d", data.wt_d),
-                           "Failed to write weights for " + surf_group + ".");
-      OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surf_group + "/mu", data.mu),
-                           "Failed to write direction cosines for " + surf_group + ".");
-      OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surf_group + "/fe_shape", data.fe_shape),
-                           "Failed to write finite-element shape data for " + surf_group + ".");
       OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surf_group + "/surf_flux", data.psi),
                            "Failed to write surface angular flux for " + surf_group + ".");
-      OpenSnLogicalErrorIf(not H5WriteDataset1D(file.Id(), surf_group + "/M_ij", data.mass_matrix),
-                           "Failed to write the mass matrix for " + surf_group + ".");
+      if (interior_tags.count(surf_id) == 0)
+        OpenSnLogicalErrorIf(
+          not H5WriteDataset1D(file.Id(), surf_group + "/upwind_flux", data.upwind_psi),
+          "Failed to write the upwind surface angular flux for " + surf_group + ".");
     }
   }
 }
@@ -937,6 +1038,10 @@ DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(const std::string& file_bas
                        file_name + " records a set of " + std::to_string(num_partitions) +
                          " files, so it cannot be partition " + std::to_string(partition) +
                          " of that set.");
+  uint64_t file_set_id = 0;
+  OpenSnLogicalErrorIf(not H5ReadAttribute(file.Id(), "file_set_id", file_set_id),
+                       "Failed to read the file-set identifier from " + file_name +
+                         ". The file was written by an unsupported version of OpenSn.");
   bool file_adjoint = false;
   OpenSnLogicalErrorIf(not H5ReadAttribute(file.Id(), "adjoint", file_adjoint),
                        "Failed to read the adjoint flag from " + file_name +
@@ -956,6 +1061,7 @@ DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(const std::string& file_bas
   // than in an allocation.
   std::vector<uint64_t> num_gs_dirs;
   std::vector<uint64_t> num_gs_groups;
+  std::vector<uint64_t> gs_first_groups;
   for (uint64_t gs = 0; gs < num_groupsets; ++gs)
   {
     const std::string group_name = "groupset_" + std::to_string(gs);
@@ -968,8 +1074,12 @@ DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(const std::string& file_bas
     OpenSnLogicalErrorIf(not H5ReadAttribute(file.Id(), group_name + "/num_groups", num_groups) or
                            num_groups == 0,
                          "Failed to read a positive group count for " + group_context + ".");
+    uint64_t first_group = 0;
+    OpenSnLogicalErrorIf(not H5ReadAttribute(file.Id(), group_name + "/first_group", first_group),
+                         "Failed to read the first group for " + group_context + ".");
     num_gs_dirs.push_back(num_dirs);
     num_gs_groups.push_back(num_groups);
+    gs_first_groups.push_back(first_group);
   }
 
   // Whether each stored tag is one side of an interior surface or a boundary.
@@ -1022,6 +1132,43 @@ DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(const std::string& file_bas
   OpenSnInvalidArgumentIf(std::set<std::string>(tags.begin(), tags.end()).size() != tags.size(),
                           "The requested surfaces of " + file_name + " resolve to duplicate tags.");
 
+  // Check every dataset size before reading any data.
+  const auto CheckSize = [&](const std::string& name, const uint64_t expected)
+  {
+    uint64_t size = 0;
+    OpenSnLogicalErrorIf(not H5GetDataset1DSize(file.Id(), name, size) or size != expected,
+                         std::string("Dataset ")
+                           .append(name)
+                           .append(" in ")
+                           .append(file_name)
+                           .append(" has an inconsistent size."));
+  };
+  // The writer stores finite values. A non-finite cosine would silently drop its direction from a
+  // surface response, and a non-finite flux or weight would poison it.
+  const auto CheckFinite = [&](const std::vector<double>& values, const std::string& context)
+  {
+    OpenSnLogicalErrorIf(not std::all_of(values.begin(),
+                                         values.end(),
+                                         [](const double value) { return std::isfinite(value); }),
+                         "Non-finite surface data in " + context + ".");
+  };
+
+  // The quadrature of each groupset, shared by all tags.
+  std::vector<std::vector<double>> gs_omegas(num_groupsets), gs_weights(num_groupsets);
+  for (uint64_t gs = 0; gs < num_groupsets; ++gs)
+  {
+    const std::string group_name = "groupset_" + std::to_string(gs);
+    const auto group_context = std::string(group_name).append(" in ").append(file_name);
+    CheckSize(group_name + "/omega", CheckedMultiply(num_gs_dirs[gs], 3, group_context));
+    CheckSize(group_name + "/weights", num_gs_dirs[gs]);
+    OpenSnLogicalErrorIf(
+      not H5ReadDataset1D<double>(file.Id(), group_name + "/omega", gs_omegas[gs]) or
+        not H5ReadDataset1D<double>(file.Id(), group_name + "/weights", gs_weights[gs]),
+      "Failed to read the quadrature of " + group_context + ".");
+    CheckFinite(gs_omegas[gs], group_context);
+    CheckFinite(gs_weights[gs], group_context);
+  }
+
   std::vector<SurfaceAngularFlux> surf_fluxes(num_groupsets * tags.size());
   for (size_t s = 0; s < tags.size(); ++s)
   {
@@ -1030,19 +1177,20 @@ DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(const std::string& file_bas
     const std::string mesh_tag = "mesh/" + surface;
 
     // The surface mesh is shared by all groupsets.
-    SurfaceMap surf_map;
+    auto surf_map = std::make_shared<SurfaceMap>();
     OpenSnLogicalErrorIf(
-      not H5ReadDataset1D<uint64_t>(file.Id(), mesh_tag + "/cell_ids", surf_map.cell_ids) or
+      not H5ReadDataset1D<uint64_t>(file.Id(), mesh_tag + "/cell_ids", surf_map->cell_ids) or
         not H5ReadDataset1D<uint64_t>(
-          file.Id(), mesh_tag + "/num_face_nodes", surf_map.num_face_nodes) or
-        surf_map.cell_ids.size() != surf_map.num_face_nodes.size(),
+          file.Id(), mesh_tag + "/num_face_nodes", surf_map->num_face_nodes) or
+        surf_map->cell_ids.size() != surf_map->num_face_nodes.size(),
       "Failed to read consistent face metadata for " + context + ".");
+    const auto num_faces = static_cast<uint64_t>(surf_map->cell_ids.size());
 
     // Node and mass-matrix totals, checked for overflow. An oversized face-node count makes the
     // node total disagree with the coordinate datasets checked below.
     uint64_t num_nodes = 0;
     uint64_t mass_size = 0;
-    for (const auto n : surf_map.num_face_nodes)
+    for (const auto n : surf_map->num_face_nodes)
     {
       OpenSnLogicalErrorIf(n == 0, "Encountered a surface face without nodes for " + context + ".");
       const auto n_sq = CheckedMultiply(n, n, context);
@@ -1053,119 +1201,82 @@ DiscreteOrdinatesProblemIO::ReadSurfaceAngularFluxes(const std::string& file_bas
       mass_size += n_sq;
     }
 
-    // Check every dataset size before reading any data.
-    const auto CheckSize = [&](const std::string& name, const uint64_t expected)
-    {
-      uint64_t size = 0;
-      OpenSnLogicalErrorIf(not H5GetDataset1DSize(file.Id(), name, size) or size != expected,
-                           std::string("Dataset ")
-                             .append(name)
-                             .append(" in ")
-                             .append(file_name)
-                             .append(" has an inconsistent size."));
-    };
-    for (const auto* axis : {"/nodes_x", "/nodes_y", "/nodes_z"})
-      CheckSize(mesh_tag + axis, num_nodes);
+    for (const auto* dataset : {"/nodes_x", "/nodes_y", "/nodes_z", "/fe_shape"})
+      CheckSize(mesh_tag + dataset, num_nodes);
+    CheckSize(mesh_tag + "/normals", CheckedMultiply(num_faces, 3, context));
+    CheckSize(mesh_tag + "/M_ij", mass_size);
     for (uint64_t gs = 0; gs < num_groupsets; ++gs)
     {
       const std::string surf_group = "groupset_" + std::to_string(gs) + "/" + surface;
-      const auto num_node_dirs = CheckedMultiply(num_nodes, num_gs_dirs[gs], context);
-      CheckSize(surf_group + "/omega", CheckedMultiply(num_node_dirs, 3, context));
-      CheckSize(surf_group + "/mu", num_node_dirs);
-      CheckSize(surf_group + "/wt_d", num_node_dirs);
-      CheckSize(surf_group + "/fe_shape", num_node_dirs);
-      CheckSize(surf_group + "/surf_flux",
-                CheckedMultiply(num_node_dirs, num_gs_groups[gs], context));
-      CheckSize(surf_group + "/M_ij", mass_size);
+      const auto num_values = CheckedMultiply(
+        CheckedMultiply(num_nodes, num_gs_dirs[gs], context), num_gs_groups[gs], context);
+      CheckSize(surf_group + "/surf_flux", num_values);
+      if (not interior_of.at(surface))
+        CheckSize(surf_group + "/upwind_flux", num_values);
     }
 
     OpenSnLogicalErrorIf(
-      not H5ReadDataset1D<double>(file.Id(), mesh_tag + "/nodes_x", surf_map.nodes_x) or
-        not H5ReadDataset1D<double>(file.Id(), mesh_tag + "/nodes_y", surf_map.nodes_y) or
-        not H5ReadDataset1D<double>(file.Id(), mesh_tag + "/nodes_z", surf_map.nodes_z),
-      "Failed to read node coordinates for " + context + ".");
+      not H5ReadDataset1D<double>(file.Id(), mesh_tag + "/nodes_x", surf_map->nodes_x) or
+        not H5ReadDataset1D<double>(file.Id(), mesh_tag + "/nodes_y", surf_map->nodes_y) or
+        not H5ReadDataset1D<double>(file.Id(), mesh_tag + "/nodes_z", surf_map->nodes_z) or
+        not H5ReadDataset1D<double>(file.Id(), mesh_tag + "/normals", surf_map->normals) or
+        not H5ReadDataset1D<double>(file.Id(), mesh_tag + "/fe_shape", surf_map->fe_shape) or
+        not H5ReadDataset1D<double>(file.Id(), mesh_tag + "/M_ij", surf_map->mass_matrix),
+      "Failed to read the face geometry of " + context + ".");
+    for (const auto* values : {&surf_map->normals, &surf_map->fe_shape, &surf_map->mass_matrix})
+      CheckFinite(*values, context);
 
     // Key each face by its centroid.
     uint64_t node = 0;
-    for (uint64_t ci = 0; ci < surf_map.cell_ids.size(); ++ci)
+    for (uint64_t ci = 0; ci < num_faces; ++ci)
     {
-      const auto num_face_nodes = surf_map.num_face_nodes[ci];
+      const auto num_face_nodes = surf_map->num_face_nodes[ci];
       std::vector<Vector3> file_nodes;
       file_nodes.reserve(num_face_nodes);
       for (uint64_t ni = 0; ni < num_face_nodes; ++ni, ++node)
         file_nodes.emplace_back(
-          surf_map.nodes_x[node], surf_map.nodes_y[node], surf_map.nodes_z[node]);
+          surf_map->nodes_x[node], surf_map->nodes_y[node], surf_map->nodes_z[node]);
       const auto key =
         MakeFaceCentroidKey(std::move(file_nodes), centroid_origin, centroid_spacing, context);
-      OpenSnLogicalErrorIf(not surf_map.cell_map.emplace(key, ci).second,
-                           "Surface faces " + std::to_string(surf_map.cell_map.at(key)) + " and " +
+      OpenSnLogicalErrorIf(not surf_map->cell_map.emplace(key, ci).second,
+                           "Surface faces " + std::to_string(surf_map->cell_map.at(key)) + " and " +
                              std::to_string(ci) + " of " + context +
                              " have the same face-centroid key. Face centroids must differ by "
                              "more than the centroid spacing " +
                              std::to_string(centroid_spacing) + ".");
     }
-    surf_map.centroid_origin = centroid_origin;
-    surf_map.centroid_spacing = centroid_spacing;
+    surf_map->centroid_origin = centroid_origin;
+    surf_map->centroid_spacing = centroid_spacing;
+    const std::shared_ptr<const SurfaceMap> shared_map = std::move(surf_map);
 
     for (uint64_t gs = 0; gs < num_groupsets; ++gs)
     {
-      const auto num_dirs = num_gs_dirs[gs];
-      const auto num_groups = num_gs_groups[gs];
       const std::string surf_group = "groupset_" + std::to_string(gs) + "/" + surface;
       const auto group_context = std::string(surf_group).append(" in ").append(file_name);
 
       SurfaceData surf_data;
+      surf_data.omega = gs_omegas[gs];
+      surf_data.weights = gs_weights[gs];
       OpenSnLogicalErrorIf(
-        not H5ReadDataset1D<double>(file.Id(), surf_group + "/omega", surf_data.omega) or
-          not H5ReadDataset1D<double>(file.Id(), surf_group + "/mu", surf_data.mu) or
-          not H5ReadDataset1D<double>(file.Id(), surf_group + "/wt_d", surf_data.wt_d) or
-          not H5ReadDataset1D<double>(file.Id(), surf_group + "/M_ij", surf_data.mass_matrix) or
-          not H5ReadDataset1D<double>(file.Id(), surf_group + "/fe_shape", surf_data.fe_shape) or
-          not H5ReadDataset1D<double>(file.Id(), surf_group + "/surf_flux", surf_data.psi),
+        not H5ReadDataset1D<double>(file.Id(), surf_group + "/surf_flux", surf_data.psi) or
+          (not interior_of.at(surface) and not H5ReadDataset1D<double>(file.Id(),
+                                                                       surf_group + "/upwind_flux",
+                                                                       surf_data.upwind_psi)),
         "Failed to read the surface angular-flux data of " + group_context + ".");
-      // The writer stores finite values. A non-finite cosine would silently drop its direction from
-      // a surface response, and a non-finite flux or weight would poison it.
-      for (const auto* values : {&surf_data.omega,
-                                 &surf_data.mu,
-                                 &surf_data.wt_d,
-                                 &surf_data.mass_matrix,
-                                 &surf_data.fe_shape,
-                                 &surf_data.psi})
-        OpenSnLogicalErrorIf(not std::all_of(values->begin(),
-                                             values->end(),
-                                             [](const double value)
-                                             { return std::isfinite(value); }),
-                             "Non-finite surface angular-flux data in " + group_context + ".");
-
-      // Start offsets into psi of each face, face node, and node-direction pair.
-      auto gs_map = surf_map;
-      gs_map.cell_stride.reserve(gs_map.cell_ids.size());
-      surf_data.node_index.reserve(num_nodes);
-      surf_data.dir_index.reserve(num_nodes * num_dirs);
-      uint64_t stride = 0;
-      for (const auto num_face_nodes : gs_map.num_face_nodes)
-      {
-        gs_map.cell_stride.push_back(stride);
-        for (uint64_t ni = 0; ni < num_face_nodes; ++ni)
-        {
-          surf_data.node_index.push_back(stride);
-          for (uint64_t d = 0; d < num_dirs; ++d)
-          {
-            surf_data.dir_index.push_back(stride);
-            stride += num_groups;
-          }
-        }
-      }
+      CheckFinite(surf_data.psi, group_context);
+      CheckFinite(surf_data.upwind_psi, group_context);
 
       auto& surf_flux = surf_fluxes[gs * tags.size() + s];
       surf_flux.groupset_id = static_cast<int>(gs);
       surf_flux.adjoint = file_adjoint;
       surf_flux.num_partitions = num_partitions;
-      surf_flux.num_directions = num_dirs;
-      surf_flux.num_groups = num_groups;
+      surf_flux.num_directions = num_gs_dirs[gs];
+      surf_flux.num_groups = num_gs_groups[gs];
+      surf_flux.first_group = gs_first_groups[gs];
+      surf_flux.file_set_id = file_set_id;
       surf_flux.surface_name = surface;
       surf_flux.interior = interior_of.at(surface);
-      surf_flux.mapping = std::move(gs_map);
+      surf_flux.mapping = shared_map;
       surf_flux.data = std::move(surf_data);
     }
   }

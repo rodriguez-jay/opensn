@@ -71,9 +71,8 @@ public:
    * Flux moments and angular fluxes must have been written with the current partitioning. The
    * listed `surfaces` are read from all surface files of the prefix, whatever number of ranks
    * and partitioning wrote them, and distributed by face over the current ranks with
-   * DistributeSurfaceAngularFluxes. Each is a boundary name, an interior surface name, which
-   * reads both stored sides `<name>_u` and `<name>_d`, or a single side's tag, which makes it a
-   * half-range surface. Collective.
+   * DistributeSurfaceAngularFluxes. Each is a boundary name or an interior surface name, which
+   * reads both stored sides `<name>_u` and `<name>_d`. Collective.
    */
   void SetDataOptions(const InputParameters& input);
 
@@ -105,24 +104,24 @@ public:
    * Evaluate the surface response of forward and adjoint surface angular fluxes added with
    * SetDataOptions.
    *
-   * Returns the sum over the selected surfaces of the surface responses defined in
-   * ComputeSurfaceResponses. Per-surface outgoing and incoming contributions are logged at
-   * verbosity 1.
+   * Returns one surface response per selected surface, as defined in ComputeSurfaceResponses: its
+   * outgoing and incoming parts and their sum, the response carried across the surface. They are
+   * also logged at verbosity 1.
    *
    * \param fwd_data_name Name of the forward data set.
    * \param adj_data_name Name of the adjoint data set.
-   * \param surfaces Surfaces to evaluate: boundary names, interior surface names (`<name>` or
-   *        `<name>_u` along the `_u` normal, `<name>_d` along the `_d` normal), and half-range
-   *        surface tags (`<name>_u` or `<name>_d`, when the forward data hold that side alone). If
-   *        empty, every surface in the forward data is evaluated.
+   * \param surfaces Surfaces to evaluate: boundary names and interior surface names (`<name>` or
+   *        `<name>_u` along the `_u` normal, `<name>_d` along the `_d` normal). If empty, every
+   *        surface in the forward data is evaluated, in name order.
    *
    * Collective. Throws `std::invalid_argument` for unknown data sets or surfaces, a surface
    * requested more than once, and incompatible data, and `std::logic_error` if the forward and
    * adjoint data do not cover the same faces.
    */
-  double EvaluateSurfaceResponse(const std::string& fwd_data_name,
-                                 const std::string& adj_data_name,
-                                 const std::vector<std::string>& surfaces = {}) const;
+  std::vector<SurfaceResponse>
+  EvaluateSurfaceResponse(const std::string& fwd_data_name,
+                          const std::string& adj_data_name,
+                          const std::vector<std::string>& surfaces = {}) const;
 
 private:
   /**

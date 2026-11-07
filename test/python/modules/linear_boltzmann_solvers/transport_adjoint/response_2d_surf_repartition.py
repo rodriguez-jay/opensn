@@ -186,7 +186,8 @@ if __name__ == "__main__":
         ],
     )
     adjoint_qoi = evaluator.EvaluateResponse("detector")
-    surface_qoi = evaluator.EvaluateSurfaceResponse("forward", "adjoint")
+    (surface,) = evaluator.EvaluateSurfaceResponse("forward", "adjoint").values()
+    surface_qoi = surface["total"]
 
     if rank == 0:
         print(f"Forward QoI={forward_qoi:.8e}")

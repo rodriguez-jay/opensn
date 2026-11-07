@@ -27,7 +27,9 @@ namespace
  * Each surface tag lies on a plane x = const and consists of num_faces two-node segments of length
  * face_length along y, so the surface spans y in [0, surface_length]. The angular flux is linear in
  * y, so the face mass matrix face_length/6 [[2, 1], [1, 2]] integrates the product of two fluxes
- * exactly and the response has the closed form of ExpectedResponse.
+ * exactly and the response has the closed form of ExpectedResponse. Boundary tags also store upwind
+ * values, which differ from the cell values ('i' instead of the tag's side) for the directions
+ * that enter the domain, so the boundary response checks that the adjoint upwind values are used.
  */
 const int num_faces = 7;
 const double face_length = 0.2;
@@ -38,7 +40,8 @@ const std::vector<double> weights = {0.1, 0.2, 0.3, 0.4};
 /// Groups per groupset.
 const std::vector<std::uint64_t> groups_per_groupset = {2, 1};
 
-/// Angular flux a + b y of a data set (`adjoint`) on one side ('u', 'd', or 'b') of a surface.
+/// Angular flux a + b y of a data set (`adjoint`) on one side ('u', 'd', or 'b') of a surface, or
+/// the boundary-condition value ('i') of a boundary.
 std::array<double, 2>
 FluxCoefficients(const bool adjoint,
                  const char side,
@@ -46,7 +49,7 @@ FluxCoefficients(const bool adjoint,
                  const size_t gs,
                  const std::uint64_t g)
 {
-  const double s = side == 'u' ? 1.0 : (side == 'd' ? 2.0 : 3.0);
+  const double s = side == 'u' ? 1.0 : (side == 'd' ? 2.0 : (side == 'b' ? 3.0 : 4.0));
   const double a = (adjoint ? 0.5 : 1.0) + 0.3 * s + omega[0] + 0.7 * omega[1] +
                    0.1 * static_cast<double>(g) + 0.05 * static_cast<double>(gs);
   const double b = (adjoint ? -0.4 : 0.6) + 0.2 * s * omega[1] + 0.1 * static_cast<double>(g);
@@ -64,7 +67,9 @@ IntegrateProduct(const std::array<double, 2>& f, const std::array<double, 2>& g)
 
 /**
  * Closed-form response of an interior surface with normal +x (`interior`) or a boundary with
- * outward normal +x.
+ * outward normal +x. On the boundary each flux takes its upwind value: the cell value for the
+ * directions leaving the domain along its transport direction and the boundary-condition value for
+ * those entering it.
  */
 double
 ExpectedResponse(const bool interior)
@@ -77,12 +82,12 @@ ExpectedResponse(const bool interior)
       for (std::uint64_t g = 0; g < groups_per_groupset[gs]; ++g)
       {
         if (not interior)
-        {
-          if (mu > 0.0)
-            response += mu * weights[d] *
-                        IntegrateProduct(FluxCoefficients(false, 'b', directions[d], gs, g),
-                                         FluxCoefficients(true, 'b', directions[d], gs, g));
-        }
+          // Upwind values: the forward cell value and adjoint boundary value for mu > 0, the
+          // forward boundary value and adjoint cell value for mu < 0.
+          response +=
+            mu * weights[d] *
+            IntegrateProduct(FluxCoefficients(false, mu > 0.0 ? 'b' : 'i', directions[d], gs, g),
+                             FluxCoefficients(true, mu > 0.0 ? 'i' : 'b', directions[d], gs, g));
         else if (mu > 0.0)
           response += mu * weights[d] *
                       IntegrateProduct(FluxCoefficients(false, 'u', directions[d], gs, g),
@@ -94,6 +99,42 @@ ExpectedResponse(const bool interior)
       }
     }
   return response;
+}
+
+/// Closed-form incoming (mu < 0) part of the boundary response: the forward boundary value against
+/// the adjoint cell value.
+double
+ExpectedBoundaryIncoming()
+{
+  double incoming = 0.0;
+  for (size_t gs = 0; gs < groups_per_groupset.size(); ++gs)
+    for (size_t d = 0; d < directions.size(); ++d)
+      if (directions[d][0] < 0.0)
+        for (std::uint64_t g = 0; g < groups_per_groupset[gs]; ++g)
+          incoming += directions[d][0] * weights[d] *
+                      IntegrateProduct(FluxCoefficients(false, 'i', directions[d], gs, g),
+                                       FluxCoefficients(true, 'b', directions[d], gs, g));
+  return incoming;
+}
+
+/// Closed-form outgoing (mu > 0) and incoming (mu < 0) parts of the interior surface response
+/// along +x.
+std::pair<double, double>
+ExpectedInteriorParts()
+{
+  double outgoing = 0.0;
+  double incoming = 0.0;
+  for (size_t gs = 0; gs < groups_per_groupset.size(); ++gs)
+    for (size_t d = 0; d < directions.size(); ++d)
+    {
+      const double mu = directions[d][0];
+      for (std::uint64_t g = 0; g < groups_per_groupset[gs]; ++g)
+        (mu > 0.0 ? outgoing : incoming) +=
+          mu * weights[d] *
+          IntegrateProduct(FluxCoefficients(false, mu > 0.0 ? 'u' : 'd', directions[d], gs, g),
+                           FluxCoefficients(true, mu > 0.0 ? 'd' : 'u', directions[d], gs, g));
+    }
+  return {outgoing, incoming};
 }
 
 struct TagSpec
@@ -116,6 +157,14 @@ struct SetSpec
   bool write_num_partitions = true;
   bool write_adjoint = true;
   bool write_interior = true;
+  bool write_file_set_id = true;
+  bool write_first_group = true;
+  bool write_upwind = true;
+  /// Identifier of the set, and an optional (file, identifier) pair for a file of another set.
+  std::uint64_t file_set_id = 7;
+  std::optional<std::pair<size_t, std::uint64_t>> stray_file;
+  /// Added to the first group of every groupset.
+  std::uint64_t first_group_shift = 0;
   double centroid_spacing = 1.0e-9;
   /// Store each face's nodes in reverse order.
   bool reverse_nodes = false;
@@ -123,6 +172,8 @@ struct SetSpec
   bool reverse_directions = false;
   /// Factor applied to the fixture quadrature weights.
   double weight_scale = 1.0;
+  /// A file whose quadrature weights are doubled, unlike the rest of the set.
+  std::optional<size_t> odd_quadrature_file;
   /// Drop the last angular-flux value of every non-empty tag, so its size is inconsistent.
   bool truncate_flux = false;
   /// Store a NaN as the first angular-flux value of every non-empty tag.
@@ -147,6 +198,13 @@ WriteSet(const std::string& file_base, const SetSpec& spec)
     {
       ASSERT_TRUE(H5CreateAttribute<bool>(id, "adjoint", spec.adjoint));
     }
+    if (spec.write_file_set_id)
+    {
+      const auto set_id = spec.stray_file.has_value() and spec.stray_file->first == file_id
+                            ? spec.stray_file->second
+                            : spec.file_set_id;
+      ASSERT_TRUE(H5CreateAttribute(id, "file_set_id", set_id));
+    }
     if (spec.write_num_partitions)
     {
       ASSERT_TRUE(H5CreateAttribute(
@@ -161,11 +219,15 @@ WriteSet(const std::string& file_base, const SetSpec& spec)
     {
       const auto& faces = tag.faces_per_file[file_id];
       std::vector<std::uint64_t> cell_ids, num_face_nodes;
-      std::vector<double> x, y, z;
+      std::vector<double> x, y, z, normals, fe_shape, mass;
       for (const auto face : faces)
       {
         cell_ids.push_back(static_cast<std::uint64_t>(face));
         num_face_nodes.push_back(2);
+        normals.insert(normals.end(), {tag.normal_x, 0.0, 0.0});
+        fe_shape.insert(fe_shape.end(), {face_length / 2.0, face_length / 2.0});
+        mass.insert(mass.end(),
+                    {face_length / 3.0, face_length / 6.0, face_length / 6.0, face_length / 3.0});
         std::array<double, 2> ys = {face * face_length, (face + 1) * face_length};
         if (spec.reverse_nodes)
           std::swap(ys[0], ys[1]);
@@ -188,6 +250,9 @@ WriteSet(const std::string& file_base, const SetSpec& spec)
       ASSERT_TRUE(H5WriteDataset1D(id, mesh + "/nodes_x", x));
       ASSERT_TRUE(H5WriteDataset1D(id, mesh + "/nodes_y", y));
       ASSERT_TRUE(H5WriteDataset1D(id, mesh + "/nodes_z", z));
+      ASSERT_TRUE(H5WriteDataset1D(id, mesh + "/normals", normals));
+      ASSERT_TRUE(H5WriteDataset1D(id, mesh + "/fe_shape", fe_shape));
+      ASSERT_TRUE(H5WriteDataset1D(id, mesh + "/M_ij", mass));
     }
 
     for (size_t gs = 0; gs < groups_per_groupset.size(); ++gs)
@@ -197,9 +262,27 @@ WriteSet(const std::string& file_base, const SetSpec& spec)
       ASSERT_TRUE(
         H5CreateAttribute(id, group + "/num_directions", std::uint64_t{directions.size()}));
       ASSERT_TRUE(H5CreateAttribute(id, group + "/num_groups", groups_per_groupset[gs]));
+      if (spec.write_first_group)
+      {
+        std::uint64_t first_group = spec.first_group_shift;
+        for (size_t prior = 0; prior < gs; ++prior)
+          first_group += groups_per_groupset[prior];
+        ASSERT_TRUE(H5CreateAttribute(id, group + "/first_group", first_group));
+      }
+      std::vector<double> omega, wt;
+      for (size_t k = 0; k < directions.size(); ++k)
+      {
+        const auto d = spec.reverse_directions ? directions.size() - 1 - k : k;
+        omega.insert(omega.end(), directions[d].begin(), directions[d].end());
+        const double odd = spec.odd_quadrature_file == file_id ? 2.0 : 1.0;
+        wt.push_back(odd * spec.weight_scale * weights[d]);
+      }
+      ASSERT_TRUE(H5WriteDataset1D(id, group + "/omega", omega));
+      ASSERT_TRUE(H5WriteDataset1D(id, group + "/weights", wt));
       for (const auto& tag : spec.tags)
       {
-        std::vector<double> omega, mu, wt, fe_shape, psi, mass;
+        const bool boundary = not tag.recorded_interior.value_or(tag.side != 'b');
+        std::vector<double> psi, upwind;
         for (const auto face : tag.faces_per_file[file_id])
         {
           std::array<double, 2> ys = {face * face_length, (face + 1) * face_length};
@@ -209,18 +292,17 @@ WriteSet(const std::string& file_base, const SetSpec& spec)
             for (size_t k = 0; k < directions.size(); ++k)
             {
               const auto d = spec.reverse_directions ? directions.size() - 1 - k : k;
-              omega.insert(omega.end(), directions[d].begin(), directions[d].end());
-              mu.push_back(directions[d][0] * tag.normal_x);
-              wt.push_back(spec.weight_scale * weights[d]);
-              fe_shape.push_back(face_length / 2.0);
+              const double mu_d = directions[d][0] * tag.normal_x;
+              const bool enters = spec.adjoint ? mu_d > 0.0 : mu_d < 0.0;
               for (std::uint64_t g = 0; g < groups_per_groupset[gs]; ++g)
               {
                 const auto c = FluxCoefficients(spec.adjoint, tag.side, directions[d], gs, g);
                 psi.push_back(c[0] + c[1] * node_y);
+                const auto u =
+                  enters ? FluxCoefficients(spec.adjoint, 'i', directions[d], gs, g) : c;
+                upwind.push_back(u[0] + u[1] * node_y);
               }
             }
-          mass.insert(mass.end(),
-                      {face_length / 3.0, face_length / 6.0, face_length / 6.0, face_length / 3.0});
         }
         if (spec.truncate_flux and not psi.empty())
           psi.pop_back();
@@ -228,12 +310,13 @@ WriteSet(const std::string& file_base, const SetSpec& spec)
           psi.front() = std::numeric_limits<double>::quiet_NaN();
         const auto surf = group + "/" + tag.name;
         ASSERT_TRUE(H5CreateGroup(id, surf));
-        ASSERT_TRUE(H5WriteDataset1D(id, surf + "/omega", omega));
-        ASSERT_TRUE(H5WriteDataset1D(id, surf + "/mu", mu));
-        ASSERT_TRUE(H5WriteDataset1D(id, surf + "/wt_d", wt));
-        ASSERT_TRUE(H5WriteDataset1D(id, surf + "/fe_shape", fe_shape));
         ASSERT_TRUE(H5WriteDataset1D(id, surf + "/surf_flux", psi));
-        ASSERT_TRUE(H5WriteDataset1D(id, surf + "/M_ij", mass));
+        if (boundary and spec.write_upwind)
+        {
+          if (spec.truncate_flux and not upwind.empty())
+            upwind.pop_back();
+          ASSERT_TRUE(H5WriteDataset1D(id, surf + "/upwind_flux", upwind));
+        }
       }
     }
   }
@@ -338,7 +421,11 @@ TEST_F(SurfaceResponseDataTest, MatchesClosedFormAcrossPartitions)
   EXPECT_EQ(surface_responses[0].kind, SurfaceKind::interior);
   EXPECT_EQ(surface_responses[1].name, "right");
   EXPECT_EQ(surface_responses[1].kind, SurfaceKind::boundary);
-  EXPECT_EQ(surface_responses[1].incoming, 0.0);
+  // The boundary's incoming part pairs the forward boundary value with the adjoint cell value.
+  const double boundary_incoming = ExpectedBoundaryIncoming();
+  EXPECT_LT(boundary_incoming, 0.0);
+  EXPECT_NEAR(
+    surface_responses[1].incoming, boundary_incoming, 1.0e-13 * std::abs(boundary_incoming));
 
   // Sums of a few hundred O(1) products: allow a small multiple of machine precision.
   const double interior = ExpectedResponse(true);
@@ -346,7 +433,7 @@ TEST_F(SurfaceResponseDataTest, MatchesClosedFormAcrossPartitions)
   EXPECT_NEAR(surface_responses[0].outgoing + surface_responses[0].incoming,
               interior,
               1.0e-13 * std::abs(interior));
-  EXPECT_NEAR(surface_responses[1].outgoing, boundary, 1.0e-13 * std::abs(boundary));
+  EXPECT_NEAR(surface_responses[1].Total(), boundary, 1.0e-13 * std::abs(boundary));
   // Both interior directions contribute, with opposite signs of mu.
   EXPECT_GT(surface_responses[0].outgoing, 0.0);
   EXPECT_LT(surface_responses[0].incoming, 0.0);
@@ -398,6 +485,57 @@ TEST_F(SurfaceResponseDataTest, RejectsFilesFromEarlierVersions)
   without_kinds.write_interior = false;
   EXPECT_THROW(DistributeSurfaceAngularFluxes(Write("no_kinds", without_kinds), all_tags, mpi_comm),
                std::logic_error);
+
+  auto without_set_id = ForwardSpec();
+  without_set_id.write_file_set_id = false;
+  EXPECT_THROW(
+    DistributeSurfaceAngularFluxes(Write("no_set_id", without_set_id), all_tags, mpi_comm),
+    std::logic_error);
+
+  auto without_first_group = ForwardSpec();
+  without_first_group.write_first_group = false;
+  EXPECT_THROW(DistributeSurfaceAngularFluxes(
+                 Write("no_first_group", without_first_group), all_tags, mpi_comm),
+               std::logic_error);
+
+  auto without_upwind = AdjointSpec();
+  without_upwind.write_upwind = false;
+  EXPECT_THROW(
+    DistributeSurfaceAngularFluxes(Write("no_upwind", without_upwind), {"right"}, mpi_comm),
+    std::logic_error);
+  // Interior tags have no upwind values.
+  EXPECT_NO_THROW(DistributeSurfaceAngularFluxes(
+    Write("no_upwind_interior", without_upwind), {"plane"}, mpi_comm));
+}
+
+TEST_F(SurfaceResponseDataTest, RejectsFileOfAnotherSet)
+{
+  // File 2 of the five was left over from another set written to the same prefix.
+  auto spec = ForwardSpec();
+  spec.stray_file = std::make_pair(size_t{2}, std::uint64_t{8});
+  EXPECT_THROW(DistributeSurfaceAngularFluxes(Write("stray", spec), all_tags, mpi_comm),
+               std::logic_error);
+}
+
+TEST_F(SurfaceResponseDataTest, RejectsQuadratureDifferingAcrossFiles)
+{
+  // File 3 of the five has other quadrature weights, so it was not written with the rest.
+  auto spec = ForwardSpec();
+  spec.odd_quadrature_file = 3;
+  EXPECT_THROW(DistributeSurfaceAngularFluxes(Write("odd", spec), all_tags, mpi_comm),
+               std::logic_error);
+}
+
+TEST_F(SurfaceResponseDataTest, RejectsDifferentGroupRanges)
+{
+  // Same group counts per groupset, but the adjoint groupsets start one group later.
+  auto spec = AdjointSpec();
+  spec.first_group_shift = 1;
+  const auto forward =
+    DistributeSurfaceAngularFluxes(Write("forward", ForwardSpec()), all_tags, mpi_comm);
+  const auto adjoint = DistributeSurfaceAngularFluxes(Write("adjoint", spec), all_tags, mpi_comm);
+  EXPECT_THROW(ComputeSurfaceResponses(forward, adjoint, {"right"}, mpi_comm),
+               std::invalid_argument);
 }
 
 TEST_F(SurfaceResponseDataTest, RejectsMissingFace)
@@ -449,14 +587,6 @@ TEST_F(SurfaceResponseDataTest, RejectsIncompatibleDataSets)
   // Unknown surface.
   EXPECT_THROW(ComputeSurfaceResponses(forward, adjoint, {"left"}, mpi_comm),
                std::invalid_argument);
-
-  // One side of an interior surface alone is a half-range surface, which pairs with the other side
-  // of the adjoint data, so the same side alone in both data sets is rejected.
-  const auto lone_forward = DistributeSurfaceAngularFluxes(forward_base, {"plane_u"}, mpi_comm);
-  const auto lone_adjoint =
-    DistributeSurfaceAngularFluxes(Write("adjoint_ok", AdjointSpec()), {"plane_u"}, mpi_comm);
-  EXPECT_THROW(ComputeSurfaceResponses(lone_forward, lone_adjoint, {}, mpi_comm),
-               std::invalid_argument);
 }
 
 TEST_F(SurfaceResponseDataTest, MatchesDirectionsRelativeToQuadratureSpacing)
@@ -485,7 +615,7 @@ TEST_F(SurfaceResponseDataTest, MatchesDirectionsRelativeToQuadratureSpacing)
   EXPECT_NEAR(surface_responses[0].outgoing + surface_responses[0].incoming,
               interior,
               1.0e-13 * std::abs(interior));
-  EXPECT_NEAR(surface_responses[1].outgoing, boundary, 1.0e-13 * std::abs(boundary));
+  EXPECT_NEAR(surface_responses[1].Total(), boundary, 1.0e-13 * std::abs(boundary));
 
   // Beyond the tolerance.
   EXPECT_THROW(ComputeSurfaceResponses(forward, Shift(adjoint, 0, 1.2e-4), {}, mpi_comm),
@@ -527,7 +657,7 @@ TEST_F(SurfaceResponseDataTest, MatchesCloselySpacedDirections)
   EXPECT_NEAR(surface_responses[0].outgoing + surface_responses[0].incoming,
               interior,
               1.0e-13 * std::abs(interior));
-  EXPECT_NEAR(surface_responses[1].outgoing, boundary, 1.0e-13 * std::abs(boundary));
+  EXPECT_NEAR(surface_responses[1].Total(), boundary, 1.0e-13 * std::abs(boundary));
 
   // At this spacing, a 1e-15 difference is 1e-3 of the spacing and no longer a match.
   const std::size_t shifted_direction = 2;
@@ -566,9 +696,14 @@ TEST_F(SurfaceResponseDataTest, ReaderReturnsOneFileOfTheSet)
       EXPECT_EQ(surf_flux.num_directions, directions.size());
       EXPECT_EQ(surf_flux.num_groups, groups_per_groupset[gs]);
       const auto num_faces = ForwardSpec().tags[s].faces_per_file[0].size();
-      EXPECT_EQ(surf_flux.mapping.cell_ids.size(), num_faces);
-      EXPECT_EQ(surf_flux.mapping.cell_map.size(), num_faces);
-      EXPECT_EQ(surf_flux.mapping.cell_stride.size(), num_faces);
+      EXPECT_EQ(surf_flux.mapping->cell_ids.size(), num_faces);
+      EXPECT_EQ(surf_flux.mapping->cell_map.size(), num_faces);
+      EXPECT_EQ(surf_flux.mapping->normals.size(), 3 * num_faces);
+      EXPECT_EQ(surf_flux.mapping->mass_matrix.size(), 4 * num_faces);
+      // The face geometry is shared by the groupsets of a tag.
+      EXPECT_EQ(surf_flux.mapping, surf_fluxes[s].mapping);
+      EXPECT_EQ(surf_flux.data.omega.size(), 3 * directions.size());
+      EXPECT_EQ(surf_flux.data.weights.size(), directions.size());
       EXPECT_EQ(surf_flux.data.psi.size(),
                 2 * num_faces * directions.size() * surf_flux.num_groups);
     }
@@ -643,43 +778,31 @@ TEST_F(SurfaceResponseDataTest, ResolvesInteriorSurfaceNames)
                std::logic_error);
 }
 
-TEST_F(SurfaceResponseDataTest, HalfRangeSurfacesGiveTheInteriorTerms)
+TEST_F(SurfaceResponseDataTest, InteriorPartsMatchClosedForm)
 {
+  const auto forward =
+    DistributeSurfaceAngularFluxes(Write("forward", ForwardSpec()), {"plane"}, mpi_comm);
+  const auto adjoint =
+    DistributeSurfaceAngularFluxes(Write("adjoint", AdjointSpec()), {"plane"}, mpi_comm);
+  const auto responses = ComputeSurfaceResponses(forward, adjoint, {"plane"}, mpi_comm);
+  ASSERT_EQ(responses.size(), 1U);
+  // Directions crossing along +x pair the forward `_u` side with the adjoint `_d` side, and those
+  // crossing back the forward `_d` side with the adjoint `_u` side.
+  const auto [outgoing, incoming] = ExpectedInteriorParts();
+  EXPECT_NEAR(responses.front().outgoing, outgoing, 1.0e-13 * std::abs(outgoing));
+  EXPECT_NEAR(responses.front().incoming, incoming, 1.0e-13 * std::abs(incoming));
+  EXPECT_DOUBLE_EQ(responses.front().Total(), outgoing + incoming);
+}
+
+TEST_F(SurfaceResponseDataTest, RejectsLoneInteriorSide)
+{
+  // A surface response needs both sides of an interior surface, in either data set.
   const auto forward_base = Write("forward", ForwardSpec());
-  const auto adjoint_base = Write("adjoint", AdjointSpec());
-  const auto forward = DistributeSurfaceAngularFluxes(forward_base, {"plane"}, mpi_comm);
-  const auto adjoint = DistributeSurfaceAngularFluxes(adjoint_base, {"plane"}, mpi_comm);
-  const auto interior = ComputeSurfaceResponses(forward, adjoint, {"plane"}, mpi_comm);
-  ASSERT_EQ(interior.size(), 1U);
-
-  // Forward `_u` with adjoint `_d` carries the directions leaving the `_u` cell: the interior
-  // outgoing term. Forward `_d` with adjoint `_u` carries those leaving the `_d` cell, whose cosine
-  // with the `_d` normal is minus that with the `_u` normal: minus the interior incoming term.
-  const auto Half = [&](const std::string& forward_tag, const std::string& adjoint_tag)
-  {
-    const auto responses =
-      ComputeSurfaceResponses(DistributeSurfaceAngularFluxes(forward_base, {forward_tag}, mpi_comm),
-                              DistributeSurfaceAngularFluxes(adjoint_base, {adjoint_tag}, mpi_comm),
-                              {},
-                              mpi_comm);
-    EXPECT_EQ(responses.size(), 1U);
-    EXPECT_EQ(responses.front().name, forward_tag);
-    EXPECT_EQ(responses.front().kind, SurfaceKind::half_range);
-    EXPECT_EQ(responses.front().incoming, 0.0);
-    return responses.front().outgoing;
-  };
-  const double outgoing = interior.front().outgoing;
-  const double incoming = interior.front().incoming;
-  EXPECT_NEAR(Half("plane_u", "plane_d"), outgoing, 1.0e-13 * std::abs(outgoing));
-  EXPECT_NEAR(Half("plane_d", "plane_u"), -incoming, 1.0e-13 * std::abs(incoming));
-
-  // A half-range surface needs the other side in the adjoint data.
-  EXPECT_THROW(
-    ComputeSurfaceResponses(DistributeSurfaceAngularFluxes(forward_base, {"plane_u"}, mpi_comm),
-                            DistributeSurfaceAngularFluxes(adjoint_base, {"plane_u"}, mpi_comm),
-                            {},
-                            mpi_comm),
-    std::invalid_argument);
+  EXPECT_THROW(DistributeSurfaceAngularFluxes(forward_base, {"plane_u"}, mpi_comm),
+               std::invalid_argument);
+  EXPECT_THROW(DistributeSurfaceAngularFluxes(forward_base, {"plane_d", "right"}, mpi_comm),
+               std::invalid_argument);
+  EXPECT_NO_THROW(DistributeSurfaceAngularFluxes(forward_base, {"plane_u", "plane_d"}, mpi_comm));
 }
 
 TEST_F(SurfaceResponseDataTest, SideTagsOrientInteriorSurfaces)
@@ -708,16 +831,6 @@ TEST_F(SurfaceResponseDataTest, SideTagsOrientInteriorSurfaces)
   EXPECT_EQ(plane_d.front().kind, SurfaceKind::interior);
   EXPECT_EQ(plane_d.front().outgoing, -incoming);
   EXPECT_EQ(plane_d.front().incoming, -outgoing);
-
-  // The outgoing term along the `_d` normal is the half-range surface `plane_d`.
-  const auto half_range =
-    ComputeSurfaceResponses(DistributeSurfaceAngularFluxes(forward_base, {"plane_d"}, mpi_comm),
-                            adjoint,
-                            {"plane_d"},
-                            mpi_comm);
-  ASSERT_EQ(half_range.size(), 1U);
-  EXPECT_EQ(half_range.front().kind, SurfaceKind::half_range);
-  EXPECT_NEAR(half_range.front().outgoing, plane_d.front().outgoing, 1.0e-13 * std::abs(incoming));
 
   // A surface may be requested once under any of its names, and only interior surfaces take a
   // side tag.
@@ -758,8 +871,7 @@ TEST_F(SurfaceResponseDataTest, BoundaryTagsWithSideSuffixesStayBoundaries)
   for (const auto& surface_response : surface_responses)
   {
     EXPECT_EQ(surface_response.kind, SurfaceKind::boundary) << surface_response.name;
-    EXPECT_NEAR(surface_response.outgoing, boundary, 1.0e-13 * std::abs(boundary));
-    EXPECT_EQ(surface_response.incoming, 0.0);
+    EXPECT_NEAR(surface_response.Total(), boundary, 1.0e-13 * std::abs(boundary));
   }
   EXPECT_NO_THROW(ComputeSurfaceResponses(forward, adjoint, {"outer_d"}, mpi_comm));
 

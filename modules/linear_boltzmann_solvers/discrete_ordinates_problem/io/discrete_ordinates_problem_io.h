@@ -7,6 +7,7 @@
 #include "framework/data_types/vector3.h"
 #include "hdf5.h"
 #include <array>
+#include <memory>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -105,6 +106,17 @@ public:
                                              double centroid_spacing,
                                              const std::string& context);
 
+  /**
+   * Geometry and finite-element data of the faces of one surface tag, shared by all groupsets.
+   *
+   * Faces are stored in file order. `num_face_nodes` gives the node count n_f of each face, and the
+   * node arrays (`nodes_x`, `nodes_y`, `nodes_z`, `fe_shape`) list the nodes of every face in turn.
+   * `normals` holds the outward normal of each face's cell, three components per face, and
+   * `mass_matrix` the n_f x n_f face mass matrix of each face in turn, row-major by face node.
+   * `fe_shape` holds the face integral of each node's shape function. Face integrals include the
+   * angular extent of curvilinear coordinates. All arrays are empty when the tag has no faces in
+   * the file.
+   */
   struct SurfaceMap
   {
     std::vector<uint64_t> cell_ids;
@@ -120,42 +132,42 @@ public:
      * written for the same mesh.
      */
     std::map<FaceCentroidKey, uint64_t> cell_map;
-    /** Start offset into the corresponding SurfaceData::psi array for each surface cell. */
-    std::vector<uint64_t> cell_stride;
     std::vector<double> nodes_x;
     std::vector<double> nodes_y;
     std::vector<double> nodes_z;
+    std::vector<double> normals;
+    std::vector<double> fe_shape;
+    std::vector<double> mass_matrix;
   };
 
   /**
-   * Flattened angular-flux data for a surface and groupset.
+   * Angular-flux data of one surface tag and groupset.
    *
-   * The angular flux `psi` is ordered by cell, face node, direction, and group. The `omega`
-   * array follows cell, face node, direction, and Cartesian component, with three components per
-   * node-direction pair. The `mu`, `wt_d`, and `fe_shape` arrays follow cell, face node, and
-   * direction, with one value per node-direction pair. The `mass_matrix` array is ordered by cell,
-   * row face node, and column face node.
-   *
-   * The `node_index` and `dir_index` arrays contain start offsets into `psi` for each face node and
-   * node-direction pair, respectively. All arrays, including the index arrays, are empty when the
-   * requested surface has no local faces.
+   * `omega` holds the groupset's direction vectors, three components per direction, and `weights`
+   * its quadrature weights. The cosine of direction d with the normal of face f is
+   * `omega_d . normal_f`.
    *
    * `psi` holds the face-node values of the problem's stored angular flux on the cell that owns the
-   * face; the two sides of an interior surface are stored under separate tags. For an adjoint
-   * problem the writer requires the physical orientation that an adjoint solve leaves, so the
-   * stored angular flux is the adjoint flux for the listed direction and forward and adjoint data
-   * with the same indices refer to the same direction.
+   * face, ordered by face node (as in SurfaceMap), direction, and group: the value of node k,
+   * direction d, and group g is `psi[(k * num_directions + d) * num_groups + g]`. The two sides of
+   * an interior surface are stored under separate tags. For an adjoint problem the writer requires
+   * the physical orientation that an adjoint solve leaves, so the stored angular flux is the
+   * adjoint flux for the listed direction and forward and adjoint data with the same indices refer
+   * to the same direction.
+   *
+   * `upwind_psi`, read for boundary tags only and laid out like `psi`, holds the face value upwind
+   * of each direction along the direction the data transport in (`Omega_d` for forward data,
+   * `-Omega_d` for adjoint data): the cell value of `psi` for a direction that leaves the domain
+   * and the boundary-condition value the sweep used for one that enters it (0 for vacuum, the
+   * incoming flux for isotropic and arbitrary boundaries, the reflected angular flux for
+   * reflecting boundaries). It is empty for interior tags.
    */
   struct SurfaceData
   {
     std::vector<double> omega;
-    std::vector<double> mu;
-    std::vector<double> wt_d;
-    std::vector<double> mass_matrix;
-    std::vector<double> fe_shape;
+    std::vector<double> weights;
     std::vector<double> psi;
-    std::vector<uint64_t> node_index;
-    std::vector<uint64_t> dir_index;
+    std::vector<double> upwind_psi;
   };
 
   struct SurfaceAngularFlux
@@ -165,14 +177,19 @@ public:
     bool adjoint = false;
     /// Number of files in the file set, one per writing rank.
     uint64_t num_partitions = 0;
+    /// Random identifier shared by the files written by one WriteSurfaceAngularFluxes call.
+    uint64_t file_set_id = 0;
     /// Direction and group counts of the groupset, also set when the surface has no local faces.
     uint64_t num_directions = 0;
     uint64_t num_groups = 0;
+    /// First group of the groupset.
+    uint64_t first_group = 0;
     std::string surface_name;
     /// True when the tag is one side, `<name>_u` or `<name>_d`, of an interior surface; false for a
     /// boundary, whatever its name.
     bool interior = false;
-    SurfaceMap mapping;
+    /// Face geometry of the tag, shared by the entries of every groupset of the tag.
+    std::shared_ptr<const SurfaceMap> mapping;
     SurfaceData data;
   };
 
@@ -183,9 +200,9 @@ public:
    * \param file_base File name base
    * \param boundary_surfs Boundary surface names
    * \param interior_surfs Interior surface definitions, keyed by name, as an axis ("x", "y", or
-   * "z") and a coordinate. Each surface must lie inside the mesh, must match at least one cell
-   * face, must not coincide with an exterior boundary, and must not share a plane with another
-   * requested surface. Cells the surface cuts through contribute no faces. Each surface is written
+   * "z") and a coordinate. Each surface must lie inside the mesh, on cell faces (it must not cut
+   * through a cell), must match at least one cell face, must not coincide with an exterior
+   * boundary, and must not share a plane with another requested surface. Each surface is written
    * with an `_u` tag for face normals aligned with the positive specified axis and a `_d` tag for
    * the opposite orientation; neither these tags nor the surface name may equal a requested
    * boundary name. Each tag's `mesh/<tag>` group records in its `interior` attribute whether the
@@ -194,8 +211,11 @@ public:
    * Collective over all ranks. Surface selections may differ by rank, but each file contains only
    * its rank's tags, and DistributeSurfaceAngularFluxes requires every requested tag in every file
    * of a set. Plane-matching tolerances are relative to the global mesh extent. Each rank writes
-   * `<file_base><rank>.h5`, which records whether the problem is in adjoint mode and the number of
-   * files written (`num_partitions`).
+   * `<file_base><rank>.h5`, which records whether the problem is in adjoint mode, the number of
+   * files written (`num_partitions`), and an identifier shared by the files of the set
+   * (`file_set_id`). Each groupset records its first group. Boundary tags also store the upwind
+   * face values (`upwind_flux`; see SurfaceData), taken from the problem's boundary conditions for
+   * the directions that enter the domain.
    *
    * Requires `options.save_angular_flux=true`. An adjoint problem must hold its solution in the
    * physical orientation (`IsAdjointSolutionReoriented()`), which an adjoint steady-state or

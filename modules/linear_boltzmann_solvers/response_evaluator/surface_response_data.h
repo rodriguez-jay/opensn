@@ -24,6 +24,8 @@ struct SurfaceQuadrature
 {
   std::uint64_t num_dirs = 0;
   std::uint64_t num_groups = 0;
+  /// First group of the groupset.
+  std::uint64_t first_group = 0;
   /// Direction vectors, three Cartesian components per direction.
   std::vector<double> omegas;
   /// Quadrature weights, one per direction.
@@ -44,7 +46,10 @@ struct SurfaceShard
   {
     /// Direction cosine with the face normal, ordered by face and direction.
     std::vector<double> mu;
-    /// Angular flux, ordered by face, face node, direction, and group.
+    /// Angular flux, ordered by face, face node, direction, and group. For an interior tag, the
+    /// values of the face's cell; for a boundary tag, the upwind values written by
+    /// WriteSurfaceAngularFluxes (`upwind_flux`), which take the boundary condition for the
+    /// directions that enter the domain.
     std::vector<double> psi;
   };
 
@@ -95,29 +100,31 @@ enum class SurfaceKind
 {
   /// An exterior boundary, stored under its boundary name.
   boundary,
-  /// An interior surface with both sides, `<name>_u` and `<name>_d`, in the forward data.
-  interior,
-  /// One side, `<name>_u` or `<name>_d`, of an interior surface, without the other side in the
-  /// forward data.
-  half_range
+  /// An interior surface, stored as its two sides `<name>_u` and `<name>_d`.
+  interior
 };
 
-/// The surface response of one boundary, interior surface, or half-range surface.
+/// The surface response of one boundary or interior surface.
 struct SurfaceResponse
 {
-  /// The surface as requested: a boundary name; an interior surface name, bare (`X`) or with the
-  /// side tag that sets its normal (`X_u` or `X_d`); or a half-range surface tag.
+  /// The surface as requested: a boundary name, or an interior surface name, bare (`X`) or with
+  /// the side tag that sets its normal (`X_u` or `X_d`).
   std::string name;
   SurfaceKind kind = SurfaceKind::boundary;
   /// Contribution of the directions with positive cosine with the surface normal. For an interior
   /// surface, the normal is the outward normal of the selected side, `X_u` (the positive axis) for
   /// `X` and `X_u` and `X_d` (the negative axis) for `X_d`, and these directions leave the cell of
-  /// that side. For a boundary or half-range surface, the normal is the outward normal of the
-  /// stored faces and these are their outflow directions.
+  /// that side. For a boundary, the normal is the outward normal and these are the outflow
+  /// directions.
   double outgoing = 0.0;
-  /// For an interior surface, the contribution of the directions with negative cosine with the
-  /// normal, which leave the cell of the other side. Zero otherwise.
+  /// Contribution of the directions with negative cosine with the normal. For an interior surface,
+  /// these leave the cell of the other side and cross back. For a boundary, they are the inflow
+  /// directions: the forward boundary-condition value (a forward boundary source; 0 for a vacuum
+  /// boundary) against the adjoint cell value.
   double incoming = 0.0;
+
+  /// The response carried across the surface along its normal: `outgoing + incoming`.
+  double Total() const { return outgoing + incoming; }
 };
 
 /// Rank that owns the face with `key` on a communicator with `num_ranks` ranks.
@@ -141,10 +148,11 @@ int SurfaceFaceOwner(const DiscreteOrdinatesProblemIO::FaceCentroidKey& key, int
  * without faces.
  *
  * \param file_base File name base.
- * \param surfaces Surface names to read. Must be non-empty and unique. A stored tag (a boundary
- *        name, or `<name>_u` / `<name>_d` for one side of an interior surface) reads that tag; the
- *        name of an interior surface reads both of its tags. Names are resolved against file 0,
- *        and every other file is read with the resolved tags.
+ * \param surfaces Surface names to read. Must be non-empty and unique. A boundary name reads that
+ *        tag, and the name of an interior surface reads both of its tags, `<name>_u` and
+ *        `<name>_d`. A single side's tag is rejected unless its other side is also requested,
+ *        because surface responses need both sides. Names are resolved against file 0, and every
+ *        other file is read with the resolved tags.
  * \param comm Communicator to distribute the faces over.
  * \param max_send_bytes Per-rank send budget of one exchange.
  *
@@ -167,36 +175,39 @@ DistributeSurfaceAngularFluxes(const std::string& file_base,
  * with mu_{f,d} the cosine of direction d with the normal n_f of face f. The forward tags of the
  * forward data define the surfaces, classified by the kind the writer records for each tag
  * (SurfaceShard::interior), not by its name:
- * - A boundary: n_f is the outward normal, D_f the outflow directions (mu_{f,d} > 0), and both
- *   fluxes are those of the face's cell, from the boundary tag of each data set.
+ * - A boundary: n_f is the outward normal, D_f holds every direction, and both fluxes are upwind
+ *   face values from the boundary tag of each data set. For the outflow directions (mu_{f,d} > 0)
+ *   they are the forward flux of the face's cell and the adjoint boundary-condition value (0 for a
+ *   vacuum boundary), which is upwind for the adjoint because it travels along -Omega_d; for the
+ *   inflow directions, the forward boundary-condition value and the adjoint flux of the cell. This
+ *   is the boundary term of the discrete adjoint identity, so it is exact for the discretization
+ *   like an interior surface, and the totals of all boundaries sum to <q, psi^dagger> -
+ *   <q^dagger, psi> for the volumetric sources q and q^dagger.
  * - An interior surface, with both interior tags `X_u` and `X_d` in the forward data: the faces are
  * those of `X_u`, n_f is the `X_u` normal (the positive axis), and D_f holds every direction. The
  * forward flux comes from the side upwind of the direction (`X_u` for mu_{f,d} > 0, `X_d` for
  *   mu_{f,d} < 0) and the adjoint flux from the other side, which is upwind for the adjoint.
  *   Requested as `X` or `X_u`, R is measured along the `X_u` normal; requested as `X_d`, along the
  *   `X_d` normal (the negative axis), which gives -R and swaps and negates `outgoing` and
- *   `incoming`. A side tag names an interior surface only when it is not itself a forward tag.
- * - A half-range surface, with one interior tag `X_s` (s = u or d) in the forward data: the faces
- * are those of `X_s`, n_f is their outward normal, and D_f holds their outflow directions (mu_{f,d}
- * > 0). The forward flux comes from `X_s` and the adjoint flux from the other tag of the adjoint
- * data, so `X_u` gives the interior `outgoing` term and `X_d` minus its `incoming` term. OpenSn
- * quadrature weights sum to 1, so for an adjoint problem driven by a volumetric, material, or point
- * response source, R equals the response it carries across the surface. Forward and adjoint
- * directions are paired by equal direction vectors and must have equal weights. Face nodes are
- * paired by location.
+ *   `incoming`.
+ * Each response is split into `outgoing` (mu_{f,d} > 0) and `incoming` (mu_{f,d} < 0) parts; the
+ * response is their sum (SurfaceResponse::Total). OpenSn quadrature weights sum to 1, so for an
+ * adjoint problem driven by a volumetric, material, or point response source, R equals the response
+ * it carries across the surface. Forward and adjoint directions are paired by equal direction
+ * vectors and must have equal weights. Face nodes are paired by location.
  *
  * \param forward Forward data. Must not be adjoint.
  * \param adjoint Adjoint data. Must be adjoint and must be distributed over `comm`.
- * \param surfaces Surfaces to evaluate: boundary names, interior surface names (`X`, or `X_u` or
- *        `X_d` to choose the normal), and half-range surface tags (`X_u` or `X_d`). Each surface
- *        may be requested once. If empty, every surface of the forward data is evaluated, interior
- *        surfaces along their `X_u` normals.
+ * \param surfaces Surfaces to evaluate: boundary names and interior surface names (`X`, or `X_u`
+ *        or `X_d` to choose the normal). Each surface may be requested once. If empty, every
+ * surface of the forward data is evaluated, interior surfaces along their `X_u` normals.
  * \param comm Communicator both data sets were distributed over.
  * \return One surface response per surface, in name order when `surfaces` is empty and in the given
  * order otherwise. Values are global sums.
  *
  * Collective over `comm`. Throws `std::invalid_argument` for incompatible data sets, unknown
- * surfaces, a surface requested more than once, or an adjoint tag whose kind differs from its
+ * surfaces, a surface requested more than once, a side of an interior surface without its other
+ * side, or an adjoint tag whose kind differs from its
  * forward surface, and `std::logic_error`, on all ranks, if any
  * face lacks a matching face in another required tag or matching faces have different node
  * locations.

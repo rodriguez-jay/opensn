@@ -131,6 +131,9 @@ ResponseEvaluator::SetDataOptions(const InputParameters& input)
                           "A data object with name " + name + " already exists.");
 
   const auto prefixes = params.GetParam("file_prefixes");
+  const auto surfaces = params.GetParamVectorValue<std::string>("surfaces");
+  OpenSnInvalidArgumentIf(not surfaces.empty() and not prefixes.Has("surface_angular_fluxes"),
+                          "\"surfaces\" requires a \"surface_angular_fluxes\" file prefix.");
 
   FluxMomentData phi;
   if (prefixes.Has("flux_moments"))
@@ -145,7 +148,6 @@ ResponseEvaluator::SetDataOptions(const InputParameters& input)
   SurfaceAngularFluxData surf_psi;
   if (prefixes.Has("surface_angular_fluxes"))
   {
-    const auto surfaces = params.GetParamVectorValue<std::string>("surfaces");
     OpenSnInvalidArgumentIf(surfaces.empty(),
                             "\"surfaces\" must be specified when reading surface angular fluxes.");
     surf_psi = DistributeSurfaceAngularFluxes(
@@ -505,7 +507,7 @@ ResponseEvaluator::EvaluateResponse(const std::string& data_name) const
   return global_response;
 }
 
-double
+std::vector<SurfaceResponse>
 ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_data,
                                            const std::string& adj_data,
                                            const std::vector<std::string>& surfaces) const
@@ -521,24 +523,14 @@ ResponseEvaluator::EvaluateSurfaceResponse(const std::string& fwd_data,
   const auto& fwd_surf_psi = GetSurfaceData(fwd_data);
   const auto& adj_surf_psi = GetSurfaceData(adj_data);
 
-  const auto surface_responses =
-    ComputeSurfaceResponses(fwd_surf_psi, adj_surf_psi, surfaces, mpi_comm);
-
-  double response = 0.0;
+  auto surface_responses = ComputeSurfaceResponses(fwd_surf_psi, adj_surf_psi, surfaces, mpi_comm);
   for (const auto& surface_response : surface_responses)
-  {
-    const auto total = surface_response.outgoing + surface_response.incoming;
-    response += total;
-    if (surface_response.kind == SurfaceKind::interior)
-      log.Log0Verbose1() << "Interior surface " << surface_response.name << ": outgoing "
-                         << surface_response.outgoing << ", incoming " << surface_response.incoming
-                         << ", total " << total;
-    else if (surface_response.kind == SurfaceKind::half_range)
-      log.Log0Verbose1() << "Half-range surface " << surface_response.name << ": " << total;
-    else
-      log.Log0Verbose1() << "Boundary " << surface_response.name << ": " << total;
-  }
-  return response;
+    log.Log0Verbose1() << (surface_response.kind == SurfaceKind::interior ? "Interior surface "
+                                                                          : "Boundary ")
+                       << surface_response.name << ": outgoing " << surface_response.outgoing
+                       << ", incoming " << surface_response.incoming << ", total "
+                       << surface_response.Total();
+  return surface_responses;
 }
 
 std::vector<double>
