@@ -157,15 +157,12 @@ SurfaceMeshLogicalVolume::Inside(const Vector3& point) const
         Vector3 v1p = intp - v1;
         Vector3 v2p = intp - v2;
 
-        // Compute the cross products
-        Vector3 x0p = v01.Cross(v0p);
-        Vector3 x1p = v12.Cross(v1p);
-        Vector3 x2p = v20.Cross(v2p);
-
-        // Normalize them
-        x0p = x0p / x0p.Norm();
-        x1p = x1p / x1p.Norm();
-        x2p = x2p / x2p.Norm();
+        // Compute the cross products. Only their signs along the face normal are used, so they are
+        // not normalized: a cross product is zero when the intersection lies on an edge line,
+        // which counts as intersecting the triangle.
+        const Vector3 x0p = v01.Cross(v0p);
+        const Vector3 x1p = v12.Cross(v1p);
+        const Vector3 x2p = v20.Cross(v2p);
 
         Vector3 face_norm = surf_mesh_->GetTriangles()[fi].geometric_normal /
                             surf_mesh_->GetTriangles()[fi].geometric_normal.Norm();

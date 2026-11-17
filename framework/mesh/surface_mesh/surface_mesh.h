@@ -5,6 +5,7 @@
 
 #include "framework/parameters/input_parameters.h"
 #include <cstdio>
+#include <string>
 #include <vector>
 
 namespace opensn
@@ -102,6 +103,33 @@ public:
 
   /// Loads a surface mesh from gmsh's file format.
   int ImportFromMshFiles(const char* fileName, bool as_poly);
+
+  /**
+   * Replaces this surface mesh with the closed surfaces formed by named physical groups of a gmsh
+   * mesh file, for use as a SurfaceMeshLogicalVolume.
+   *
+   * The file is read with MeshIO::FromGmsh (formats 2.2 and 4.1), and the groups must have
+   * dimension one less than the mesh. Their elements may lie on the mesh boundary or inside the
+   * mesh. In a 3D mesh, the triangles and quadrilaterals of the groups must form closed surfaces,
+   * with every edge in exactly two faces; quadrilaterals are split into two triangles. In a 2D
+   * mesh, the line segments must form closed loops, with every vertex in exactly two segments;
+   * each segment is extruded into a wall of two triangles spanning z0 +/- h, where z0 is the mean
+   * z of the loop vertices and h is half the larger extent of the loops in x and y, so the surface
+   * encloses a prism around each loop in the mesh plane.
+   *
+   * Element orientation in the file is ignored. Faces are oriented consistently within each
+   * connected surface or loop, and then so that their normals point out of the enclosed region: a
+   * surface or loop nested inside an odd number of others bounds a hole. Triangle normals follow
+   * the right-hand rule, as SurfaceMeshLogicalVolume::Inside requires.
+   *
+   * Throws std::invalid_argument if no names are given, a name is not a physical group of
+   * dimension one less than the mesh, the groups have no elements, do not form closed loops or
+   * surfaces, form a non-orientable surface, or contain an element that encloses no area or
+   * volume. Throws std::logic_error or std::runtime_error if the file cannot be read, is not a 2D
+   * or 3D mesh, or contains elements of an unsupported type in the groups. Not collective.
+   */
+  void ImportFromGmshPhysicalGroups(const std::string& file_name,
+                                    const std::vector<std::string>& physical_names);
 
   /**
    * Runs over the faces of the surfacemesh and determines neighbors. The algorithm first
