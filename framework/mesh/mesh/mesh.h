@@ -17,6 +17,23 @@ class GridFaceHistogram;
 class MeshGenerator;
 class LogicalVolume;
 
+/**
+ * A cell face inside the mesh that belongs to a physical group of dimension one less than the
+ * mesh in the mesh file, such as a gmsh curve group in a 2D mesh.
+ */
+struct InteriorFaceTag
+{
+  /// ID of the physical group in the boundary-ID map, where its name is registered.
+  uint64_t group_id = 0;
+  /// Global vertex IDs in the order of the mesh-file element. In 2D the reference normal of the
+  /// face is the tangent v1 - v0 rotated clockwise, (t_y, -t_x, 0); in 3D it is
+  /// (v1 - v0) x (v2 - v0).
+  std::vector<uint64_t> vertex_ids;
+};
+
+/// Interior face tags keyed by the sorted global vertex IDs of the face.
+using InteriorFaceTagMap = std::map<std::vector<uint64_t>, InteriorFaceTag>;
+
 constexpr std::string_view
 ToString(CoordinateSystemType type) noexcept
 {
@@ -121,6 +138,14 @@ public:
 
   std::map<std::string, uint64_t>& GetBoundaryNameMap() { return boundary_name_map_; }
   const std::map<std::string, uint64_t>& GetBoundaryNameMap() const { return boundary_name_map_; }
+
+  /**
+   * Tags of interior faces that belong to lower-dimensional physical groups of the mesh file.
+   * The map is replicated on every rank and holds the tagged faces of the whole mesh. Only meshes
+   * set up from an UnpartitionedMesh on every rank (MeshGenerator) carry it.
+   */
+  InteriorFaceTagMap& GetInteriorFaceTags() { return interior_face_tags_; }
+  const InteriorFaceTagMap& GetInteriorFaceTags() const { return interior_face_tags_; }
 
   std::map<uint64_t, std::string>& GetBoundaryIDMap() { return boundary_id_map_; }
   const std::map<uint64_t, std::string>& GetBoundaryIDMap() const { return boundary_id_map_; }
@@ -282,6 +307,7 @@ private:
   OrthoMeshAttributes ortho_attributes_;
   std::map<uint64_t, std::string> boundary_id_map_;
   std::map<std::string, uint64_t> boundary_name_map_;
+  InteriorFaceTagMap interior_face_tags_;
   int num_partitions_;
   uint64_t global_vertex_count_;
 

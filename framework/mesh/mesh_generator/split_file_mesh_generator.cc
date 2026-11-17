@@ -42,6 +42,11 @@ SplitFileMeshGenerator::Execute()
     current_umesh = GenerateUnpartitionedMesh(current_umesh);
 
     log.Log() << "Writing split-mesh with " << num_partitions << " parts";
+    if (not current_umesh->GetInteriorFaceTags().empty())
+      log.Log0Warning()
+        << "The mesh has physical groups on interior faces, which SplitFileMeshGenerator "
+           "does not distribute, so they cannot be selected as interior face "
+           "groups. Execute the input mesh generator directly to keep them.";
     const auto cell_pids = PartitionMesh(*current_umesh, num_partitions);
     WriteSplitMesh(cell_pids, *current_umesh, num_partitions);
     log.Log() << "Split-mesh with " << num_partitions << " parts successfully created";

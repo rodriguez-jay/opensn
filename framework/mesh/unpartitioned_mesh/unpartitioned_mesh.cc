@@ -203,6 +203,35 @@ UnpartitionedMesh::SetOrthoAttributes(size_t nx, size_t ny, size_t nz)
 }
 
 void
+UnpartitionedMesh::BuildInteriorFaceTags()
+{
+  const auto SortedKey = [](std::vector<uint64_t> vertex_ids)
+  {
+    std::sort(vertex_ids.begin(), vertex_ids.end());
+    return vertex_ids;
+  };
+
+  std::map<std::vector<uint64_t>, const LightWeightCell*> boundary_cells;
+  for (const auto& boundary_cell : raw_boundary_cells_)
+    boundary_cells.emplace(SortedKey(boundary_cell->vertex_ids), boundary_cell.get());
+
+  interior_face_tags_.clear();
+  if (boundary_cells.empty())
+    return;
+  for (const auto& cell : raw_cells_)
+    for (const auto& face : cell->faces)
+    {
+      if (not face.has_neighbor)
+        continue;
+      auto key = SortedKey(face.vertex_ids);
+      const auto it = boundary_cells.find(key);
+      if (it != boundary_cells.end())
+        interior_face_tags_.try_emplace(
+          std::move(key), InteriorFaceTag{it->second->block_id, it->second->vertex_ids});
+    }
+}
+
+void
 UnpartitionedMesh::BuildMeshConnectivity()
 {
   const size_t num_raw_cells = raw_cells_.size();

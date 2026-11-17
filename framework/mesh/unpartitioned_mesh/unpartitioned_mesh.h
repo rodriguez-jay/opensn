@@ -106,6 +106,16 @@ public:
   /// Establishes neighbor connectivity for the light-weight mesh.
   void BuildMeshConnectivity();
 
+  /**
+   * Records the raw boundary cells that coincide with cell faces that have a neighbor, as interior
+   * face tags. File readers keep lower-dimensional physical-group elements as raw boundary cells;
+   * those on the mesh boundary set face boundary IDs, and those inside the mesh are recorded here.
+   * Requires BuildMeshConnectivity. Replaces any previously recorded tags.
+   */
+  void BuildInteriorFaceTags();
+
+  const InteriorFaceTagMap& GetInteriorFaceTags() const { return interior_face_tags_; }
+
   /// Compute centroids for all cells.
   void ComputeCentroids();
 
@@ -133,6 +143,7 @@ protected:
   std::vector<std::shared_ptr<LightWeightCell>> raw_cells_;
   std::vector<std::shared_ptr<LightWeightCell>> raw_boundary_cells_;
   std::vector<std::set<uint64_t>> vertex_cell_subscriptions_;
+  InteriorFaceTagMap interior_face_tags_;
 };
 
 } // namespace opensn

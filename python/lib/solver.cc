@@ -610,10 +610,15 @@ WrapLBS(py::module& slv)
        const std::string& file_base,
        const std::vector<std::string>& boundary_surfaces,
        const std::map<std::string, std::pair<std::string, double>>& interior_surfaces,
-       const std::map<std::string, std::shared_ptr<LogicalVolume>>& closed_surfaces)
+       const std::map<std::string, std::shared_ptr<LogicalVolume>>& closed_surfaces,
+       const std::vector<std::string>& interior_face_groups)
     {
-      DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
-        self, file_base, boundary_surfaces, interior_surfaces, closed_surfaces);
+      DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(self,
+                                                            file_base,
+                                                            boundary_surfaces,
+                                                            interior_surfaces,
+                                                            closed_surfaces,
+                                                            interior_face_groups);
     },
     R"(
     Write surface angular flux data to file.
@@ -644,6 +649,20 @@ WrapLBS(py::module& slv)
         inside cell may have a boundary face), and may not share a face with another closed or
         interior surface. Its name and generated tags may not equal a requested boundary name or
         an interior surface's name or tags. Every rank must request the same closed-surface names.
+    interior_face_groups: list[str], default=[]
+        Names of physical groups of the mesh file, of dimension one less than the mesh (for
+        example gmsh curve groups in a 2D mesh), whose faces inside the mesh are exported. The
+        group need not be closed. Each face is written twice: under '<name>_u' from the cell whose
+        outward normal points along the face's reference normal, and under '<name>_d' from the
+        other cell. The reference normal follows the vertex order of the mesh-file element: in 2D
+        it is the tangent from the first to the second vertex rotated clockwise, so it points out
+        of a loop traversed counterclockwise; in 3D it is the right-hand normal. Reverse elements
+        in the mesh generator, such as with ``gmsh.model.mesh.reverse``, to choose it. A group must
+        have at least one face inside the mesh (export faces on the exterior boundary with
+        boundary_surfaces), may not share a face with another requested surface, and follows the
+        naming rules of closed surfaces. Only meshes set up by a mesh generator's ``Execute``
+        from a file keep these groups; ``DistributedMeshGenerator`` and
+        ``SplitFileMeshGenerator`` do not. Every rank must request the same groups.
 
     Notes
     -----
@@ -673,9 +692,12 @@ WrapLBS(py::module& slv)
         unknown or not on the mesh; or if an interior surface has an invalid axis, lies outside the
         mesh, cuts through a cell, shares a plane with another interior surface, coincides with an
         exterior boundary, matches no mesh faces, or has a name or generated tag equal to a requested boundary
-        name; if closed surfaces differ between ranks; or if a closed surface has no logical
-        volume, matches no mesh faces, reaches an exterior boundary, shares a face with another
-        surface, or has a name or generated tag equal to another requested surface's name or tag.
+        name; if closed surfaces or interior face groups differ between ranks; if a closed surface
+        has no logical volume, matches no mesh faces, reaches an exterior boundary, shares a face
+        with another surface, or has a name or generated tag equal to another requested surface's
+        name or tag; or if an interior face group is not a physical group of the mesh, has no
+        faces inside the mesh, shares a face with another surface, or has a name or generated tag
+        equal to another requested surface's name or tag.
         A problem with an uncollided flux is also rejected, because its stored angular flux holds
         only the collided part.
     RuntimeError
@@ -684,7 +706,8 @@ WrapLBS(py::module& slv)
     py::arg("file_base"),
     py::arg("boundary_surfaces") = std::vector<std::string>{},
     py::arg("interior_surfaces") = std::map<std::string, std::pair<std::string, double>>{},
-    py::arg("closed_surfaces") = std::map<std::string, std::shared_ptr<LogicalVolume>>{}
+    py::arg("closed_surfaces") = std::map<std::string, std::shared_ptr<LogicalVolume>>{},
+    py::arg("interior_face_groups") = std::vector<std::string>{}
   );
   lbs_problem.def(
     "ReadSurfaceAngularFluxes",

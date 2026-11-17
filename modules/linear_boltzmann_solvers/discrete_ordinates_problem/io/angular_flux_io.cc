@@ -379,7 +379,8 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
   const std::string& file_base,
   const std::vector<std::string>& boundary_surfs,
   const std::map<std::string, std::pair<std::string, double>>& interior_surfs,
-  const std::map<std::string, std::shared_ptr<LogicalVolume>>& closed_surfs)
+  const std::map<std::string, std::shared_ptr<LogicalVolume>>& closed_surfs,
+  const std::vector<std::string>& interior_face_groups)
 {
   OpenSnInvalidArgumentIf(not do_problem.SaveAngularFluxEnabled(),
                           "WriteSurfaceAngularFluxes requires `options.save_angular_flux=true`.");
@@ -406,12 +407,14 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
   const auto& groupsets = do_problem.GetGroupsets();
   const auto num_groupsets = static_cast<uint64_t>(groupsets.size());
 
-  int surfaces_requested =
-    boundary_surfs.empty() and interior_surfs.empty() and closed_surfs.empty() ? 0 : 1;
+  int surfaces_requested = boundary_surfs.empty() and interior_surfs.empty() and
+                               closed_surfs.empty() and interior_face_groups.empty()
+                             ? 0
+                             : 1;
   mpi_comm.all_reduce(surfaces_requested, mpi::op::max<int>());
   OpenSnLogicalErrorIf(not surfaces_requested,
                        "No surface provided. Provide boundary names, interior surface "
-                       "definitions, or closed surfaces.");
+                       "definitions, closed surfaces, or interior face groups.");
 
   // Global mesh bounds. These set the interior-surface tolerance relative to the problem size and
   // are used to reject surfaces outside the mesh. Ranks without cells contribute nothing.
@@ -687,21 +690,30 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
                                           "boundary name on another rank.")
                             : tag_collision_message);
 
-  // Closed surfaces. The face selection below uses one count per closed surface, reduced in name
-  // order, so every rank must request the same names. Check the count and a hash of the names.
+  // Closed surfaces and interior face groups. The face selections below use one count per surface,
+  // reduced in request order, so every rank must request the same names. Check the counts and a
+  // hash of the names.
   {
     uint64_t name_hash = 14695981039346656037ULL; // FNV-1a, identical on every rank
-    for (const auto& [name, volume] : closed_surfs)
+    const auto HashName = [&name_hash](const std::string& name)
+    {
       for (const char c : name + '\0')
         name_hash = (name_hash ^ static_cast<unsigned char>(c)) * 1099511628211ULL;
-    const auto num_closed = static_cast<uint64_t>(closed_surfs.size());
-    uint64_t min_num_closed = 0, max_num_closed = 0, min_hash = 0, max_hash = 0;
-    mpi_comm.all_reduce(num_closed, min_num_closed, mpi::op::min<uint64_t>());
-    mpi_comm.all_reduce(num_closed, max_num_closed, mpi::op::max<uint64_t>());
+    };
+    for (const auto& [name, volume] : closed_surfs)
+      HashName(name);
+    HashName("");
+    for (const auto& name : interior_face_groups)
+      HashName(name);
+    const auto num_names = static_cast<uint64_t>(closed_surfs.size() + interior_face_groups.size());
+    uint64_t min_num_names = 0, max_num_names = 0, min_hash = 0, max_hash = 0;
+    mpi_comm.all_reduce(num_names, min_num_names, mpi::op::min<uint64_t>());
+    mpi_comm.all_reduce(num_names, max_num_names, mpi::op::max<uint64_t>());
     mpi_comm.all_reduce(name_hash, min_hash, mpi::op::min<uint64_t>());
     mpi_comm.all_reduce(name_hash, max_hash, mpi::op::max<uint64_t>());
-    OpenSnInvalidArgumentIf(min_num_closed != max_num_closed or min_hash != max_hash,
-                            "Every rank must request the same closed surfaces.");
+    OpenSnInvalidArgumentIf(min_num_names != max_num_names or min_hash != max_hash,
+                            "Every rank must request the same closed surfaces and interior face "
+                            "groups.");
   }
 
   // The error message of the lowest rank with a nonempty message, or an empty string if no rank
@@ -741,6 +753,35 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
           "Closed surface tag " + tag + " collides with a requested surface name or tag.";
     }
   }
+  // Interior face groups are physical groups of the mesh file, registered in the boundary-name map.
+  const auto& boundary_name_map = grid->GetBoundaryNameMap();
+  std::map<uint64_t, std::string> group_names;
+  for (const auto& name : interior_face_groups)
+  {
+    if (not invalid_closed_message.empty())
+      break;
+    const auto group = boundary_name_map.find(name);
+    if (group == boundary_name_map.end())
+    {
+      invalid_closed_message = "Interior face group " + name +
+                               " is not a physical group of dimension one less than the mesh.";
+      break;
+    }
+    group_names[group->second] = name;
+    if (std::find(boundary_surfs.begin(), boundary_surfs.end(), name) != boundary_surfs.end() or
+        interior_surfs.count(name) > 0 or interior_tags.count(name) > 0 or
+        closed_surfs.count(name) > 0)
+      invalid_closed_message =
+        "Interior face group name " + name + " collides with a requested surface name or tag.";
+    for (const auto& tag : {name + "_u", name + "_d"})
+    {
+      interior_tags.insert(tag);
+      if (interior_surfs.count(tag) > 0 or closed_surfs.count(tag) > 0 or
+          not surface_tags.insert(tag).second)
+        invalid_closed_message =
+          "Interior face group tag " + tag + " collides with a requested surface name or tag.";
+    }
+  }
   const auto closed_name_error = LowestRankError(invalid_closed_message);
   OpenSnInvalidArgumentIf(not closed_name_error.empty(), closed_name_error);
 
@@ -748,7 +789,7 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
   // centroids lie inside the volume. The inside cell's copy of the face is tagged <name>_u, so its
   // outward normal points out of the volume; the outside cell's copy is tagged <name>_d. Neighbor
   // cells are local or ghost cells, which every rank stores for its local cells' faces.
-  std::map<std::pair<uint64_t, size_t>, std::string> closed_face_tags;
+  std::map<std::pair<uint64_t, size_t>, std::string> selected_face_tags;
   if (not closed_surfs.empty())
   {
     std::string local_closed_message;
@@ -787,7 +828,7 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
 
           ++local_closed_faces[s];
           const auto tag = name + (cell_inside ? "_u" : "_d");
-          bool shared = not closed_face_tags.try_emplace({cell->local_id, f}, tag).second;
+          bool shared = not selected_face_tags.try_emplace({cell->local_id, f}, tag).second;
           for (const auto& [plane_name, plane] : interior_surfs)
             shared =
               shared or FaceMatchesInteriorSurface(cell_mapping, f, plane.first, plane.second);
@@ -814,6 +855,73 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
                               "Closed surface " + name + " matches no mesh faces.");
       ++s;
     }
+  }
+
+  // Select the faces of each interior face group: faces inside the mesh whose tag belongs to the
+  // group. The copy of a face whose outward normal points along the reference normal of the
+  // mesh-file element is tagged <name>_u, and the other copy <name>_d.
+  if (not interior_face_groups.empty())
+  {
+    const auto& face_tags = grid->GetInteriorFaceTags();
+    const bool two_d = grid->GetDimension() == 2;
+    std::string local_group_message;
+    std::map<std::string, uint64_t> local_group_faces;
+    for (const auto& name : interior_face_groups)
+      local_group_faces[name] = 0;
+
+    for (const auto& cell : grid->GetLocalCells())
+    {
+      const auto& cell_mapping = discretization.GetCellMapping(*cell);
+      for (size_t f = 0; f < cell->faces.size(); ++f)
+      {
+        const auto& face = cell->faces[f];
+        if (not face.has_neighbor)
+          continue;
+        auto key = face.vertex_ids;
+        std::sort(key.begin(), key.end());
+        const auto face_tag = face_tags.find(key);
+        if (face_tag == face_tags.end())
+          continue;
+        const auto group = group_names.find(face_tag->second.group_id);
+        if (group == group_names.end())
+          continue;
+
+        const auto& element = face_tag->second.vertex_ids;
+        const auto& v0 = grid->GlobalVertex(element[0]);
+        const auto& v1 = grid->GlobalVertex(element[1]);
+        const Vector3 tangent = v1 - v0;
+        const Vector3 reference_normal = two_d ? Vector3(tangent.y, -tangent.x, 0.0)
+                                               : tangent.Cross(grid->GlobalVertex(element[2]) - v0);
+        const auto& name = group->second;
+        ++local_group_faces[name];
+        const auto tag = name + (face.normal.Dot(reference_normal) > 0.0 ? "_u" : "_d");
+        bool shared = not selected_face_tags.try_emplace({cell->local_id, f}, tag).second;
+        for (const auto& [plane_name, plane] : interior_surfs)
+          shared = shared or FaceMatchesInteriorSurface(cell_mapping, f, plane.first, plane.second);
+        if (shared and local_group_message.empty())
+          local_group_message = "Interior face group " + name +
+                                " shares a face with another closed or interior surface.";
+      }
+    }
+
+    const auto group_selection_error = LowestRankError(local_group_message);
+    OpenSnInvalidArgumentIf(not group_selection_error.empty(), group_selection_error);
+
+    // Identical name order on every rank, checked above.
+    std::vector<uint64_t> local_counts, counts(interior_face_groups.size(), 0);
+    for (const auto& name : interior_face_groups)
+      local_counts.push_back(local_group_faces[name]);
+    mpi_comm.all_reduce(local_counts.data(),
+                        static_cast<int>(local_counts.size()),
+                        counts.data(),
+                        mpi::op::sum<uint64_t>());
+    for (size_t g = 0; g < interior_face_groups.size(); ++g)
+      OpenSnInvalidArgumentIf(counts[g] == 0,
+                              "Interior face group " + interior_face_groups[g] +
+                                " has no faces inside the mesh. Export faces on the exterior "
+                                "boundary with boundary_surfaces. Interior face groups are kept "
+                                "only by meshes that a mesh generator's Execute sets up from a "
+                                "file.");
   }
 
   // A random identifier shared by every file of this set. Collective.
@@ -937,13 +1045,14 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
         }
       }
 
-      // Closed surface mapping. Faces were selected above and are not shared with other surfaces.
+      // Closed surface and interior face group mapping. Faces were selected above and are not
+      // shared with other surfaces.
       if (not is_surface and face.has_neighbor)
       {
-        const auto closed = closed_face_tags.find({cell->local_id, f});
-        if (closed != closed_face_tags.end())
+        const auto selected = selected_face_tags.find({cell->local_id, f});
+        if (selected != selected_face_tags.end())
         {
-          surface_name = closed->second;
+          surface_name = selected->second;
           is_surface = true;
         }
       }

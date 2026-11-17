@@ -401,6 +401,8 @@ MeshIO::FromGmshV22(const UnpartitionedMesh::Options& options)
         if (it != bnd_cell_to_bnd_id_map.end())
           face.neighbor = it->second;
       }
+  // Physical-group elements on faces inside the mesh are kept as interior face tags.
+  mesh->BuildInteriorFaceTags();
 
   log.Log() << "Done processing " << options.file_name << ".\n"
             << "Number of nodes read: " << mesh->GetVertices().size() << "\n"
