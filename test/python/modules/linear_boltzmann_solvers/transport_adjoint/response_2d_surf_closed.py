@@ -186,6 +186,8 @@ if __name__ == "__main__":
         boundary_surfaces=["xmin", "xmax", "ymin", "ymax"],
         closed_surfaces={"det": closed_volume},
     )
+    # Every rank reads every file below, so all files must be complete.
+    barrier()
 
     # Geometry of the exported surface. Read every file of the set on each rank.
     def read_all_partitions(prefix, tag):
