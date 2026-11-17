@@ -7,6 +7,7 @@
 #include <pybind11/stl.h>
 #include "framework/runtime.h"
 #include "framework/field_functions/field_function_grid_based.h"
+#include "framework/mesh/logical_volume/logical_volume.h"
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/acceleration/discrete_ordinates_keigen_acceleration.h"
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/acceleration/cmfd_acceleration.h"
 #include "modules/linear_boltzmann_solvers/discrete_ordinates_problem/acceleration/scdsa_acceleration.h"
@@ -608,10 +609,11 @@ WrapLBS(py::module& slv)
     [](DiscreteOrdinatesProblem& self,
        const std::string& file_base,
        const std::vector<std::string>& boundary_surfaces,
-       const std::map<std::string, std::pair<std::string, double>>& interior_surfaces)
+       const std::map<std::string, std::pair<std::string, double>>& interior_surfaces,
+       const std::map<std::string, std::shared_ptr<LogicalVolume>>& closed_surfaces)
     {
       DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
-        self, file_base, boundary_surfaces, interior_surfaces);
+        self, file_base, boundary_surfaces, interior_surfaces, closed_surfaces);
     },
     R"(
     Write surface angular flux data to file.
@@ -631,6 +633,17 @@ WrapLBS(py::module& slv)
         surface. Neither its name nor its
         generated tags may equal a requested boundary name. It may not coincide with an exterior
         boundary; export that boundary by name using boundary_surfaces instead.
+    closed_surfaces: dict[str, pyopensn.logvol.LogicalVolume], default={}
+        Closed surfaces in the form {'name': logical_volume}. A closed surface is the set of cell
+        faces between the cells whose centroids lie inside the logical volume and the cells whose
+        centroids do not, the same cell test as ``SetBlockIDFromLogicalVolume``. A volume that
+        cuts through cells therefore selects the cell faces enclosing the selected cells. Each
+        face is written twice: under '<name>_u' from the inside cell, whose normal points out of
+        the volume, and under '<name>_d' from the outside cell, whose normal points into it. A
+        closed surface must match at least one cell face, may not reach an exterior boundary (no
+        inside cell may have a boundary face), and may not share a face with another closed or
+        interior surface. Its name and generated tags may not equal a requested boundary name or
+        an interior surface's name or tags. Every rank must request the same closed-surface names.
 
     Notes
     -----
@@ -660,7 +673,9 @@ WrapLBS(py::module& slv)
         unknown or not on the mesh; or if an interior surface has an invalid axis, lies outside the
         mesh, cuts through a cell, shares a plane with another interior surface, coincides with an
         exterior boundary, matches no mesh faces, or has a name or generated tag equal to a requested boundary
-        name.
+        name; if closed surfaces differ between ranks; or if a closed surface has no logical
+        volume, matches no mesh faces, reaches an exterior boundary, shares a face with another
+        surface, or has a name or generated tag equal to another requested surface's name or tag.
         A problem with an uncollided flux is also rejected, because its stored angular flux holds
         only the collided part.
     RuntimeError
@@ -668,7 +683,8 @@ WrapLBS(py::module& slv)
     )",
     py::arg("file_base"),
     py::arg("boundary_surfaces") = std::vector<std::string>{},
-    py::arg("interior_surfaces") = std::map<std::string, std::pair<std::string, double>>{}
+    py::arg("interior_surfaces") = std::map<std::string, std::pair<std::string, double>>{},
+    py::arg("closed_surfaces") = std::map<std::string, std::shared_ptr<LogicalVolume>>{}
   );
   lbs_problem.def(
     "ReadSurfaceAngularFluxes",

@@ -193,6 +193,49 @@
     ]
   },
   {
+    "file": "response_2d_surf_closed.py",
+    "comment": "Closed surface from a logical volume, split across 2 ranks: outward _u normals, face count, rejected requests, and surface-response identities along the inward and outward normals",
+    "num_procs": 2,
+    "checks": [
+      {
+        "type": "KeyValuePair",
+        "key": "Closed faces=",
+        "goldvalue": 28,
+        "abs_tol": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Forward QoI=",
+        "goldvalue": 3.97277626e-02,
+        "rel_tol": 1e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Adjoint identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Inward identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Outward identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "CLOSED_SURFACE_CHECKS_PASSED=",
+        "goldvalue": 1,
+        "abs_tol": 0
+      }
+    ]
+  },
+  {
     "file": "response_2d_surf_repartition.py",
     "outfileprefix": "response_2d_surf_repartition_2",
     "comment": "Surface response from forward and adjoint surface data written on different partitions (forward cut at the interior plane), 2 ranks; equals forward and adjoint QoI",

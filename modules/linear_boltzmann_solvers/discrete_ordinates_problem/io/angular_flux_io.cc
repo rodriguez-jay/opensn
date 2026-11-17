@@ -7,6 +7,7 @@
 #include "framework/logging/log.h"
 #include "framework/runtime.h"
 #include "framework/mesh/mesh/mesh.h"
+#include "framework/mesh/logical_volume/logical_volume.h"
 #include "framework/utils/collective_error.h"
 #include "framework/utils/hdf_utils.h"
 #include "modules/linear_boltzmann_solvers/lbs_problem/io/lbs_problem_io.h"
@@ -377,7 +378,8 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
   DiscreteOrdinatesProblem& do_problem,
   const std::string& file_base,
   const std::vector<std::string>& boundary_surfs,
-  const std::map<std::string, std::pair<std::string, double>>& interior_surfs)
+  const std::map<std::string, std::pair<std::string, double>>& interior_surfs,
+  const std::map<std::string, std::shared_ptr<LogicalVolume>>& closed_surfs)
 {
   OpenSnInvalidArgumentIf(not do_problem.SaveAngularFluxEnabled(),
                           "WriteSurfaceAngularFluxes requires `options.save_angular_flux=true`.");
@@ -404,11 +406,12 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
   const auto& groupsets = do_problem.GetGroupsets();
   const auto num_groupsets = static_cast<uint64_t>(groupsets.size());
 
-  int surfaces_requested = boundary_surfs.empty() and interior_surfs.empty() ? 0 : 1;
+  int surfaces_requested =
+    boundary_surfs.empty() and interior_surfs.empty() and closed_surfs.empty() ? 0 : 1;
   mpi_comm.all_reduce(surfaces_requested, mpi::op::max<int>());
   OpenSnLogicalErrorIf(not surfaces_requested,
-                       "No surface provided. Provide either boundary names or interior surface "
-                       "definitions.");
+                       "No surface provided. Provide boundary names, interior surface "
+                       "definitions, or closed surfaces.");
 
   // Global mesh bounds. These set the interior-surface tolerance relative to the problem size and
   // are used to reject surfaces outside the mesh. Ranks without cells contribute nothing.
@@ -684,6 +687,133 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
                                           "boundary name on another rank.")
                             : tag_collision_message);
 
+  // Closed surfaces. The face selection below uses one count per closed surface, reduced in name
+  // order, so every rank must request the same names. Check the count and a hash of the names.
+  {
+    uint64_t name_hash = 14695981039346656037ULL; // FNV-1a, identical on every rank
+    for (const auto& [name, volume] : closed_surfs)
+      for (const char c : name + '\0')
+        name_hash = (name_hash ^ static_cast<unsigned char>(c)) * 1099511628211ULL;
+    const auto num_closed = static_cast<uint64_t>(closed_surfs.size());
+    uint64_t min_num_closed = 0, max_num_closed = 0, min_hash = 0, max_hash = 0;
+    mpi_comm.all_reduce(num_closed, min_num_closed, mpi::op::min<uint64_t>());
+    mpi_comm.all_reduce(num_closed, max_num_closed, mpi::op::max<uint64_t>());
+    mpi_comm.all_reduce(name_hash, min_hash, mpi::op::min<uint64_t>());
+    mpi_comm.all_reduce(name_hash, max_hash, mpi::op::max<uint64_t>());
+    OpenSnInvalidArgumentIf(min_num_closed != max_num_closed or min_hash != max_hash,
+                            "Every rank must request the same closed surfaces.");
+  }
+
+  // Throws std::invalid_argument on every rank if any rank found an error, with the message of the
+  // lowest failing rank, so every rank reports the same error. Collective.
+  const auto ThrowIfAnyRankFailed = [](const bool failed, std::string message)
+  {
+    const int comm_size = mpi_comm.size();
+    const int local_failure_rank = failed ? mpi_comm.rank() : comm_size;
+    int failure_rank = comm_size;
+    mpi_comm.all_reduce(local_failure_rank, failure_rank, mpi::op::min<int>());
+    if (failure_rank == comm_size)
+      return;
+    int length = static_cast<int>(message.size());
+    mpi_comm.broadcast(length, failure_rank);
+    message.resize(length);
+    mpi_comm.broadcast(message.data(), length, failure_rank);
+    OpenSnInvalidArgument(message);
+  };
+
+  std::string invalid_closed_message;
+  for (const auto& [name, volume] : closed_surfs)
+  {
+    if (volume == nullptr)
+    {
+      invalid_closed_message = "Closed surface " + name + " has no logical volume.";
+      break;
+    }
+    if (std::find(boundary_surfs.begin(), boundary_surfs.end(), name) != boundary_surfs.end() or
+        interior_surfs.count(name) > 0 or interior_tags.count(name) > 0)
+      invalid_closed_message =
+        "Closed surface name " + name + " collides with a requested surface name or tag.";
+    for (const auto& tag : {name + "_u", name + "_d"})
+    {
+      interior_tags.insert(tag);
+      if (interior_surfs.count(tag) > 0 or not surface_tags.insert(tag).second)
+        invalid_closed_message =
+          "Closed surface tag " + tag + " collides with a requested surface name or tag.";
+    }
+  }
+  ThrowIfAnyRankFailed(not invalid_closed_message.empty(), invalid_closed_message);
+
+  // Select the faces of each closed surface: a face whose two cells differ in whether their
+  // centroids lie inside the volume. The inside cell's copy of the face is tagged <name>_u, so its
+  // outward normal points out of the volume; the outside cell's copy is tagged <name>_d. Neighbor
+  // cells are local or ghost cells, which every rank stores for its local cells' faces.
+  std::map<std::pair<uint64_t, size_t>, std::string> closed_face_tags;
+  if (not closed_surfs.empty())
+  {
+    std::string local_closed_message;
+    std::vector<uint64_t> local_closed_faces(closed_surfs.size(), 0);
+
+    size_t s = 0;
+    for (const auto& [name, volume] : closed_surfs)
+    {
+      // Each cell is tested once per volume; a surface-mesh volume test can be costly.
+      std::map<uint64_t, bool> inside;
+      const auto CellInside = [&](const Cell& cell)
+      {
+        const auto [it, inserted] = inside.try_emplace(cell.global_id, false);
+        if (inserted)
+          it->second = volume->Inside(cell.centroid);
+        return it->second;
+      };
+
+      for (const auto& cell : grid->GetLocalCells())
+      {
+        const bool cell_inside = CellInside(*cell);
+        const auto& cell_mapping = discretization.GetCellMapping(*cell);
+        for (size_t f = 0; f < cell->faces.size(); ++f)
+        {
+          const auto& face = cell->faces[f];
+          if (not face.has_neighbor)
+          {
+            if (cell_inside and local_closed_message.empty())
+              local_closed_message = "Closed surface " + name +
+                                     " reaches an exterior boundary: a cell inside its volume "
+                                     "has a boundary face, so the surface is not closed.";
+            continue;
+          }
+          if (cell_inside == CellInside(grid->GetGlobalCell(face.neighbor_id)))
+            continue;
+
+          ++local_closed_faces[s];
+          const auto tag = name + (cell_inside ? "_u" : "_d");
+          bool shared = not closed_face_tags.try_emplace({cell->local_id, f}, tag).second;
+          for (const auto& [plane_name, plane] : interior_surfs)
+            shared =
+              shared or FaceMatchesInteriorSurface(cell_mapping, f, plane.first, plane.second);
+          if (shared and local_closed_message.empty())
+            local_closed_message =
+              "Closed surface " + name + " shares a face with another closed or interior surface.";
+        }
+      }
+      ++s;
+    }
+
+    ThrowIfAnyRankFailed(not local_closed_message.empty(), local_closed_message);
+
+    std::vector<uint64_t> closed_faces(closed_surfs.size(), 0);
+    mpi_comm.all_reduce(local_closed_faces.data(),
+                        static_cast<int>(closed_surfs.size()),
+                        closed_faces.data(),
+                        mpi::op::sum<uint64_t>());
+    s = 0;
+    for (const auto& [name, volume] : closed_surfs)
+    {
+      OpenSnInvalidArgumentIf(closed_faces[s] == 0,
+                              "Closed surface " + name + " matches no mesh faces.");
+      ++s;
+    }
+  }
+
   // A random identifier shared by every file of this set. Collective.
   uint64_t file_set_id = 0;
   if (opensn::mpi_comm.rank() == 0)
@@ -802,6 +932,17 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
           surface_name = surface_id + (alignment > 0 ? "_u" : "_d");
           is_surface = true;
           break;
+        }
+      }
+
+      // Closed surface mapping. Faces were selected above and are not shared with other surfaces.
+      if (not is_surface and face.has_neighbor)
+      {
+        const auto closed = closed_face_tags.find({cell->local_id, f});
+        if (closed != closed_face_tags.end())
+        {
+          surface_name = closed->second;
+          is_surface = true;
         }
       }
 

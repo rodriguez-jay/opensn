@@ -21,6 +21,7 @@ namespace opensn
 {
 
 class DiscreteOrdinatesProblem;
+class LogicalVolume;
 
 struct UncollidedFluxData
 {
@@ -219,6 +220,17 @@ public:
    * the opposite orientation; neither these tags nor the surface name may equal a requested
    * boundary name. Each tag's `mesh/<tag>` group records in its `interior` attribute whether the
    * tag is one side of an interior surface or a boundary, so boundaries may have any name.
+   * \param closed_surfs Closed surfaces, keyed by name, each given by a logical volume. A closed
+   * surface is the boundary between the cells whose centroids lie inside the volume and the cells
+   * whose centroids do not, which is the cell test SetBlockIDFromLogicalVolume uses. A volume that
+   * cuts through cells therefore selects the cell faces that enclose the selected cells. Each
+   * face of the surface is written twice, like an interior surface: under `<name>_u` from the
+   * inside cell, whose outward normal points out of the volume, and under `<name>_d` from the
+   * outside cell. A closed surface must match at least one cell face, must not reach an exterior
+   * boundary (no inside cell may have a boundary face), and must not share a face with another
+   * closed surface or an interior surface. Its name and tags follow the naming rules of interior
+   * surfaces and must not equal an interior surface's name or tags. Every rank must request the
+   * same closed-surface names.
    *
    * Collective over all ranks. Surface selections may differ by rank, but each file contains only
    * its rank's tags, and DistributeSurfaceAngularFluxes requires every requested tag in every file
@@ -239,7 +251,8 @@ public:
     DiscreteOrdinatesProblem& do_problem,
     const std::string& file_base,
     const std::vector<std::string>& boundary_surfs,
-    const std::map<std::string, std::pair<std::string, double>>& interior_surfs);
+    const std::map<std::string, std::pair<std::string, double>>& interior_surfs,
+    const std::map<std::string, std::shared_ptr<LogicalVolume>>& closed_surfs = {});
 
   /**
    * Read surface angular fluxes from one file of a file set.
