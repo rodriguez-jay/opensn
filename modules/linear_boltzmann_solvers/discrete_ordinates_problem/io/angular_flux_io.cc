@@ -704,21 +704,21 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
                             "Every rank must request the same closed surfaces.");
   }
 
-  // Throws std::invalid_argument on every rank if any rank found an error, with the message of the
-  // lowest failing rank, so every rank reports the same error. Collective.
-  const auto ThrowIfAnyRankFailed = [](const bool failed, std::string message)
+  // The error message of the lowest rank with a nonempty message, or an empty string if no rank
+  // has one, so every rank reports the same error. Collective.
+  const auto LowestRankError = [](std::string message)
   {
     const int comm_size = mpi_comm.size();
-    const int local_failure_rank = failed ? mpi_comm.rank() : comm_size;
+    const int local_failure_rank = message.empty() ? comm_size : mpi_comm.rank();
     int failure_rank = comm_size;
     mpi_comm.all_reduce(local_failure_rank, failure_rank, mpi::op::min<int>());
     if (failure_rank == comm_size)
-      return;
+      return std::string();
     int length = static_cast<int>(message.size());
     mpi_comm.broadcast(length, failure_rank);
     message.resize(length);
     mpi_comm.broadcast(message.data(), length, failure_rank);
-    OpenSnInvalidArgument(message);
+    return message;
   };
 
   std::string invalid_closed_message;
@@ -741,7 +741,8 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
           "Closed surface tag " + tag + " collides with a requested surface name or tag.";
     }
   }
-  ThrowIfAnyRankFailed(not invalid_closed_message.empty(), invalid_closed_message);
+  const auto closed_name_error = LowestRankError(invalid_closed_message);
+  OpenSnInvalidArgumentIf(not closed_name_error.empty(), closed_name_error);
 
   // Select the faces of each closed surface: a face whose two cells differ in whether their
   // centroids lie inside the volume. The inside cell's copy of the face is tagged <name>_u, so its
@@ -798,7 +799,8 @@ DiscreteOrdinatesProblemIO::WriteSurfaceAngularFluxes(
       ++s;
     }
 
-    ThrowIfAnyRankFailed(not local_closed_message.empty(), local_closed_message);
+    const auto closed_selection_error = LowestRankError(local_closed_message);
+    OpenSnInvalidArgumentIf(not closed_selection_error.empty(), closed_selection_error);
 
     std::vector<uint64_t> closed_faces(closed_surfs.size(), 0);
     mpi_comm.all_reduce(local_closed_faces.data(),
