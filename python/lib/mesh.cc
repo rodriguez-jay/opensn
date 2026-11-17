@@ -281,6 +281,45 @@ WrapMesh(py::module& mesh)
     py::arg("file_name"),
     py::arg("as_poly")
   );
+  surface_mesh.def(
+    "ImportFromGmshPhysicalGroups",
+    &SurfaceMesh::ImportFromGmshPhysicalGroups,
+    R"(
+    Replace this surface mesh with the closed surfaces formed by named physical groups of a gmsh
+    mesh file, for use with :py:class:`pyopensn.logvol.SurfaceMeshLogicalVolume`.
+
+    Parameters
+    ----------
+    file_name: str
+        Gmsh mesh file, format 2.2 or 4.1.
+    physical_names: list[str]
+        Names of physical groups of dimension one less than the mesh. Their elements may lie on
+        the mesh boundary or inside the mesh.
+
+    Notes
+    -----
+    In a 3D mesh, the triangles and quadrilaterals of the groups must form closed surfaces, with
+    every edge in exactly two faces. In a 2D mesh, the line segments must form closed loops, with
+    every vertex in exactly two segments; each segment is extruded into a wall spanning the mesh
+    plane, so the surface encloses a prism around each loop and the volume's ``Inside`` test
+    applies to points in the mesh plane. Element orientation in the file is ignored: faces are
+    oriented so their normals point out of the enclosed region, and a loop or surface nested
+    inside an odd number of others bounds a hole. Not collective; every rank that uses the
+    surface mesh reads the file.
+
+    Raises
+    ------
+    ValueError
+        If no names are given; a name is not a physical group of dimension one less than the
+        mesh; the groups have no elements, do not form closed loops or surfaces, form a
+        non-orientable surface, or contain an element that encloses no area or volume.
+    RuntimeError
+        If the file cannot be read, is not a 2D or 3D mesh, or the groups contain elements of an
+        unsupported type.
+    )",
+    py::arg("file_name"),
+    py::arg("physical_names")
+  );
   // clang-format on
 }
 
