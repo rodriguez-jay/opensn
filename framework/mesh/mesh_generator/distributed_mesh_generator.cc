@@ -48,6 +48,11 @@ DistributedMeshGenerator::Execute()
         "No mesh was generated. DistributedMeshGenerator does not build a mesh of its own; "
         "supply a mesh-generating step via \"inputs\".");
 
+      if (not current_umesh->GetInteriorFaceTags().empty())
+        log.Log0Warning()
+          << "The mesh has physical groups on interior faces, which DistributedMeshGenerator "
+             "does not distribute, so they cannot be selected as interior face "
+             "groups. Execute the input mesh generator directly to keep them.";
       cell_pids = PartitionMesh(*current_umesh, num_partitions);
     });
 

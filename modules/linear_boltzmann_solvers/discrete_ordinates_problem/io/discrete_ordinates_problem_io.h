@@ -231,6 +231,16 @@ public:
    * closed surface or an interior surface. Its name and tags follow the naming rules of interior
    * surfaces and must not equal an interior surface's name or tags. Every rank must request the
    * same closed-surface names.
+   * \param interior_face_groups Names of physical groups of the mesh file, of dimension one less
+   * than the mesh, whose faces inside the mesh are exported (Mesh::GetInteriorFaceTags). The
+   * group need not be closed. Each face is written twice: under `<name>_u` from the cell whose
+   * outward normal points along the face's reference normal, and under `<name>_d` from the other
+   * cell. The reference normal comes from the vertex order of the mesh-file element: in 2D the
+   * tangent v1 - v0 rotated clockwise, and in 3D (v1 - v0) x (v2 - v0); for a 2D loop traversed
+   * counterclockwise it points out of the loop. A group must have at least one face inside the
+   * mesh (faces on the exterior boundary are exported with boundary_surfs instead), must not
+   * share a face with another requested surface, and follows the naming rules of closed surfaces.
+   * Every rank must request the same groups.
    *
    * Collective over all ranks. Surface selections may differ by rank, but each file contains only
    * its rank's tags, and DistributeSurfaceAngularFluxes requires every requested tag in every file
@@ -252,7 +262,8 @@ public:
     const std::string& file_base,
     const std::vector<std::string>& boundary_surfs,
     const std::map<std::string, std::pair<std::string, double>>& interior_surfs,
-    const std::map<std::string, std::shared_ptr<LogicalVolume>>& closed_surfs = {});
+    const std::map<std::string, std::shared_ptr<LogicalVolume>>& closed_surfs = {},
+    const std::vector<std::string>& interior_face_groups = {});
 
   /**
    * Read surface angular fluxes from one file of a file set.

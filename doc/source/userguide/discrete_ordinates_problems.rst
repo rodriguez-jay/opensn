@@ -1045,6 +1045,28 @@ Interior surfaces must lie on cell faces: a plane that cuts through a cell is
 rejected, because the surface would have a hole there and would no longer
 separate the source from the detector.
 
+Surfaces that are not planes have two more forms, written with the same
+``_u`` and ``_d`` tags and read and evaluated the same way:
+
+* ``closed_surfaces={"det": volume}`` takes any logical volume. Its faces are
+  those between the cells whose centroids lie inside the volume and the cells
+  whose centroids do not, the cells that ``SetBlockIDFromLogicalVolume``
+  selects. ``det_u`` holds the faces of the inside cells, whose normal points
+  out of the volume, and ``det_d`` those of the outside cells. For a detector
+  enclosed by the surface and a source outside it, the response along
+  ``det_d`` equals the detector response. The volume must not reach the
+  exterior boundary. A
+  :py:class:`pyopensn.logvol.SurfaceMeshLogicalVolume` built with
+  :py:meth:`pyopensn.mesh.SurfaceMesh.ImportFromGmshPhysicalGroups` encloses a
+  region bounded by named gmsh curve or surface groups.
+* ``interior_face_groups=["DetBottom"]`` takes physical groups of the mesh file
+  of dimension one less than the mesh, such as gmsh curve groups of a 2D mesh,
+  and exports their faces inside the mesh. The group need not be closed. Its
+  ``_u`` normal follows the vertex order of the mesh-file elements: in 2D the
+  direction of travel rotated clockwise, so it points out of a loop traversed
+  counterclockwise. Only meshes set up by a mesh generator's ``Execute`` from a
+  file keep these groups.
+
 A boundary, written with ``boundary_surfaces``, pairs upwind values, which the
 file stores for boundary tags: the boundary-condition value of each problem (0
 for a vacuum boundary, the incoming flux of an isotropic or arbitrary boundary,

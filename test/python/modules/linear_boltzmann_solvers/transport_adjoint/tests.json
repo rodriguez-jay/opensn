@@ -236,6 +236,43 @@
     ]
   },
   {
+    "file": "response_2d_surf_groups.py",
+    "comment": "Interior face groups from gmsh line groups, 2 ranks: an open group matches the plane x = 6, element order sets _u normals, rejected requests, and the response across the group equals the forward QoI (the gold of response_2d_surf.py)",
+    "num_procs": 2,
+    "checks": [
+      {
+        "type": "KeyValuePair",
+        "key": "Wall faces=",
+        "goldvalue": 20,
+        "abs_tol": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Shelf faces=",
+        "goldvalue": 16,
+        "abs_tol": 0
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Forward QoI=",
+        "goldvalue": 4.943814e-04,
+        "rel_tol": 1e-6
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "Wall identity error=",
+        "goldvalue": 0.0,
+        "abs_tol": 1e-10
+      },
+      {
+        "type": "KeyValuePair",
+        "key": "INTERIOR_FACE_GROUP_CHECKS_PASSED=",
+        "goldvalue": 1,
+        "abs_tol": 0
+      }
+    ]
+  },
+  {
     "file": "response_2d_surf_repartition.py",
     "outfileprefix": "response_2d_surf_repartition_2",
     "comment": "Surface response from forward and adjoint surface data written on different partitions (forward cut at the interior plane), 2 ranks; equals forward and adjoint QoI",
